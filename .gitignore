@@ -7,6 +7,9 @@ dist-ssr/
 target/
 src-tauri/target/
 
+# Tauri generierte Schemas (Build-Artefakt)
+src-tauri/gen/schemas/
+
 # SQLite-Datenbank (darf NIE ins Repo)
 *.db
 *.db-shm
