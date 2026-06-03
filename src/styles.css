@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Vertrauliche Bereiche (BR-Geheimnis) klar abgesetzt */
+.confidential-block {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}

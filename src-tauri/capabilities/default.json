@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "description": "Standard-Berechtigungen für das Hauptfenster",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "sql:default",
+    "opener:default",
+    "opener:allow-reveal-item-in-dir",
+    "opener:allow-open-path"
+  ]
+}

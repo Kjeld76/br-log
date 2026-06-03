@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build-Ausgaben
+dist/
+dist-ssr/
+target/
+src-tauri/target/
+
+# SQLite-Datenbank (darf NIE ins Repo)
+*.db
+*.db-shm
+*.db-wal
+
+# Lokales / IDE
+build.log
+*.local
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

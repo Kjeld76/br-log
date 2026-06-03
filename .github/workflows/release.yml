@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Erweiterbar: ubuntu-latest / macos-latest (z. B. für späteren Android-Build).
+        platform: [windows-latest]
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Rust-Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Frontend-Abhängigkeiten installieren
+        run: npm install
+
+      - name: Build & Release (NSIS-Installer)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "BR-Zeiten ${{ github.ref_name }}"
+          releaseBody: "NSIS-Installer (.exe) unten unter „Assets". Installation ohne Administratorrechte. Hinweis zum Windows-SmartScreen siehe README."
+          releaseDraft: false
+          prerelease: false
