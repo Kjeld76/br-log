@@ -34,7 +34,7 @@ export default function TagManager({ onChanged }: Props) {
     <div className="space-y-4">
       <div className="flex gap-2">
         <input
-          className="flex-1 rounded border border-slate-300 p-2 text-sm"
+          className="flex-1 rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
           placeholder="Neues Schlagwort"
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
@@ -57,7 +57,9 @@ export default function TagManager({ onChanged }: Props) {
       </div>
 
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700">Aktiv</h4>
+        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Aktiv
+        </h4>
         <ul className="space-y-1">
           {active.map((t) => (
             <TagRow
@@ -68,24 +70,28 @@ export default function TagManager({ onChanged }: Props) {
             />
           ))}
           {active.length === 0 && (
-            <li className="text-sm text-slate-500">Keine aktiven Schlagwörter.</li>
+            <li className="text-sm text-slate-500 dark:text-slate-400">
+              Keine aktiven Schlagwörter.
+            </li>
           )}
         </ul>
       </div>
 
       {archived.length > 0 && (
         <div>
-          <h4 className="mb-2 text-sm font-semibold text-slate-500">Archiviert</h4>
+          <h4 className="mb-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+            Archiviert
+          </h4>
           <ul className="space-y-1">
             {archived.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
+                className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400"
               >
                 <span>{t.label}</span>
                 <button
                   type="button"
-                  className="text-xs text-sky-700 hover:underline"
+                  className="text-xs text-sky-700 hover:underline dark:text-sky-400"
                   onClick={() => mutate(() => setTagArchived(t.id, false))}
                 >
                   Reaktivieren
@@ -112,10 +118,10 @@ function TagRow({
   const [label, setLabel] = useState(tag.label);
 
   return (
-    <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm">
+    <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
       {editing ? (
         <input
-          className="flex-1 rounded border border-slate-300 p-1 text-sm"
+          className="flex-1 rounded border border-slate-300 bg-white p-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
           value={label}
           autoFocus
           onChange={(e) => setLabel(e.target.value)}
@@ -131,13 +137,13 @@ function TagRow({
           }}
         />
       ) : (
-        <span className="text-slate-800">{tag.label}</span>
+        <span className="text-slate-800 dark:text-slate-200">{tag.label}</span>
       )}
       <div className="ml-2 flex shrink-0 gap-2">
         {editing ? (
           <button
             type="button"
-            className="text-xs text-sky-700 hover:underline"
+            className="text-xs text-sky-700 hover:underline dark:text-sky-400"
             onClick={() => {
               if (label.trim()) onRename(label);
               setEditing(false);
@@ -148,7 +154,7 @@ function TagRow({
         ) : (
           <button
             type="button"
-            className="text-xs text-slate-600 hover:underline"
+            className="text-xs text-slate-600 hover:underline dark:text-slate-300"
             onClick={() => setEditing(true)}
           >
             Umbenennen
@@ -156,7 +162,7 @@ function TagRow({
         )}
         <button
           type="button"
-          className="text-xs text-slate-500 hover:underline"
+          className="text-xs text-slate-500 hover:underline dark:text-slate-400"
           onClick={onArchive}
         >
           Archivieren

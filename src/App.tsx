@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem } from "./types";
 import { initSearch } from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
+import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import Sidebar, { type View } from "./components/Sidebar";
 import QuickEntryView from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
@@ -34,6 +35,15 @@ export default function App() {
     setToast(m);
     window.setTimeout(() => setToast(null), 2500);
   };
+
+  // Theme anwenden (FOUC-Script hat die Klasse bereits gesetzt; hier zusätzlich
+  // das native Fenster-Theme synchronisieren und auf OS-Wechsel reagieren).
+  useEffect(() => {
+    applyTheme(getStoredTheme());
+    return watchSystemTheme(() => {
+      if (getStoredTheme() === "system") applyTheme("system");
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -70,10 +80,12 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500">
+      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
         {initError ? (
           <div className="max-w-md p-4 text-center">
-            <p className="font-medium text-red-600">Fehler beim Start</p>
+            <p className="font-medium text-red-600 dark:text-red-400">
+              Fehler beim Start
+            </p>
             <p className="mt-1 break-all text-sm">{initError}</p>
           </div>
         ) : (
@@ -118,16 +130,16 @@ export default function App() {
       {/* Modal: Detailansicht / Bearbeiten / Schnell-Anlegen aus Kalender/Liste */}
       {modal && (
         <div
-          className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
+          className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/50 p-4"
           onClick={() => setModal(null)}
         >
           <div
-            className="my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl"
+            className="my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl dark:bg-slate-800"
             onClick={(e) => e.stopPropagation()}
           >
             {modal.type === "form" && (
               <>
-                <h2 className="mb-3 text-base font-semibold text-slate-800">
+                <h2 className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100">
                   Eintrag
                 </h2>
                 <EntryForm
@@ -140,7 +152,7 @@ export default function App() {
             )}
             {modal.type === "detail" && (
               <>
-                <h2 className="mb-3 text-base font-semibold text-slate-800">
+                <h2 className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100">
                   Eintrag-Details
                 </h2>
                 <EntryDetail
@@ -157,7 +169,7 @@ export default function App() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700">
           {toast}
         </div>
       )}

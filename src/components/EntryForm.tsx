@@ -21,7 +21,6 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
 
   const patch = (p: Partial<TimeEntry>) => setDraft((d) => ({ ...d, ...p }));
 
-  // Dauer ist IMMER aus Von/Bis abgeleitet (kein Toggle, kein direktes Eingeben).
   const duration = computeDuration(draft.startTime, draft.endTime);
 
   const toggleTag = (id: string) =>
@@ -55,15 +54,20 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
     }
   };
 
-  const field = "w-full rounded border border-slate-300 p-2 text-sm";
-  const labelCls = "block text-sm font-medium text-slate-700 mb-1";
-  const blockCls = "rounded-lg border border-slate-200 bg-white p-4 space-y-3";
+  const field =
+    "w-full rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500";
+  const labelCls =
+    "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
+  const blockCls =
+    "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
 
   return (
     <div className="space-y-4">
       {/* Block 1: Zeit & Art */}
       <div className={blockCls}>
-        <h3 className="text-sm font-semibold text-slate-800">Zeit &amp; Art</h3>
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Zeit &amp; Art
+        </h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label className={labelCls}>
@@ -106,8 +110,8 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
             className={
               "rounded border p-2 text-sm " +
               (duration.error
-                ? "border-red-300 bg-red-50 text-red-700"
-                : "border-slate-200 bg-slate-50 text-slate-700")
+                ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300"
+                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300")
             }
           >
             {duration.error
@@ -142,16 +146,16 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
             ))}
             <button
               type="button"
-              className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
               onClick={() => setTagPickerOpen((v) => !v)}
             >
               {tagPickerOpen ? "Fertig ▴" : "+ Schlagwort ▾"}
             </button>
           </div>
           {tagPickerOpen && (
-            <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900/50">
               {tags.length === 0 && (
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   Keine Schlagwörter – unter „Über / Daten" anlegen.
                 </span>
               )}
@@ -166,7 +170,7 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
                       "rounded-full border px-3 py-1 text-xs " +
                       (active
                         ? "border-sky-600 bg-sky-600 text-white"
-                        : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100")
+                        : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
                     }
                   >
                     {t.label}
@@ -178,8 +182,8 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         </div>
 
         {/* Geplante Schicht */}
-        <div className="rounded border border-slate-200 p-3 space-y-2">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <div className="space-y-2 rounded border border-slate-200 p-3 dark:border-slate-700">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
             <input
               type="checkbox"
               checked={draft.hadPlannedShift}
@@ -207,9 +211,11 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
 
       {/* Block 2: Dokumentation */}
       <div className={blockCls}>
-        <h3 className="text-sm font-semibold text-slate-800">Dokumentation</h3>
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Dokumentation
+        </h3>
         <div>
-          <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
             <Icon name="eye" size={16} />
             Tätigkeit (Info für Geschäftsleitung)
             <span className="text-red-500">*</span>
@@ -224,18 +230,18 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         </div>
 
         <div className="confidential-block rounded-lg p-3">
-          <label className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential-text">
+          <label className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential">
             <Icon name="lock" size={16} />
             Vertrauliche Tätigkeitsbeschreibung
           </label>
           <textarea
-            className="w-full rounded border border-red-200 bg-white p-2 text-sm"
+            className="confidential-input"
             rows={3}
             placeholder="Genaue Tätigkeit (optional)"
             value={draft.secretDetails}
             onChange={(e) => patch({ secretDetails: e.target.value })}
           />
-          <p className="mt-1 text-xs text-confidential-text">
+          <p className="mt-1 text-xs text-confidential">
             Wird bei GL-Export ignoriert und in Listen nie im Klartext angezeigt.
           </p>
         </div>
@@ -245,14 +251,14 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
       <div className={blockCls}>
         <button
           type="button"
-          className="flex w-full items-center justify-between text-sm font-semibold text-slate-800"
+          className="flex w-full items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100"
           onClick={() => setObjOpen((v) => !v)}
         >
           <span className="flex items-center gap-1.5">
             <Icon name="alert-triangle" size={16} />
             Widersprüche der Geschäftsleitung
             {draft.objections.length > 0 && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300">
                 {draft.objections.length}
               </span>
             )}
@@ -268,7 +274,9 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
       </div>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          {error}
+        </p>
       )}
 
       {/* Aktionsleiste */}
@@ -276,7 +284,7 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         {onCancel && (
           <button
             type="button"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
             onClick={onCancel}
           >
             Abbrechen

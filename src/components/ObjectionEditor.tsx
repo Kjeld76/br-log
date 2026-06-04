@@ -12,20 +12,23 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
   const remove = (id: string) => onChange(objections.filter((o) => o.id !== id));
   const add = () => onChange([...objections, newObjection()]);
 
+  const inputCls =
+    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
+
   return (
     <div className="space-y-2">
       {objections.length === 0 && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Kein Widerspruch der Geschäftsleitung erfasst.
         </p>
       )}
       {objections.map((o) => (
         <div
           key={o.id}
-          className="rounded border border-slate-200 bg-slate-50 p-3 space-y-2"
+          className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50"
         >
           <textarea
-            className="w-full rounded border border-slate-300 p-2 text-sm"
+            className={inputCls + " w-full"}
             rows={2}
             placeholder="Begründung des Widerspruchs"
             value={o.reason}
@@ -33,20 +36,20 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
           />
           <div className="flex flex-wrap items-center gap-2">
             <input
-              className="flex-1 min-w-[8rem] rounded border border-slate-300 p-2 text-sm"
+              className={inputCls + " min-w-[8rem] flex-1"}
               placeholder="Wer (Name/Funktion)"
               value={o.byWhom}
               onChange={(e) => update(o.id, { byWhom: e.target.value })}
             />
             <input
               type="date"
-              className="rounded border border-slate-300 p-2 text-sm"
+              className={inputCls}
               value={o.date ?? ""}
               onChange={(e) => update(o.id, { date: e.target.value || null })}
             />
             <button
               type="button"
-              className="rounded px-2 py-1 text-sm text-red-700 hover:bg-red-50"
+              className="rounded px-2 py-1 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
               onClick={() => remove(o.id)}
             >
               Entfernen
@@ -56,7 +59,7 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
       ))}
       <button
         type="button"
-        className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+        className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
         onClick={add}
       >
         + Widerspruch hinzufügen

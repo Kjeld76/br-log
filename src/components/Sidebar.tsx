@@ -16,9 +16,12 @@ interface Props {
 
 export default function Sidebar({ view, onNavigate }: Props) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       <div className="p-4">
-        <img src={logo} alt="BR-Log" className="h-9 w-auto" />
+        {/* Markenelement: größer + im Dunkelmodus auf hellem Badge lesbar */}
+        <span className="brand-logo-wrap">
+          <img src={logo} alt="BR-Log" className="h-12 w-auto" />
+        </span>
       </div>
 
       <nav className="flex-1 space-y-1 px-2">
@@ -32,8 +35,8 @@ export default function Sidebar({ view, onNavigate }: Props) {
               className={
                 "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition " +
                 (active
-                  ? "bg-sky-50 font-medium text-sky-800"
-                  : "text-slate-600 hover:bg-slate-50")
+                  ? "bg-sky-50 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700")
               }
             >
               <Icon name={n.icon} size={18} />
@@ -47,7 +50,7 @@ export default function Sidebar({ view, onNavigate }: Props) {
       <button
         type="button"
         onClick={() => onNavigate("daten")}
-        className="m-2 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500 hover:bg-slate-100"
+        className="m-2 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500 hover:bg-slate-100 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:bg-slate-700"
       >
         <Icon name="lock" size={16} className="mt-0.5 shrink-0" />
         <span>Daten liegen lokal auf diesem Gerät.</span>

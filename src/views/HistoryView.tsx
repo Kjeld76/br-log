@@ -21,8 +21,10 @@ export default function HistoryView({
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-800">Kalender &amp; Historie</h2>
-        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+          Kalender &amp; Historie
+        </h2>
+        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm dark:border-slate-700 dark:bg-slate-800">
           {(["liste", "kalender"] as const).map((s) => (
             <button
               key={s}
@@ -32,7 +34,7 @@ export default function HistoryView({
                 "rounded px-3 py-1 " +
                 (sub === s
                   ? "bg-sky-600 text-white"
-                  : "text-slate-600 hover:bg-slate-50")
+                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700")
               }
             >
               {s === "liste" ? "Liste" : "Kalender"}

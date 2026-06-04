@@ -45,46 +45,49 @@ export default function DbInfoPanel() {
     }
   };
 
+  const card =
+    "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
+  const btn =
+    "flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+
   return (
     <div className="space-y-5">
-      <section className="rounded border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Datenspeicher</h3>
-        <p className="text-sm text-slate-600">
+      <section className={card}>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Datenspeicher
+        </h3>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
           Alle Daten liegen ausschließlich lokal auf diesem Gerät – es gibt keinen
           Server. Zum Sichern die Datei <code>br_zeiten.db</code> kopieren oder den
           JSON-Export nutzen.
         </p>
-        <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700">
+        <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
           {dbPath || "Pfad wird ermittelt…"}
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            onClick={copyPath}
-            disabled={!dbPath}
-          >
+          <button type="button" className={btn} onClick={copyPath} disabled={!dbPath}>
             {copied ? "Pfad kopiert ✓" : "Pfad kopieren"}
           </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            onClick={reveal}
-            disabled={!dbPath}
-          >
+          <button type="button" className={btn} onClick={reveal} disabled={!dbPath}>
             <Icon name="folder-open" size={16} />
             Ordner im Explorer öffnen
           </button>
         </div>
         {error && (
-          <p className="mt-2 break-all text-xs text-red-600">{error}</p>
+          <p className="mt-2 break-all text-xs text-red-600 dark:text-red-400">
+            {error}
+          </p>
         )}
       </section>
 
-      <section className="rounded border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Über</h3>
-        <p className="text-sm text-slate-700">BR-Log – Version 1.0.1</p>
-        <p className="mt-2 text-sm text-slate-600">
+      <section className={card}>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Über
+        </h3>
+        <p className="text-sm text-slate-700 dark:text-slate-200">
+          BR-Log – Version 1.0.1
+        </p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
           © 2026 Mario König. Alle Rechte vorbehalten.
           <br />
           Ersteller und Rechteinhaber: Mario König.

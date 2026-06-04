@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BR-Log</title>
+    <!-- Theme VOR dem ersten Paint setzen -> kein Flackern (FOUC). -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("br-log-theme") || "system";
+          var dark =
+            t === "dark" ||
+            (t === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          if (dark) root.classList.add("dark");
+          root.style.backgroundColor = dark ? "#0f172a" : "#f8fafc";
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

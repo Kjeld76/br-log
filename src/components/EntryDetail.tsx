@@ -12,14 +12,18 @@ interface Props {
 export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props) {
   const row = (label: string, value: React.ReactNode) => (
     <div className="grid grid-cols-3 gap-2 py-1.5">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
-      <div className="col-span-2 text-sm text-slate-800">{value}</div>
+      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="col-span-2 text-sm text-slate-800 dark:text-slate-200">
+        {value}
+      </div>
     </div>
   );
 
   return (
     <div className="space-y-3">
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-slate-100 dark:divide-slate-700">
         {row("Datum", entry.date)}
         {row(
           "Zeit",
@@ -40,7 +44,7 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
               {entry.tagLabels.map((l) => (
                 <span
                   key={l}
-                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700"
+                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200"
                 >
                   {l}
                 </span>
@@ -51,30 +55,29 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
           )
         )}
         {row("Info für GL", entry.infoForManagement || "—")}
-        {row(
-          "Geplante Schicht",
-          entry.hadPlannedShift ? "ja" : "nein"
-        )}
+        {row("Geplante Schicht", entry.hadPlannedShift ? "ja" : "nein")}
         {!entry.hadPlannedShift &&
           row("Schichtausgleich", entry.shiftCompensationNote || "—")}
       </div>
 
       {/* Widersprüche */}
       <div>
-        <h4 className="mb-1 text-sm font-semibold text-slate-700">
+        <h4 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
           Widersprüche der Geschäftsleitung
         </h4>
         {entry.objections.length === 0 ? (
-          <p className="text-sm text-slate-500">Keine.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Keine.</p>
         ) : (
           <ul className="space-y-1">
             {entry.objections.map((o) => (
               <li
                 key={o.id}
-                className="rounded border border-slate-200 bg-slate-50 p-2 text-sm"
+                className="rounded border border-slate-200 bg-slate-50 p-2 text-sm dark:border-slate-700 dark:bg-slate-900/50"
               >
-                <div>{o.reason}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-slate-800 dark:text-slate-200">
+                  {o.reason}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
                   {[o.byWhom, o.date].filter(Boolean).join(" · ") || "—"}
                 </div>
               </li>
@@ -84,24 +87,24 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
       </div>
 
       {/* Vertraulich – nur hier sichtbar */}
-      <div className="confidential-block rounded p-3">
-        <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+      <div className="confidential-block rounded-lg p-3">
+        <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential">
           <Icon name="lock" size={16} />
           Vertraulich – genaue Tätigkeit (BR-Geheimnis)
         </h4>
-        <p className="whitespace-pre-wrap text-sm">
+        <p className="whitespace-pre-wrap text-sm text-confidential">
           {entry.secretDetails ? (
             entry.secretDetails
           ) : (
-            <span className="text-red-400">— nichts erfasst —</span>
+            <span className="opacity-60">— nichts erfasst —</span>
           )}
         </p>
       </div>
 
-      <div className="flex justify-between gap-2 border-t border-slate-200 pt-3">
+      <div className="flex justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
         <button
           type="button"
-          className="rounded px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+          className="rounded px-3 py-2 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
           onClick={onDelete}
         >
           Löschen
@@ -109,7 +112,7 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
             onClick={onClose}
           >
             Schließen

@@ -21,8 +21,10 @@ export default function QuickEntryView({ tags, onSaved }: Props) {
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <header>
-        <h2 className="text-lg font-bold text-slate-800">Zeit erfassen</h2>
-        <p className="text-sm text-slate-500">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+          Zeit erfassen
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Neuer Eintrag für deine Betriebsratszeit.
         </p>
       </header>

@@ -15,9 +15,62 @@ body {
   color: #0f172a;
 }
 
-/* Vertrauliche Bereiche (BR-Geheimnis) klar abgesetzt */
+.dark body {
+  background: #0f172a; /* slate-900 */
+  color: #e2e8f0; /* slate-200 */
+}
+
+/* ----------------------------------------------------------------------------
+   Vertrauliche Tätigkeitsbeschreibung (BR-Geheimnis).
+   Muss sich in BEIDEN Modi deutlich von der neutralen GL-Sicht abheben:
+   - Hell: rosé/rot getönt auf hellem UI.
+   - Dunkel: rosé/rot getönt auf dunklem, neutral-slate UI.
+---------------------------------------------------------------------------- */
 .confidential-block {
-  background: #fef2f2;
+  background: #fef2f2; /* rose-50 */
+  border: 1px solid #fecaca; /* red-200 */
+  color: #991b1b; /* red-800 */
+}
+.dark .confidential-block {
+  background: rgba(190, 18, 60, 0.16); /* rose-700 getönt */
+  border-color: #be123c; /* rose-700 */
+  color: #fecdd3; /* rose-200 */
+}
+
+.confidential-input {
+  width: 100%;
+  border-radius: 0.375rem;
   border: 1px solid #fecaca;
+  background: #ffffff;
+  color: #7f1d1d;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+}
+.confidential-input::placeholder {
+  color: #fca5a5;
+}
+.dark .confidential-input {
+  border-color: #be123c;
+  background: #1c1117; /* sehr dunkles Rosé-Schwarz */
+  color: #fecdd3;
+}
+.dark .confidential-input::placeholder {
+  color: #9f6b76;
+}
+
+.text-confidential {
   color: #991b1b;
+}
+.dark .text-confidential {
+  color: #fda4af; /* rose-300 */
+}
+
+/* Logo im Header: im Dunkelmodus auf hellem „Badge" lesbar halten. */
+.brand-logo-wrap {
+  display: inline-block;
+  border-radius: 0.5rem;
+}
+.dark .brand-logo-wrap {
+  background: #f1f5f9; /* slate-100 */
+  padding: 0.4rem 0.6rem;
 }
