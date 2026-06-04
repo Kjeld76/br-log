@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    br_zeiten_lib::run()
+    br_log_lib::run()
 }

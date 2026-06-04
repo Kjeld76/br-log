@@ -94,7 +94,7 @@ export default function App() {
     <div className="mx-auto flex min-h-full max-w-3xl flex-col">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="px-4 py-3">
-          <h1 className="text-lg font-bold text-slate-800">BR-Zeiten</h1>
+          <h1 className="text-lg font-bold text-slate-800">BR-Log</h1>
           <p className="text-xs text-slate-500">
             Zeiterfassung für Betriebsratsmitglieder
           </p>

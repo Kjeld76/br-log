@@ -81,7 +81,7 @@ export default function DbInfoPanel() {
 
       <section className="rounded border border-slate-200 bg-white p-4">
         <h3 className="mb-2 text-sm font-semibold text-slate-700">Über</h3>
-        <p className="text-sm text-slate-700">BR-Zeiten – Version 1.0.1</p>
+        <p className="text-sm text-slate-700">BR-Log – Version 1.0.1</p>
         <p className="mt-2 text-sm text-slate-600">
           © 2026 Mario König. Alle Rechte vorbehalten.
           <br />

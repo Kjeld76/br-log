@@ -1,4 +1,4 @@
-# BR-Zeiten
+# BR-Log
 
 Lokale Desktop-App zur **Zeiterfassung für Betriebsratsmitglieder**. Jedes
 Mitglied erfasst seine BR-Zeiten tagesgenau (Stunden + Minuten). Zu jedem
@@ -41,7 +41,7 @@ Datei `br_zeiten.db` kopieren.
 ## Installation (für BR-Kolleginnen und -Kollegen)
 
 1. Auf der **GitHub-Releases-Seite** den neuesten Release öffnen.
-2. Die Datei `BR-Zeiten_x.y.z_x64-setup.exe` (NSIS-Installer) herunterladen.
+2. Die Datei `BR-Log_x.y.z_x64-setup.exe` (NSIS-Installer) herunterladen.
 3. Doppelklick zum Installieren – **keine Administratorrechte nötig**
    (Installation ins Benutzerverzeichnis).
 

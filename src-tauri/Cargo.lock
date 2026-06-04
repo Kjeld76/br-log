@@ -361,7 +361,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "br-zeiten"
+name = "br-log"
 version = "1.0.1"
 dependencies = [
  "serde",

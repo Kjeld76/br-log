@@ -81,21 +81,21 @@ function stamp(): string {
 export async function exportGlCsv(): Promise<string | null> {
   const rows = await allEntriesSorted();
   const csv = toCsv(rows, publicColumns());
-  return saveText(`BR-Zeiten_GL_${stamp()}.csv`, csv, "csv", "CSV");
+  return saveText(`BR-Log_GL_${stamp()}.csv`, csv, "csv", "CSV");
 }
 
 /** Voll-CSV: inkl. vertraulicher Tätigkeit (nur für die eigene Verwendung). */
 export async function exportFullCsv(): Promise<string | null> {
   const rows = await allEntriesSorted();
   const csv = toCsv(rows, fullColumns());
-  return saveText(`BR-Zeiten_VOLL_${stamp()}.csv`, csv, "csv", "CSV");
+  return saveText(`BR-Log_VOLL_${stamp()}.csv`, csv, "csv", "CSV");
 }
 
 /** JSON-Backup: vollständige Datensicherung / Geräteübertragung. */
 export async function exportJsonBackup(): Promise<string | null> {
   const payload = await getAllForBackup();
   const json = JSON.stringify(payload, null, 2);
-  return saveText(`BR-Zeiten_Backup_${stamp()}.json`, json, "json", "JSON");
+  return saveText(`BR-Log_Backup_${stamp()}.json`, json, "json", "JSON");
 }
 
 /**

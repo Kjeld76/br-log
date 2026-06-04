@@ -444,7 +444,7 @@ export async function getAllForBackup(): Promise<BackupPayload> {
   return {
     schemaVersion: 1,
     exportedAt: nowIso(),
-    app: "BR-Zeiten",
+    app: "BR-Log",
     tags,
     entries,
   };

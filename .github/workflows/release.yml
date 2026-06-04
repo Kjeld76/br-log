@@ -36,7 +36,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "BR-Zeiten ${{ github.ref_name }}"
+          releaseName: "BR-Log ${{ github.ref_name }}"
           releaseBody: "NSIS-Installer (.exe) unten unter Assets. Installation ohne Administratorrechte. Hinweis zum Windows-SmartScreen siehe README."
           releaseDraft: false
           prerelease: false

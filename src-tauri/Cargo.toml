@@ -1,5 +1,5 @@
 [package]
-name = "br-zeiten"
+name = "br-log"
 version = "1.0.1"
 description = "Betriebsrats-Zeiterfassung"
 authors = ["Mario König <kontakt@koenig-mario.de>"]
@@ -7,7 +7,7 @@ license = "UNLICENSED"
 edition = "2021"
 
 [lib]
-name = "br_zeiten_lib"
+name = "br_log_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
