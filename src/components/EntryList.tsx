@@ -18,17 +18,24 @@ export default function EntryList({
   onNewEntry,
 }: Props) {
   const [term, setTerm] = useState("");
+  const [debouncedTerm, setDebouncedTerm] = useState("");
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [entries, setEntries] = useState<EntryListItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Suche entprellen (300 ms), damit nicht bei jedem Tastendruck abgefragt wird.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedTerm(term), 300);
+    return () => clearTimeout(id);
+  }, [term]);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
     listEntries({
-      term: term.trim() || undefined,
+      term: debouncedTerm.trim() || undefined,
       tagIds: tagIds.length ? tagIds : undefined,
       from: from || undefined,
       to: to || undefined,
@@ -42,10 +49,10 @@ export default function EntryList({
     return () => {
       active = false;
     };
-  }, [term, tagIds, from, to, reloadKey]);
+  }, [debouncedTerm, tagIds, from, to, reloadKey]);
 
   const totalMinutes = entries.reduce((s, e) => s + e.durationMinutes, 0);
-  const searching = term.trim().length > 0;
+  const searching = debouncedTerm.trim().length > 0;
 
   const toggleTag = (id: string) =>
     setTagIds((cur) =>

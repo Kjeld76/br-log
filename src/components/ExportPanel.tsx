@@ -139,6 +139,26 @@ export default function ExportPanel({ onImported }: Props) {
             <li>{pending.summary.unchanged} unverändert</li>
             <li>{pending.summary.newTags} neue Schlagwörter</li>
           </ul>
+
+          {pending.summary.conflictItems.length > 0 && (
+            <div className="mt-2 rounded border border-amber-200 bg-white/60 p-2">
+              <p className="text-xs font-semibold text-amber-900">
+                Diese {pending.summary.conflictItems.length} lokalen Einträge
+                würden überschrieben:
+              </p>
+              <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
+                {pending.summary.conflictItems.map((c) => (
+                  <li key={c.id} className="text-xs text-amber-900">
+                    <span className="font-medium">{c.date}</span> — {c.label}
+                    <span className="ml-1 text-amber-700/70">
+                      ({c.id.slice(0, 8)}…)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="mt-3 flex gap-2">
             <button
               type="button"

@@ -1,12 +1,7 @@
 import { useState } from "react";
 import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry } from "../db/repository";
-import {
-  durationFromRange,
-  minutesToHhmm,
-  durationInputToMinutes,
-  formatDurationLong,
-} from "../lib/time";
+import { computeDuration, minutesToHhmm, formatDurationLong } from "../lib/time";
 import ObjectionEditor from "./ObjectionEditor";
 
 interface Props {
@@ -18,29 +13,13 @@ interface Props {
 
 export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
   const [draft, setDraft] = useState<TimeEntry>(entry);
-  const [durationText, setDurationText] = useState<string>(
-    entry.durationMinutes > 0 ? minutesToHhmm(entry.durationMinutes) : ""
-  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const patch = (p: Partial<TimeEntry>) => setDraft((d) => ({ ...d, ...p }));
 
-  const onTimeChange = (which: "startTime" | "endTime", value: string) => {
-    const next = { ...draft, [which]: value || null };
-    setDraft(next);
-    const d = durationFromRange(next.startTime, next.endTime);
-    if (d !== null) {
-      setDurationText(minutesToHhmm(d));
-      patch({ [which]: value || null, durationMinutes: d } as Partial<TimeEntry>);
-    }
-  };
-
-  const onDurationTextChange = (value: string) => {
-    setDurationText(value);
-    const m = durationInputToMinutes(value);
-    if (m !== null) patch({ durationMinutes: m });
-  };
+  // Dauer ist IMMER aus Von/Bis abgeleitet (keine direkte Eingabe, kein Toggle).
+  const duration = computeDuration(draft.startTime, draft.endTime);
 
   const toggleTag = (id: string) =>
     patch({
@@ -49,27 +28,31 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         : [...draft.tagIds, id],
     });
 
-  const effectiveMinutes = (): number => {
-    const m = durationInputToMinutes(durationText);
-    if (m !== null) return m;
-    const r = durationFromRange(draft.startTime, draft.endTime);
-    return r ?? 0;
-  };
-
   const handleSave = async () => {
     setError(null);
     if (!draft.date) {
       setError("Bitte ein Datum angeben.");
       return;
     }
-    const minutes = effectiveMinutes();
-    if (minutes <= 0) {
-      setError("Bitte eine Dauer (Von/Bis oder Std:Min) angeben.");
+    if (!draft.startTime || !draft.endTime) {
+      setError("Bitte Von und Bis angeben.");
+      return;
+    }
+    if (duration.error) {
+      setError(duration.error);
+      return;
+    }
+    if (duration.minutes === null || duration.minutes <= 0) {
+      setError("Die Dauer muss größer als 0 sein.");
+      return;
+    }
+    if (!draft.infoForManagement.trim()) {
+      setError("Info für die Geschäftsleitung ist ein Pflichtfeld.");
       return;
     }
     setSaving(true);
     try {
-      await saveEntry({ ...draft, durationMinutes: minutes });
+      await saveEntry({ ...draft, durationMinutes: duration.minutes });
       onSaved();
     } catch (e) {
       setError(String(e));
@@ -86,7 +69,9 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
       {/* Datum + Zeit */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div className="sm:col-span-2">
-          <label className={labelCls}>Datum</label>
+          <label className={labelCls}>
+            Datum <span className="text-red-500">*</span>
+          </label>
           <input
             type="date"
             className={field}
@@ -95,37 +80,47 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
           />
         </div>
         <div>
-          <label className={labelCls}>Von</label>
+          <label className={labelCls}>
+            Von <span className="text-red-500">*</span>
+          </label>
           <input
             type="time"
             className={field}
             value={draft.startTime ?? ""}
-            onChange={(e) => onTimeChange("startTime", e.target.value)}
+            onChange={(e) => patch({ startTime: e.target.value || null })}
           />
         </div>
         <div>
-          <label className={labelCls}>Bis</label>
+          <label className={labelCls}>
+            Bis <span className="text-red-500">*</span>
+          </label>
           <input
             type="time"
             className={field}
             value={draft.endTime ?? ""}
-            onChange={(e) => onTimeChange("endTime", e.target.value)}
+            onChange={(e) => patch({ endTime: e.target.value || null })}
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className={labelCls}>Dauer (Std:Min oder Minuten)</label>
-          <input
-            className={field}
-            placeholder="z. B. 1:30 oder 90"
-            value={durationText}
-            onChange={(e) => onDurationTextChange(e.target.value)}
-          />
-          <p className="mt-1 text-xs text-slate-500">
-            = {formatDurationLong(effectiveMinutes())}
-          </p>
+      {/* Dauer – abgeleitet, readonly */}
+      <div>
+        <label className={labelCls}>Dauer (automatisch berechnet)</label>
+        <div
+          className={
+            "rounded border p-2 text-sm " +
+            (duration.error
+              ? "border-red-300 bg-red-50 text-red-700"
+              : "border-slate-200 bg-slate-50 text-slate-700")
+          }
+        >
+          {duration.error
+            ? duration.error
+            : duration.minutes !== null
+            ? `${minutesToHhmm(duration.minutes)} Std (${formatDurationLong(
+                duration.minutes
+              )})`
+            : "— wird aus Von/Bis berechnet —"}
         </div>
       </div>
 
@@ -159,22 +154,24 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         </div>
       </div>
 
-      {/* Info für GL */}
+      {/* Info für GL – Pflichtfeld */}
       <div>
-        <label className={labelCls}>Info für die Geschäftsleitung</label>
+        <label className={labelCls}>
+          Info für die Geschäftsleitung <span className="text-red-500">*</span>
+        </label>
         <textarea
           className={field}
           rows={2}
-          placeholder="Was die Geschäftsleitung erfahren darf"
+          placeholder="Was die Geschäftsleitung erfahren darf (Pflichtfeld)"
           value={draft.infoForManagement}
           onChange={(e) => patch({ infoForManagement: e.target.value })}
         />
       </div>
 
-      {/* Vertraulich */}
+      {/* Vertraulich – optional, kein Längenlimit */}
       <div className="confidential-block rounded p-3">
         <label className="mb-1 block text-sm font-semibold text-confidential-text">
-          🔒 Vertraulich – genaue Tätigkeit (BR-Geheimnis)
+          🔒 Vertraulich – genaue Tätigkeit (BR-Geheimnis, optional)
         </label>
         <textarea
           className="w-full rounded border border-red-200 bg-white p-2 text-sm"

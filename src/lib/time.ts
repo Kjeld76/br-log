@@ -23,6 +23,26 @@ export function durationFromRange(
   return d;
 }
 
+export interface DurationResult {
+  minutes: number | null; // null, solange Von/Bis unvollständig oder ungültig
+  error: string | null; // gesetzt bei negativem/leerem Zeitraum (Von >= Bis)
+}
+
+/**
+ * Strikte Dauer aus Von/Bis. Dauer ist immer abgeleitet (keine direkte Eingabe).
+ * Von >= Bis gilt als Fehler (kein negativer/leerer Zeitraum, keine Mitternachts-Annahme).
+ */
+export function computeDuration(
+  start: string | null,
+  end: string | null
+): DurationResult {
+  const s = parseTimeToMinutes(start);
+  const e = parseTimeToMinutes(end);
+  if (s === null || e === null) return { minutes: null, error: null };
+  if (e <= s) return { minutes: null, error: "Bis muss nach Von liegen." };
+  return { minutes: e - s, error: null };
+}
+
 /** Minuten -> "H:MM". */
 export function minutesToHhmm(total: number): string {
   const sign = total < 0 ? "-" : "";

@@ -58,10 +58,18 @@ export interface BackupPayload {
   entries: TimeEntry[];
 }
 
+// Ein konkret betroffener Eintrag in der Import-Konflikt-Preview.
+export interface ConflictItem {
+  id: string; // bereits lokal existierende UUID
+  date: string; // Datum des lokalen Eintrags, der überschrieben würde
+  label: string; // Kurzbeschreibung (Info/Schlagwörter) des lokalen Eintrags
+}
+
 // Ergebnis-Zusammenfassung der JSON-Import-Analyse (vor dem Schreiben).
 export interface ImportSummary {
   newEntries: number; // unbekannte UUIDs
   conflicts: number; // bekannte UUID, importierte Version neuer -> gewinnt
   unchanged: number; // bekannte UUID, gleich/älter -> bleibt lokal
   newTags: number; // fehlende Tags, die mit angelegt werden
+  conflictItems: ConflictItem[]; // konkret überschriebene lokale Einträge (Preview)
 }

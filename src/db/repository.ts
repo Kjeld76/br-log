@@ -461,19 +461,56 @@ export async function analyzeImport(
   let newEntries = 0;
   let conflicts = 0;
   let unchanged = 0;
+  const conflictIds: string[] = [];
   for (const e of payload.entries) {
     const localUpdated = localMap.get(e.id);
     if (localUpdated === undefined) newEntries++;
-    else if ((e.updatedAt || "") > localUpdated) conflicts++;
-    else unchanged++;
+    else if ((e.updatedAt || "") > localUpdated) {
+      conflicts++;
+      conflictIds.push(e.id); // wird überschrieben
+    } else unchanged++;
   }
+
+  // Konflikt-Preview: konkrete lokale Einträge, die überschrieben würden.
+  const conflictItems = [] as ImportSummary["conflictItems"];
+  if (conflictIds.length > 0) {
+    const ph = conflictIds.map(() => "?").join(",");
+    const rows = await db.select<
+      { id: string; date: string; info_for_management: string }[]
+    >(
+      `SELECT e.id, e.date, e.info_for_management FROM entries e WHERE e.id IN (${ph})`,
+      conflictIds
+    );
+    const labelById = new Map(
+      rows.map((r) => [r.id, { date: r.date, info: r.info_for_management }])
+    );
+    // Schlagwort-Labels als Fallback-Beschreibung
+    const tagRows = await db.select<{ entry_id: string; label: string }[]>(
+      `SELECT et.entry_id, t.label FROM entry_tags et JOIN task_tags t ON t.id = et.tag_id WHERE et.entry_id IN (${ph})`,
+      conflictIds
+    );
+    const tagsById = new Map<string, string[]>();
+    for (const tr of tagRows) {
+      const arr = tagsById.get(tr.entry_id) || [];
+      arr.push(tr.label);
+      tagsById.set(tr.entry_id, arr);
+    }
+    for (const id of conflictIds) {
+      const base = labelById.get(id);
+      const tagLabels = (tagsById.get(id) || []).join(", ");
+      const label =
+        (base?.info && base.info.trim()) || tagLabels || "(ohne Beschreibung)";
+      conflictItems.push({ id, date: base?.date ?? "?", label });
+    }
+  }
+
   const localTags = await db.select<{ id: string }[]>(
     "SELECT id FROM task_tags"
   );
   const localTagIds = new Set(localTags.map((t) => t.id));
   let newTags = 0;
   for (const t of payload.tags || []) if (!localTagIds.has(t.id)) newTags++;
-  return { newEntries, conflicts, unchanged, newTags };
+  return { newEntries, conflicts, unchanged, newTags, conflictItems };
 }
 
 /** Führt den Merge aus: bei UUID-Kollision gewinnt der neuere updated_at. */

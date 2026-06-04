@@ -6,6 +6,7 @@ export default function DbInfoPanel() {
   const [dir, setDir] = useState("");
   const [dbPath, setDbPath] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -32,6 +33,17 @@ export default function DbInfoPanel() {
     }
   };
 
+  const copyPath = async () => {
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(dbPath);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="rounded border border-slate-200 bg-white p-4">
@@ -44,14 +56,24 @@ export default function DbInfoPanel() {
         <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700">
           {dbPath || "Pfad wird ermittelt…"}
         </div>
-        <button
-          type="button"
-          className="mt-2 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-          onClick={reveal}
-          disabled={!dbPath}
-        >
-          Im Explorer anzeigen
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            onClick={copyPath}
+            disabled={!dbPath}
+          >
+            {copied ? "Pfad kopiert ✓" : "Pfad kopieren"}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            onClick={reveal}
+            disabled={!dbPath}
+          >
+            Im Explorer anzeigen
+          </button>
+        </div>
         {error && (
           <p className="mt-2 break-all text-xs text-red-600">{error}</p>
         )}
