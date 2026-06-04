@@ -100,7 +100,10 @@ Version ist nur wenige MB groß – ein einfacher USB-Stick genügt.
 ## Entwicklung
 
 Voraussetzungen: Node.js 20+, Rust (stable), und unter Windows die
-Visual-Studio-Build-Tools sowie WebView2.
+Visual-Studio-Build-Tools sowie WebView2. Für den verschlüsselten DB-Build
+(SQLCipher via gebundeltem OpenSSL) zusätzlich ein **natives Perl**
+(z. B. Strawberry Perl – das mit Git gelieferte msys-Perl funktioniert **nicht**).
+NASM ist optional (ohne NASM baut OpenSSL im langsameren `no-asm`-Modus).
 
 ```bash
 npm install

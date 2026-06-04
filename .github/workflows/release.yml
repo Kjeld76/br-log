@@ -27,6 +27,12 @@ jobs:
       - name: Rust-Toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # Vendored OpenSSL (SQLCipher) braucht NASM fuer die Assembly-Optimierung.
+      # Strawberry Perl ist auf windows-latest bereits vorhanden. Ohne NASM
+      # faellt openssl-src auf einen no-asm-Build zurueck (langsamer, baut aber).
+      - name: NASM (vendored OpenSSL)
+        uses: ilammy/setup-nasm@v1
+
       - name: Frontend-Abhängigkeiten installieren
         run: npm install
 
