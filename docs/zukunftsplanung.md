@@ -50,6 +50,12 @@ EXE auf dem Stick**, sodass die Daten mitreisen. Keine Installation.
      mitliefern; `tauri.conf.json` →
      `bundle.windows.webviewInstallMode = { type: "fixedRuntime", path: "./webview2/" }`.
      Läuft dann auf jedem PC ohne Internet/Install – aber großes Artefakt.
+   - **Auswirkung auf die Stick-Größe (für die Zielgruppe wichtig):** Die **schlanke**
+     Variante ist nur wenige MB – Stick-Größe egal. Die **voll portable** Variante belegt
+     durch die Runtime **~150 MB+**. Für BR-Mitglieder (keine IT) daher klare
+     **Mindestempfehlung: USB-Stick mit ≥ 2 GB** (komfortabel; ein 1-GB-Stick wird je
+     nach Datenmenge eng, ein 8-GB-Stick ist unkritisch). Diese Empfehlung gehört in die
+     Verteilungs-/README-Anleitung.
 
 4. **Verteilung:** ZIP mit `br-log.exe` + `portable.txt` (+ optional WebView2-Ordner +
    leerer `BR-Log-Data\`). Nutzer entpackt auf den Stick. CI-Schritt in
@@ -96,26 +102,48 @@ EXE auf dem Stick**, sodass die Daten mitreisen. Keine Installation.
   Unlock-Screen vor der App, Passwort ändern. *Klar dokumentiert: verschlüsselt die
   Datei noch nicht.*
 - **Phase 2 (richtig, vor breiter USB-Verteilung):** SQLCipher-Verschlüsselung mit
-  passwortabgeleitetem Schlüssel. Dasselbe Passwort **entsperrt** (Verifier) **und**
-  **entschlüsselt** (KDF) – in Phase 2 ist die Verschlüsselung selbst der Verifier
-  (kein separater Hash nötig). Einmalige Migration der bestehenden Klartext-DB →
-  verschlüsselt.
+  **Key-Wrapping**: Ein zufälliger **Datenschlüssel (DEK)** verschlüsselt die DB
+  (SQLCipher `PRAGMA key`). Der DEK wird **zweifach gekapselt** gespeichert – einmal
+  mit einem aus dem **Passwort** abgeleiteten Schlüssel (Argon2id) und einmal mit einem
+  aus dem **Recovery-Code** abgeleiteten Schlüssel. Dadurch entsperren **Passwort ODER
+  Recovery-Code** die DB, und ein Passwortwechsel erfordert nur das **Neu-Kapseln des
+  DEK** (kein Re-Encrypt der ganzen DB). Einmalige Migration der bestehenden
+  Klartext-DB → verschlüsselt.
 
 ### Schlüssel-/Secret-Handling
 
-- Passwort wird nie gespeichert; nur Argon2id-Hash (Phase 1) bzw. „falscher Schlüssel →
-  DB öffnet nicht" (Phase 2).
-- **Brute-Force-Schutz:** ansteigende Verzögerung nach Fehlversuchen.
-- **Recovery (wichtig):** Kein Passwort = keine Daten (by design). Daher
-  **Recovery-Code / regelmäßiger JSON-Export** als sichere Reserve empfehlen und
-  deutlich kommunizieren.
+- **Kein Klartext-Geheimnis gespeichert:** weder Passwort noch Recovery-Code liegen auf
+  der Platte; gespeichert werden nur die **gekapselten DEK-Blobs + Salts** (Phase 2)
+  bzw. ein Argon2id-Hash (Phase 1, Gate ohne Verschlüsselung). Ablage in einer kleinen
+  Keyfile neben der DB (`BR-Log-Data\keyfile.json`) bzw. einer Metadaten-Tabelle.
+- **Recovery-Code (konkret spezifiziert):**
+  - **Wann:** **einmalig** beim Setzen des Passworts erzeugt (sowie bei „Recovery-Code
+    neu erzeugen" in den Einstellungen). Wird **genau einmal angezeigt**.
+  - **Format:** 24 Zeichen aus einem verwechslungsarmen Alphabet (ohne `0/O`, `1/I/l`),
+    in 6er-Gruppen, z. B. `K7QF2M-9XR4TD-H3WPNB-6CYE8A`. (Alternativ BIP39-Wortliste,
+    falls leichter abzuschreiben – Entscheidung bei der Umsetzung.)
+  - **Funktion:** kapselt denselben DEK wie das Passwort (siehe Phase 2) → entsperrt die
+    DB auch bei vergessenem Passwort und erlaubt das Setzen eines neuen Passworts.
+  - **Wo aufbewahren:** **nicht in der App** – der Nutzer druckt/schreibt ihn auf und
+    verwahrt ihn sicher (z. B. Tresor). Der Setup-Screen erzwingt die Bestätigung „Code
+    gesichert" und bietet Drucken/Kopieren an.
+  - **Zusätzliche Reserve:** regelmäßiger **JSON-Export** an einen sicheren Ort
+    (zweiter Rettungsanker, falls auch der Code verloren geht).
+- **Brute-Force-Schutz:** ansteigende Verzögerung nach Fehlversuchen (Passwort und
+  Recovery-Code).
 - KDF: Argon2id mit vernünftigen Memory-/Time-Kosten.
 
 ### UX
 
-- Erststart: „Passwort festlegen". Folgestarts: Unlock-Screen **vor** der App (Gate in
-  `src/App.tsx`). Optional Auto-Lock bei Inaktivität. In „Über / Daten": Passwort ändern
-  / (Phase 2) neu verschlüsseln.
+- Erststart: „Passwort festlegen" **+ Recovery-Code anzeigen** (siehe oben).
+  Folgestarts: Unlock-Screen **vor** der App (Gate in `src/App.tsx`).
+- **Auto-Lock bei Inaktivität – ANFORDERUNG (nicht optional):** Auf einem geteilten PC
+  ist das für ein BR-Geheimnis Pflicht. Nach **konfigurierbarer Inaktivität (Default
+  5 Min)** sperrt die App automatisch und verlangt erneut das Passwort; zusätzlich ein
+  **„Jetzt sperren"-Button** und Sperren beim Minimieren/Verlassen des Fensters. In
+  Phase 2 wird beim Sperren der entschlüsselte Schlüssel **aus dem Speicher verworfen**.
+- In „Über / Daten": Passwort ändern, Recovery-Code neu erzeugen, Auto-Lock-Dauer
+  einstellen, (Phase 2) neu verschlüsseln.
 
 **Berührte Dateien (später):**
 
