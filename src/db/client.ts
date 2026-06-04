@@ -1,28 +1,49 @@
-import Database from "@tauri-apps/plugin-sql";
+import { invoke } from "@tauri-apps/api/core";
 import { SCHEMA_STATEMENTS } from "./schema";
 
-const DB_URL = "sqlite:br_zeiten.db";
+/**
+ * Dünner Datenbank-Shim. Bildet exakt das frühere `@tauri-apps/plugin-sql`-
+ * Interface nach (`execute(sql, params)` / `select<T>(sql, params)`), routet aber
+ * auf die eigenen Rust-Commands `db_execute` / `db_select` (rusqlite mit
+ * gebundeltem SQLite). Dadurch bleibt `repository.ts` unverändert.
+ *
+ * Hintergrund des Umbaus weg von tauri-plugin-sql/sqlx:
+ *  - gemeinsame Basis für portablen absoluten DB-Pfad (Issue #1) und spätere
+ *    SQLCipher-Verschlüsselung,
+ *  - FTS5 durch das gebundelte SQLite deterministisch verfügbar,
+ *  - keine prüfsummen-validierten Migrationen mehr (Schema idempotent in schema.ts).
+ */
+export interface Db {
+  execute(sql: string, params?: unknown[]): Promise<number>;
+  select<T>(sql: string, params?: unknown[]): Promise<T>;
+}
 
-let dbPromise: Promise<Database> | null = null;
+const db: Db = {
+  execute(sql, params = []) {
+    return invoke<number>("db_execute", { sql, params });
+  },
+  select<T>(sql: string, params: unknown[] = []) {
+    return invoke<T>("db_select", { sql, params });
+  },
+};
+
 let ftsAvailable = false;
 let initPromise: Promise<void> | null = null;
 let schemaPromise: Promise<void> | null = null;
 
-export function getDb(): Promise<Database> {
-  if (!dbPromise) dbPromise = Database.load(DB_URL);
-  return dbPromise;
+export function getDb(): Promise<Db> {
+  return Promise.resolve(db);
 }
 
 /**
  * Legt das Schema idempotent an (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE).
- * Ersetzt die früheren prüfsummen-validierten Migrationen von tauri-plugin-sql,
- * die je nach Zeilenenden (CRLF/LF) / Build-Umgebung unterschiedliche Prüfsummen
- * erzeugten und bestehende DBs mit "migration ... has been modified" brachen.
+ * Ersetzt die früheren prüfsummen-validierten Migrationen, die je nach
+ * Zeilenenden (CRLF/LF) / Build-Umgebung unterschiedliche Prüfsummen erzeugten
+ * und bestehende DBs mit "migration ... has been modified" brachen.
  */
 export async function initSchema(): Promise<void> {
   if (schemaPromise) return schemaPromise;
   schemaPromise = (async () => {
-    const db = await getDb();
     for (const stmt of SCHEMA_STATEMENTS) {
       await db.execute(stmt);
     }
@@ -38,11 +59,11 @@ export function isFtsAvailable(): boolean {
  * Initialisiert die FTS5-Volltextsuche ZUR LAUFZEIT (nicht in der Migration),
  * damit ein fehlendes FTS5 im SQLite-Build NICHT das Laden der DB blockiert.
  * Erfolg -> FTS5-Modus. Fehler -> LIKE-Fallback (siehe repository.searchHits).
+ * Mit dem gebundelten SQLite (rusqlite "bundled") ist FTS5 i. d. R. vorhanden.
  */
 export async function initSearch(): Promise<void> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    const db = await getDb();
     try {
       await db.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(entry_id UNINDEXED, public_content, secret_content)"
