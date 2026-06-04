@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
-import { appConfigDir, join } from "@tauri-apps/api/path";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+import { getDbPathInfo } from "../db/client";
 import { Icon } from "./Icon";
 
 export default function DbInfoPanel() {
   const [dir, setDir] = useState("");
   const [dbPath, setDbPath] = useState("");
+  const [portable, setPortable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const d = await appConfigDir();
-        setDir(d);
-        setDbPath(await join(d, "br_zeiten.db"));
+        const info = await getDbPathInfo();
+        setDir(info.dataDir);
+        setDbPath(info.dbFile);
+        setPortable(info.portable);
       } catch (e) {
         setError(String(e));
       }
@@ -53,13 +55,25 @@ export default function DbInfoPanel() {
   return (
     <div className="space-y-5">
       <section className={card}>
-        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
           Datenspeicher
+          <span
+            className={
+              "rounded px-1.5 py-0.5 text-[11px] font-medium " +
+              (portable
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300")
+            }
+          >
+            {portable ? "Portabel (USB)" : "Installiert"}
+          </span>
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">
           Alle Daten liegen ausschließlich lokal auf diesem Gerät – es gibt keinen
-          Server. Zum Sichern die Datei <code>br_zeiten.db</code> kopieren oder den
-          JSON-Export nutzen.
+          Server.
+          {portable
+            ? " Diese Version läuft portabel: Die Datenbank liegt im Ordner BR-Log-Data neben der EXE und wandert mit dem USB-Stick mit."
+            : " Zum Sichern die Datei br_zeiten.db kopieren oder den JSON-Export nutzen."}
         </p>
         <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
           {dbPath || "Pfad wird ermittelt…"}

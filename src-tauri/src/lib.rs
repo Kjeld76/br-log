@@ -1,15 +1,22 @@
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::Connection;
-use serde_json::{Map, Number, Value as JsonValue};
+use serde_json::{json, Map, Number, Value as JsonValue};
 use tauri::{Manager, State};
+
+mod db_location;
+use db_location::DbLocation;
 
 /// DB-State: das Ergebnis des einmaligen Verbindungsaufbaus. Bei Erfolg die
 /// offene Connection, sonst die Fehlermeldung. So paniert ein fehlgeschlagener
 /// Verbindungsaufbau NICHT beim Start, sondern wird über db_execute/db_select als
 /// Err ans Frontend gereicht und dort im "Fehler beim Start"-Screen angezeigt.
 type DbState = Mutex<Result<Connection, String>>;
+
+/// Aufgelöster DB-Pfad + Modus (portabel/installiert) – nur für die Anzeige.
+struct AppDbLocation(DbLocation);
 
 /// Schreibt eine Textdatei an einen beliebigen, vom Nutzer im Dialog gewählten
 /// Pfad. Eigene Command-Funktion statt fs-Plugin -> keine Scope-Konfiguration nötig.
@@ -119,20 +126,27 @@ fn db_select(
     Ok(out)
 }
 
-/// Öffnet die DB unter app_config_dir()/br_zeiten.db – exakt der Pfad, den zuvor
-/// `tauri-plugin-sql` für "sqlite:br_zeiten.db" benutzt hat (Datenkontinuität).
-/// Alle Fehler werden als String zurückgegeben (kein Panic) -> sichtbar in der UI.
-fn open_db(app: &tauri::App) -> Result<Connection, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Kein App-Konfigurationsverzeichnis: {e}"))?;
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Datenverzeichnis nicht anlegbar ({}): {e}", dir.display()))?;
-    let db_path = dir.join("br_zeiten.db");
-    eprintln!("BR-Log DB: {}", db_path.display());
-    let conn = Connection::open(&db_path)
-        .map_err(|e| format!("DB nicht öffnenbar ({}): {e}", db_path.display()))?;
+/// Liefert den aktuellen DB-Pfad + Modus an die UI (DbInfoPanel-Anzeige + Badge).
+/// Ersetzt die frühere Frontend-seitige Pfadberechnung via appConfigDir/join.
+#[tauri::command]
+fn db_path(state: State<'_, AppDbLocation>) -> JsonValue {
+    json!({
+        "dbFile": state.0.db_file.to_string_lossy(),
+        "dataDir": state.0.data_dir.to_string_lossy(),
+        "portable": state.0.portable,
+    })
+}
+
+/// Öffnet die DB an `db_file`. Alle Fehler werden als String zurückgegeben
+/// (kein Panic) -> sichtbar in der UI ("Fehler beim Start").
+fn open_db(db_file: &Path) -> Result<Connection, String> {
+    if let Some(parent) = db_file.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Datenverzeichnis nicht anlegbar ({}): {e}", parent.display()))?;
+    }
+    eprintln!("BR-Log DB: {}", db_file.display());
+    let conn = Connection::open(db_file)
+        .map_err(|e| format!("DB nicht öffnenbar ({}): {e}", db_file.display()))?;
     // Schadlos bei diesem Schema (keine FK-Klauseln); busy_timeout gegen
     // SQLITE_BUSY. journal_mode bleibt unangetastet (Kompatibilität).
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
@@ -148,18 +162,37 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Verbindungsaufbau-Ergebnis (Ok/Err) im State ablegen – ein Fehler
-            // beim Öffnen darf den Start nicht hart abbrechen, sondern wird beim
-            // ersten db_*-Aufruf als Err sichtbar (App.tsx zeigt ihn an).
-            let db: Result<Connection, String> = open_db(app);
-            app.manage::<DbState>(Mutex::new(db));
+            // DB-Pfad bestimmen (portabel neben EXE vs. installiert in %APPDATA%),
+            // dann öffnen. Fehler werden im DbState abgelegt (kein harter Start-Crash).
+            let (loc, db_result): (DbLocation, Result<Connection, String>) =
+                match app.path().app_config_dir() {
+                    Ok(cfg_dir) => {
+                        let loc = db_location::resolve(cfg_dir);
+                        let opened = open_db(&loc.db_file);
+                        (loc, opened)
+                    }
+                    Err(e) => (
+                        // Sentinel-Location -> db_path bleibt aufrufbar (kein Panic),
+                        // selbst wenn das Konfig-Verzeichnis nicht ermittelbar ist.
+                        DbLocation {
+                            db_file: PathBuf::new(),
+                            data_dir: PathBuf::new(),
+                            portable: false,
+                        },
+                        Err(format!("Kein App-Konfigurationsverzeichnis: {e}")),
+                    ),
+                };
+            // AppDbLocation IMMER managen, damit der db_path-Command nie paniert.
+            app.manage(AppDbLocation(loc));
+            app.manage::<DbState>(Mutex::new(db_result));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             write_text_file,
             read_text_file,
             db_execute,
-            db_select
+            db_select,
+            db_path
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

@@ -77,3 +77,21 @@ export async function initSearch(): Promise<void> {
   })();
   return initPromise;
 }
+
+/** DB-Pfad + Modus (portabel/installiert), wie von Rust ermittelt. */
+export interface DbPathInfo {
+  dbFile: string;
+  dataDir: string;
+  portable: boolean;
+}
+
+let dbPathPromise: Promise<DbPathInfo> | null = null;
+
+/**
+ * Absoluter DB-Pfad + Modus, von Rust bestimmt (portabler USB-Modus vs.
+ * Installation). Für die Anzeige im DbInfoPanel; session-weit gecacht.
+ */
+export function getDbPathInfo(): Promise<DbPathInfo> {
+  if (!dbPathPromise) dbPathPromise = invoke<DbPathInfo>("db_path");
+  return dbPathPromise;
+}
