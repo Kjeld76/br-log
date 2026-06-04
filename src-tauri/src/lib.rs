@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::Connection;
 use serde_json::{json, Map, Number, Value as JsonValue};
@@ -137,6 +140,61 @@ fn db_path(state: State<'_, AppDbLocation>) -> JsonValue {
     })
 }
 
+// ---------- Auth / Passwort-Gate (Issue #1, Login Phase 1) ----------
+// Argon2id-Hashing + Keyfile-IO. Die Keyfile (data_dir/keyfile.json) liegt
+// AUSSERHALB der DB, damit sie in Phase 2 (SQLCipher) VOR dem Entschlüsseln der
+// DB lesbar bleibt; im portablen Modus liegt sie neben der DB und wandert mit.
+// Phase 1 verschlüsselt die DB NICHT – das Gate schützt nur den App-Zugang.
+
+/// Erzeugt einen Argon2id-PHC-String (enthält Salt + Parameter) aus einem
+/// Klartext-Passwort. Default-Parameter von argon2 0.5 (Argon2id, v=19).
+#[tauri::command]
+fn argon2_hash(password: String) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// Prüft ein Passwort gegen einen Argon2id-PHC-String. Ein falsches Passwort ist
+/// KEIN Fehler, sondern Ok(false); nur echte Parser-/Backend-Fehler sind Err.
+#[tauri::command]
+fn argon2_verify(password: String, phc: String) -> Result<bool, String> {
+    let parsed = PasswordHash::new(&phc).map_err(|e| e.to_string())?;
+    match Argon2::default().verify_password(password.as_bytes(), &parsed) {
+        Ok(()) => Ok(true),
+        Err(argon2::password_hash::Error::Password) => Ok(false),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Liest die Auth-Keyfile (data_dir/keyfile.json). None, wenn keine existiert
+/// (= noch kein Passwort gesetzt).
+#[tauri::command]
+fn auth_read(state: State<'_, AppDbLocation>) -> Result<Option<String>, String> {
+    let path = state.0.data_dir.join("keyfile.json");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Keyfile nicht lesbar ({}): {e}", path.display())),
+    }
+}
+
+/// Schreibt die Auth-Keyfile (data_dir/keyfile.json) ATOMAR: erst in eine
+/// Temp-Datei, dann per rename über die Zieldatei (auf demselben Volume atomar).
+/// Verhindert eine leere/halbe keyfile.json bei Abbruch (z. B. USB-Stick gezogen)
+/// und damit ein stilles Zurückfallen in den Setup-Modus.
+#[tauri::command]
+fn auth_write(state: State<'_, AppDbLocation>, content: String) -> Result<(), String> {
+    let path = state.0.data_dir.join("keyfile.json");
+    let tmp = state.0.data_dir.join("keyfile.json.tmp");
+    std::fs::write(&tmp, content)
+        .map_err(|e| format!("Keyfile nicht schreibbar ({}): {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path)
+        .map_err(|e| format!("Keyfile nicht ersetzbar ({}): {e}", path.display()))
+}
+
 /// Öffnet die DB an `db_file`. Alle Fehler werden als String zurückgegeben
 /// (kein Panic) -> sichtbar in der UI ("Fehler beim Start").
 fn open_db(db_file: &Path) -> Result<Connection, String> {
@@ -192,7 +250,11 @@ pub fn run() {
             read_text_file,
             db_execute,
             db_select,
-            db_path
+            db_path,
+            argon2_hash,
+            argon2_verify,
+            auth_read,
+            auth_write
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

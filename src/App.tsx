@@ -4,10 +4,12 @@ import type { TimeEntry, TaskTag, EntryListItem } from "./types";
 import { initSchema, initSearch } from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
+import { isPasswordSet, getAutoLockMinutes, startIdleTimer } from "./lib/auth";
 import Sidebar, { type View } from "./components/Sidebar";
 import QuickEntryView from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
 import DataView from "./views/DataView";
+import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
 
@@ -23,6 +25,8 @@ function todayIso(): string {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(true); // gesperrt bis Setup/Unlock
+  const [autoLockMin, setAutoLockMin] = useState(5);
   const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
@@ -51,12 +55,45 @@ export default function App() {
         await initSchema();
         await initSearch();
         await loadTags();
+        setAutoLockMin(await getAutoLockMinutes());
+        // `locked` bleibt true; LockScreen entscheidet anhand isPasswordSet()
+        // selbst zwischen Setup (kein Passwort) und Unlock. Hier nur zur
+        // frühen Fehlererkennung des Keyfile-Zugriffs:
+        await isPasswordSet();
         setReady(true);
       } catch (e) {
         setInitError(String(e));
       }
     })();
   }, []);
+
+  // Auto-Lock bei Inaktivität (Pflicht) + Sperren beim Minimieren.
+  useEffect(() => {
+    if (!ready || locked) return;
+    const stopIdle = startIdleTimer(autoLockMin, () => setLocked(true));
+    let cancelled = false;
+    let unlistenMin: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        const u = await win.onResized(async () => {
+          if (await win.isMinimized()) setLocked(true);
+        });
+        // Falls der Effect-Cleanup schon lief, bevor onResized auflöste:
+        // sofort wieder abmelden (kein Listener-Leak).
+        if (cancelled) u();
+        else unlistenMin = u;
+      } catch {
+        // außerhalb von Tauri (z. B. reiner Vite-Dev) -> ignorieren
+      }
+    })();
+    return () => {
+      cancelled = true;
+      stopIdle();
+      unlistenMin?.();
+    };
+  }, [ready, locked, autoLockMin]);
 
   const openNew = (iso?: string) =>
     setModal({ type: "form", entry: newEntry(iso ?? todayIso()) });
@@ -96,9 +133,20 @@ export default function App() {
     );
   }
 
+  if (locked) {
+    return (
+      <LockScreen
+        onUnlocked={async () => {
+          setAutoLockMin(await getAutoLockMinutes());
+          setLocked(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex h-full">
-      <Sidebar view={view} onNavigate={setView} />
+      <Sidebar view={view} onNavigate={setView} onLockNow={() => setLocked(true)} />
 
       <main className="flex-1 overflow-y-auto">
         {view === "erfassen" && (
@@ -124,6 +172,8 @@ export default function App() {
               loadTags();
               bump();
             }}
+            onLockNow={() => setLocked(true)}
+            onAutoLockChanged={setAutoLockMin}
           />
         )}
       </main>

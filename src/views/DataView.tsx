@@ -2,12 +2,19 @@ import DbInfoPanel from "../components/DbInfoPanel";
 import ExportPanel from "../components/ExportPanel";
 import TagManager from "../components/TagManager";
 import ThemeToggle from "../components/ThemeToggle";
+import SecurityPanel from "../components/SecurityPanel";
 
 interface Props {
   onChanged: () => void; // Tags neu laden + Listen aktualisieren
+  onLockNow: () => void;
+  onAutoLockChanged: (minutes: number) => void;
 }
 
-export default function DataView({ onChanged }: Props) {
+export default function DataView({
+  onChanged,
+  onLockNow,
+  onAutoLockChanged,
+}: Props) {
   const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
 
   return (
@@ -26,6 +33,14 @@ export default function DataView({ onChanged }: Props) {
             <ThemeToggle />
           </div>
         </div>
+      </section>
+
+      <section>
+        <h3 className={heading}>Sicherheit</h3>
+        <SecurityPanel
+          onLockNow={onLockNow}
+          onAutoLockChanged={onAutoLockChanged}
+        />
       </section>
 
       <DbInfoPanel />

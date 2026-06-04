@@ -12,9 +12,10 @@ const NAV: { key: View; label: string; icon: IconName }[] = [
 interface Props {
   view: View;
   onNavigate: (v: View) => void;
+  onLockNow: () => void;
 }
 
-export default function Sidebar({ view, onNavigate }: Props) {
+export default function Sidebar({ view, onNavigate, onLockNow }: Props) {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       <div className="p-4">
@@ -45,6 +46,16 @@ export default function Sidebar({ view, onNavigate }: Props) {
           );
         })}
       </nav>
+
+      {/* App-Zugang sofort sperren (Passwort-Gate, Phase 1) */}
+      <button
+        type="button"
+        onClick={onLockNow}
+        className="mx-2 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+      >
+        <Icon name="lock" size={18} />
+        Jetzt sperren
+      </button>
 
       {/* Dauerhafte Datenschutzzusicherung (klickbar -> Über/Daten) */}
       <button
