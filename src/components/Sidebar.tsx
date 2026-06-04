@@ -47,7 +47,7 @@ export default function Sidebar({ view, onNavigate, onLockNow }: Props) {
         })}
       </nav>
 
-      {/* App-Zugang sofort sperren (Passwort-Gate, Phase 1) */}
+      {/* Sofort sperren – verwirft den Entschlüsselungs-Schlüssel aus dem RAM */}
       <button
         type="button"
         onClick={onLockNow}

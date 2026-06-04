@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem } from "./types";
-import { initSchema, initSearch } from "./db/client";
+import { initSchema, initSearch, resetDbCaches } from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
-import { isPasswordSet, getAutoLockMinutes, startIdleTimer } from "./lib/auth";
+import {
+  type StartMode,
+  getStartStatus,
+  getAutoLockMinutes,
+  startIdleTimer,
+  lock,
+} from "./lib/auth";
 import Sidebar, { type View } from "./components/Sidebar";
 import QuickEntryView from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
@@ -23,9 +29,11 @@ function todayIso(): string {
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false);
+  const [startMode, setStartMode] = useState<"loading" | StartMode>("loading");
+  const [startMessage, setStartMessage] = useState<string | undefined>();
+  const [locked, setLocked] = useState(true); // gesperrt bis Setup/Migration/Unlock
+  const [ready, setReady] = useState(false); // DB entsperrt + Schema initialisiert
   const [initError, setInitError] = useState<string | null>(null);
-  const [locked, setLocked] = useState(true); // gesperrt bis Setup/Unlock
   const [autoLockMin, setAutoLockMin] = useState(5);
   const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
@@ -49,28 +57,52 @@ export default function App() {
     });
   }, []);
 
+  // Startentscheidung: firstRun / needsMigration / encrypted / error.
   useEffect(() => {
     (async () => {
       try {
-        await initSchema();
-        await initSearch();
-        await loadTags();
-        setAutoLockMin(await getAutoLockMinutes());
-        // `locked` bleibt true; LockScreen entscheidet anhand isPasswordSet()
-        // selbst zwischen Setup (kein Passwort) und Unlock. Hier nur zur
-        // frühen Fehlererkennung des Keyfile-Zugriffs:
-        await isPasswordSet();
-        setReady(true);
+        const s = await getStartStatus();
+        setAutoLockMin(s.autoLockMinutes);
+        setStartMessage(s.message);
+        setStartMode(s.mode);
       } catch (e) {
-        setInitError(String(e));
+        setStartMessage(String(e));
+        setStartMode("error");
       }
     })();
   }, []);
 
+  // Nach erfolgreichem Entsperren/Einrichten: neue keyed Connection -> Schema
+  // frisch initialisieren, dann App freigeben.
+  const handleUnlocked = async () => {
+    try {
+      resetDbCaches();
+      await initSchema();
+      await initSearch();
+      await loadTags();
+      setAutoLockMin(await getAutoLockMinutes());
+      setInitError(null);
+      setReady(true);
+      setStartMode("encrypted"); // ab jetzt ist die DB verschlüsselt -> Unlock
+      setLocked(false);
+    } catch (e) {
+      setInitError(String(e));
+      setLocked(false); // raus aus dem LockScreen, Fehler anzeigen
+    }
+  };
+
+  // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
+  const doLock = () => {
+    void lock().finally(() => {
+      setReady(false);
+      setLocked(true);
+    });
+  };
+
   // Auto-Lock bei Inaktivität (Pflicht) + Sperren beim Minimieren.
   useEffect(() => {
     if (!ready || locked) return;
-    const stopIdle = startIdleTimer(autoLockMin, () => setLocked(true));
+    const stopIdle = startIdleTimer(autoLockMin, doLock);
     let cancelled = false;
     let unlistenMin: (() => void) | undefined;
     (async () => {
@@ -78,10 +110,8 @@ export default function App() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         const u = await win.onResized(async () => {
-          if (await win.isMinimized()) setLocked(true);
+          if (await win.isMinimized()) doLock();
         });
-        // Falls der Effect-Cleanup schon lief, bevor onResized auflöste:
-        // sofort wieder abmelden (kein Listener-Leak).
         if (cancelled) u();
         else unlistenMin = u;
       } catch {
@@ -93,6 +123,7 @@ export default function App() {
       stopIdle();
       unlistenMin?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, locked, autoLockMin]);
 
   const openNew = (iso?: string) =>
@@ -116,19 +147,10 @@ export default function App() {
     setModal({ type: "form", entry: fresh });
   };
 
-  if (!ready) {
+  if (startMode === "loading") {
     return (
       <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
-        {initError ? (
-          <div className="max-w-md p-4 text-center">
-            <p className="font-medium text-red-600 dark:text-red-400">
-              Fehler beim Start
-            </p>
-            <p className="mt-1 break-all text-sm">{initError}</p>
-          </div>
-        ) : (
-          "Datenbank wird initialisiert…"
-        )}
+        Wird geladen…
       </div>
     );
   }
@@ -136,17 +158,37 @@ export default function App() {
   if (locked) {
     return (
       <LockScreen
-        onUnlocked={async () => {
-          setAutoLockMin(await getAutoLockMinutes());
-          setLocked(false);
-        }}
+        startMode={startMode}
+        startMessage={startMessage}
+        onUnlocked={handleUnlocked}
       />
+    );
+  }
+
+  if (initError) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
+        <div className="max-w-md p-4 text-center">
+          <p className="font-medium text-red-600 dark:text-red-400">
+            Fehler beim Start
+          </p>
+          <p className="mt-1 break-all text-sm">{initError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
+        Daten werden geladen…
+      </div>
     );
   }
 
   return (
     <div className="flex h-full">
-      <Sidebar view={view} onNavigate={setView} onLockNow={() => setLocked(true)} />
+      <Sidebar view={view} onNavigate={setView} onLockNow={doLock} />
 
       <main className="flex-1 overflow-y-auto">
         {view === "erfassen" && (
@@ -172,7 +214,7 @@ export default function App() {
               loadTags();
               bump();
             }}
-            onLockNow={() => setLocked(true)}
+            onLockNow={doLock}
             onAutoLockChanged={setAutoLockMin}
           />
         )}

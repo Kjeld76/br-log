@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   changePassword,
+  regenerateRecovery,
   getAutoLockMinutes,
   setAutoLockMinutes,
 } from "../lib/auth";
+import RecoveryCodeReveal from "./RecoveryCodeReveal";
 
 interface Props {
   onLockNow: () => void;
@@ -19,6 +21,12 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged }: Props) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [lockMin, setLockMin] = useState(5);
+
+  // Recovery-Code neu erzeugen
+  const [rcPw, setRcPw] = useState("");
+  const [rcBusy, setRcBusy] = useState(false);
+  const [rcError, setRcError] = useState<string | null>(null);
+  const [newCode, setNewCode] = useState<string | null>(null);
 
   useEffect(() => {
     getAutoLockMinutes().then(setLockMin);
@@ -43,14 +51,26 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged }: Props) {
       setOldPw("");
       setNewPw("");
       setNewPw2("");
-      setMsg({ ok: true, text: "Passwort geändert." });
+      setMsg({ ok: true, text: "Passwort geändert. Der Wiederherstellungs-Code bleibt gültig." });
     } catch (err) {
-      setMsg({
-        ok: false,
-        text: String(err instanceof Error ? err.message : err),
-      });
+      setMsg({ ok: false, text: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitRegenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRcError(null);
+    setRcBusy(true);
+    try {
+      const code = await regenerateRecovery(rcPw);
+      setRcPw("");
+      setNewCode(code);
+    } catch (err) {
+      setRcError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRcBusy(false);
     }
   };
 
@@ -114,6 +134,40 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged }: Props) {
 
       <section className={card}>
         <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Wiederherstellungs-Code
+        </h4>
+        {newCode ? (
+          <RecoveryCodeReveal
+            code={newCode}
+            confirmLabel="Fertig"
+            onConfirmed={() => setNewCode(null)}
+          />
+        ) : (
+          <form onSubmit={submitRegenerate} className="space-y-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Erzeugt einen neuen Code; der alte wird ungültig. Zur Bestätigung das
+              aktuelle Passwort eingeben.
+            </p>
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="Aktuelles Passwort"
+              className={input}
+              value={rcPw}
+              onChange={(e) => setRcPw(e.target.value)}
+            />
+            <button type="submit" className={outlineBtn} disabled={rcBusy || !rcPw}>
+              {rcBusy ? "Wird erzeugt…" : "Neuen Code erzeugen"}
+            </button>
+            {rcError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{rcError}</p>
+            )}
+          </form>
+        )}
+      </section>
+
+      <section className={card}>
+        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
           Automatische Sperre
         </h4>
         <div className="flex flex-wrap items-center gap-3">
@@ -136,9 +190,9 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged }: Props) {
           </button>
         </div>
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Der App-Zugang wird nach dieser Zeit ohne Aktivität sowie beim
-          Minimieren des Fensters gesperrt. Hinweis: In dieser Version schützt das
-          Passwort nur den App-Zugang, nicht die Datenbank-Datei selbst.
+          Nach dieser Zeit ohne Aktivität sowie beim Minimieren des Fensters wird
+          gesperrt. Beim Sperren wird der Entschlüsselungs-Schlüssel aus dem
+          Speicher entfernt – die Datei ist dann wieder vollständig verschlüsselt.
         </p>
       </section>
     </div>

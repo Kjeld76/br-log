@@ -36,6 +36,16 @@ export function getDb(): Promise<Db> {
 }
 
 /**
+ * Setzt die Init-Caches zurück. Nach jedem Entsperren (Phase 2) wird eine NEUE
+ * keyed Connection geöffnet; Schema/FTS müssen dann erneut idempotent laufen.
+ */
+export function resetDbCaches(): void {
+  schemaPromise = null;
+  initPromise = null;
+  ftsAvailable = false;
+}
+
+/**
  * Legt das Schema idempotent an (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE).
  * Ersetzt die früheren prüfsummen-validierten Migrationen, die je nach
  * Zeilenenden (CRLF/LF) / Build-Umgebung unterschiedliche Prüfsummen erzeugten
@@ -83,6 +93,7 @@ export interface DbPathInfo {
   dbFile: string;
   dataDir: string;
   portable: boolean;
+  hasPlaintextBackup: boolean;
 }
 
 let dbPathPromise: Promise<DbPathInfo> | null = null;

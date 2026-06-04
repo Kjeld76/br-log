@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { isPasswordSet, setupPassword, verifyPassword } from "../lib/auth";
+import {
+  type StartMode,
+  setupEncryption,
+  migrate,
+  unlockWithPassword,
+  unlockWithRecovery,
+  validatePasswordPolicy,
+  UnlockError,
+} from "../lib/auth";
+import RecoveryCodeReveal from "../components/RecoveryCodeReveal";
 
 interface Props {
-  /** Wird nach erfolgreichem Setup/Unlock aufgerufen → App freigeben. */
+  startMode: StartMode;
+  startMessage?: string;
+  /** Wird aufgerufen, sobald die DB entsperrt/eingerichtet ist → App freigeben. */
   onUnlocked: () => void;
 }
 
@@ -12,23 +23,20 @@ function backoffSeconds(failCount: number): number {
   return Math.min(30, 2 ** (failCount - 2));
 }
 
-export default function LockScreen({ onUnlocked }: Props) {
-  const [mode, setMode] = useState<"loading" | "setup" | "unlock">("loading");
+export default function LockScreen({ startMode, startMessage, onUnlocked }: Props) {
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fails, setFails] = useState(0);
-  const [lockUntil, setLockUntil] = useState(0); // epoch ms
-  const [, force] = useState(0); // re-render für Countdown
+  const [lockUntil, setLockUntil] = useState(0);
+  const [, force] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    isPasswordSet().then((set) => setMode(set ? "unlock" : "setup"));
-  }, []);
-
-  // Countdown-Ticker, solange eine Sperre aktiv ist. Stoppt sich selbst, sobald
-  // die Sperrzeit abgelaufen ist (sonst läuft das Interval endlos weiter).
+  // Countdown-Ticker, stoppt sich selbst nach Ablauf.
   useEffect(() => {
     if (lockUntil <= Date.now()) return;
     const id = window.setInterval(() => {
@@ -40,23 +48,71 @@ export default function LockScreen({ onUnlocked }: Props) {
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, [mode]);
+  }, [startMode, useRecovery]);
 
   const remaining = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000));
   const locked = remaining > 0;
 
-  const handleSetup = async () => {
+  const input =
+    "w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
+  const primaryBtn =
+    "w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
+
+  const shell = (children: React.ReactNode) => (
+    <div className="flex h-full items-center justify-center bg-slate-50 p-4 dark:bg-slate-900">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        {children}
+      </div>
+    </div>
+  );
+
+  // --- Recovery-Code-Anzeige nach Setup/Migration ---
+  if (recoveryCode) {
+    return shell(
+      <RecoveryCodeReveal
+        code={recoveryCode}
+        confirmLabel="Weiter zur App"
+        onConfirmed={onUnlocked}
+      />
+    );
+  }
+
+  // --- Fehlerzustand (z. B. Keyfile beschädigt) ---
+  if (startMode === "error") {
+    return shell(
+      <div className="space-y-2 text-center">
+        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
+        <p className="font-medium text-red-600 dark:text-red-400">
+          Start nicht möglich
+        </p>
+        <p className="break-all text-sm text-slate-600 dark:text-slate-300">
+          {startMessage || "Die Schlüsseldatei konnte nicht gelesen werden."}
+        </p>
+      </div>
+    );
+  }
+
+  const isUnlock = startMode === "encrypted";
+  const isMigrate = startMode === "needsMigration";
+
+  const handleSetupOrMigrate = async () => {
     setError(null);
     if (pw !== pw2) {
       setError("Die Passwörter stimmen nicht überein.");
       return;
     }
+    try {
+      validatePasswordPolicy(pw);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     setBusy(true);
     try {
-      await setupPassword(pw);
-      onUnlocked();
+      const code = isMigrate ? await migrate(pw) : await setupEncryption(pw);
+      setRecoveryCode(code);
     } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -67,21 +123,23 @@ export default function LockScreen({ onUnlocked }: Props) {
     setError(null);
     setBusy(true);
     try {
-      const ok = await verifyPassword(pw);
-      if (ok) {
-        onUnlocked();
-        return;
-      }
-      const next = fails + 1;
-      setFails(next);
-      setPw("");
-      const wait = backoffSeconds(next);
-      if (wait > 0) setLockUntil(Date.now() + wait * 1000);
-      setError(
-        wait > 0 ? `Falsches Passwort. Bitte ${wait}s warten.` : "Falsches Passwort."
-      );
+      if (useRecovery) await unlockWithRecovery(recoveryInput);
+      else await unlockWithPassword(pw);
+      onUnlocked();
+      return;
     } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
+      const ue = e as UnlockError;
+      if (ue && ue.kind === "wrongSecret") {
+        const next = fails + 1;
+        setFails(next);
+        setPw("");
+        setRecoveryInput("");
+        const wait = backoffSeconds(next);
+        if (wait > 0) setLockUntil(Date.now() + wait * 1000);
+        setError(wait > 0 ? `Falsch. Bitte ${wait}s warten.` : ue.message);
+      } else {
+        setError(ue?.message || String(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -89,106 +147,119 @@ export default function LockScreen({ onUnlocked }: Props) {
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === "setup") void handleSetup();
-    else void handleUnlock();
+    if (isUnlock) void handleUnlock();
+    else void handleSetupOrMigrate();
   };
 
-  const input =
-    "w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
-  const primaryBtn =
-    "w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
+  const subtitle = isUnlock
+    ? "Zum Entsperren Passwort eingeben"
+    : isMigrate
+      ? "Vorhandene Daten verschlüsseln"
+      : "Passwort festlegen";
 
-  return (
-    <div className="flex h-full items-center justify-center bg-slate-50 p-4 dark:bg-slate-900">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+  return shell(
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="text-center">
+        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+      </div>
+
+      {!isUnlock && (
+        <p className="rounded bg-sky-50 p-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">
+          {isMigrate
+            ? "Die vorhandenen Daten werden jetzt mit SQLCipher (AES-256) verschlüsselt. Eine unverschlüsselte Sicherungskopie wird angelegt; sie kann anschließend unter Über / Daten gelöscht werden."
+            : "Die Datenbank wird mit SQLCipher (AES-256) verschlüsselt. Ohne Passwort bzw. Wiederherstellungs-Code sind die Daten nicht lesbar."}
+        </p>
+      )}
+
+      {isUnlock ? (
+        useRecovery ? (
+          <input
+            ref={inputRef}
+            type="text"
+            autoComplete="off"
+            placeholder="Wiederherstellungs-Code"
+            className={input + " font-mono"}
+            value={recoveryInput}
+            onChange={(e) => setRecoveryInput(e.target.value)}
+            disabled={locked}
+          />
+        ) : (
+          <input
+            ref={inputRef}
+            type="password"
+            autoComplete="current-password"
+            placeholder="Passwort"
+            className={input}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            disabled={locked}
+          />
+        )
+      ) : (
+        <>
+          <input
+            ref={inputRef}
+            type="password"
+            autoComplete="new-password"
+            placeholder="Passwort (min. 8 Zeichen)"
+            className={input}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+          />
+          <input
+            type="password"
+            autoComplete="new-password"
+            placeholder="Passwort wiederholen"
+            className={input}
+            value={pw2}
+            onChange={(e) => setPw2(e.target.value)}
+          />
+        </>
+      )}
+
+      <button
+        type="submit"
+        className={primaryBtn}
+        disabled={
+          busy ||
+          (isUnlock && (locked || (useRecovery ? !recoveryInput : !pw))) ||
+          (!isUnlock && (!pw || !pw2))
+        }
       >
-        <div className="text-center">
-          <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-            BR-Log
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {mode === "loading"
-              ? ""
-              : mode === "setup"
-                ? "Passwort festlegen"
-                : "Passwort eingeben zum Entsperren"}
-          </p>
-        </div>
+        {isUnlock
+          ? locked
+            ? `Gesperrt – ${remaining}s`
+            : busy
+              ? "Wird geprüft…"
+              : "Entsperren"
+          : busy
+            ? isMigrate
+              ? "Wird verschlüsselt…"
+              : "Wird eingerichtet…"
+            : isMigrate
+              ? "Jetzt verschlüsseln"
+              : "Passwort festlegen"}
+      </button>
 
-        {mode === "loading" && (
-          <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-            Wird geladen…
-          </p>
-        )}
+      {isUnlock && (
+        <button
+          type="button"
+          className="w-full text-center text-xs text-sky-700 hover:underline dark:text-sky-300"
+          onClick={() => {
+            setUseRecovery((v) => !v);
+            setError(null);
+          }}
+        >
+          {useRecovery
+            ? "Stattdessen Passwort verwenden"
+            : "Passwort vergessen? Mit Wiederherstellungs-Code entsperren"}
+        </button>
+      )}
 
-        {mode === "setup" && (
-          <>
-            <p className="rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-              Hinweis: Dieses Passwort schützt nur den App-Zugang. Die
-              Datenbank-Datei bleibt in dieser Version unverschlüsselt. Eine echte
-              Verschlüsselung folgt in einer späteren Version.
-            </p>
-            <input
-              ref={inputRef}
-              type="password"
-              autoComplete="new-password"
-              placeholder="Neues Passwort (min. 8 Zeichen)"
-              className={input}
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-            />
-            <input
-              type="password"
-              autoComplete="new-password"
-              placeholder="Passwort wiederholen"
-              className={input}
-              value={pw2}
-              onChange={(e) => setPw2(e.target.value)}
-            />
-            <button
-              type="submit"
-              className={primaryBtn}
-              disabled={busy || !pw || !pw2}
-            >
-              {busy ? "Wird gespeichert…" : "Passwort festlegen"}
-            </button>
-          </>
-        )}
-
-        {mode === "unlock" && (
-          <>
-            <input
-              ref={inputRef}
-              type="password"
-              autoComplete="current-password"
-              placeholder="Passwort"
-              className={input}
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              disabled={locked}
-            />
-            <button
-              type="submit"
-              className={primaryBtn}
-              disabled={busy || locked || !pw}
-            >
-              {locked
-                ? `Gesperrt – ${remaining}s`
-                : busy
-                  ? "Wird geprüft…"
-                  : "Entsperren"}
-            </button>
-          </>
-        )}
-
-        {error && (
-          <p className="text-center text-sm text-red-600 dark:text-red-400">
-            {error}
-          </p>
-        )}
-      </form>
-    </div>
+      {error && (
+        <p className="text-center text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </form>
   );
 }

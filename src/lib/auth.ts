@@ -1,153 +1,174 @@
-// Passwort-Gate Phase 1 (UI-Login, KEINE DB-Verschlüsselung).
-// Speichert ausschließlich einen Argon2id-PHC-String (Hash + Salt + Parameter)
-// in keyfile.json im Datenverzeichnis (neben der DB) – nie das Klartext-Passwort.
-// Argon2 läuft in Rust.
-//
-// Warum keyfile.json (nicht in der DB): Phase 2 (SQLCipher) verschlüsselt die DB;
-// das Auth-Material muss VOR dem Entschlüsseln lesbar sein. Die Keyfile liegt
-// außerhalb der DB (im selben Ordner -> wandert im portablen Modus mit) und wird
-// in Phase 2 um das Key-Wrapping (gekapselte DEK) erweitert.
-//
-// WICHTIG: Das Gate schützt nur den App-Zugang, NICHT die Datei. Echte
-// Vertraulichkeit erst mit Phase 2 (Verschlüsselung).
+// Verschlüsselter Login (Issue #1, Phase 2). Die DB ist mit SQLCipher
+// verschlüsselt; entsperrt wird mit Passwort ODER Recovery-Code. Die gesamte
+// Krypto (DEK, Key-Wrapping, Argon2id) läuft in Rust – hier nur dünne
+// Command-Wrapper. Nichts Geheimes (Passwort, Code, Schlüssel) wird im
+// Frontend gespeichert.
 
 import { invoke } from "@tauri-apps/api/core";
 
-interface Keyfile {
-  version: number;
-  argon2: string; // PHC-String (Hash + Salt + Parameter)
-  autoLockMinutes: number;
-}
-
-const KEYFILE_VERSION = 1;
-const DEFAULT_AUTOLOCK_MIN = 5;
 const MIN_AUTOLOCK_MIN = 1;
 const MAX_AUTOLOCK_MIN = 120;
 
-// Session-Cache der Keyfile (einziger Storage-Berührpunkt).
-// undefined = noch nicht geladen, null = keine Keyfile vorhanden.
-let cache: Keyfile | null | undefined;
+export type StartMode =
+  | "firstRun" // keine DB -> Erst-Einrichtung
+  | "needsMigration" // Klartext-DB -> verschlüsseln
+  | "encrypted" // verschlüsselte DB -> entsperren
+  | "error"; // Keyfile beschädigt o. Ä.
 
-async function readKeyfile(): Promise<Keyfile | null> {
-  if (cache !== undefined) return cache;
-  const raw = await invoke<string | null>("auth_read");
-  if (raw === null) {
-    // Datei existiert nicht -> noch kein Passwort gesetzt (Setup ist legitim).
-    cache = null;
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Keyfile;
-    if (!parsed || typeof parsed.argon2 !== "string" || !parsed.argon2) {
-      throw new Error("unvollständig");
-    }
-    cache = parsed;
-    return cache;
-  } catch {
-    // Datei existiert, ist aber kaputt/leer -> NICHT als "kein Passwort" behandeln,
-    // sonst erschiene der Setup-Screen und ein neues Passwort könnte das alte Gate
-    // überschreiben. Stattdessen klaren Fehler werfen (App zeigt Startfehler).
-    throw new Error(
-      "Die Schlüsseldatei (keyfile.json) ist beschädigt oder unvollständig. " +
-        "Bitte aus einem Backup wiederherstellen."
-    );
+export interface StartStatus {
+  mode: StartMode;
+  autoLockMinutes: number;
+  message?: string;
+}
+
+export type UnlockErrorKind = "wrongSecret" | "corrupt" | "dbError";
+
+/** Strukturierter Entsperr-Fehler: nur `wrongSecret` löst Backoff aus. */
+export class UnlockError extends Error {
+  kind: UnlockErrorKind;
+  constructor(kind: UnlockErrorKind, message: string) {
+    super(message);
+    this.kind = kind;
   }
 }
 
-async function writeKeyfile(kf: Keyfile): Promise<void> {
-  // Cache erst NACH erfolgreichem Schreiben setzen, damit In-Memory- und
-  // Platten-Zustand bei einem Schreibfehler nicht auseinanderlaufen.
-  await invoke("auth_write", { content: JSON.stringify(kf, null, 2) });
-  cache = kf;
+function toUnlockError(e: unknown): UnlockError {
+  const obj = e as { kind?: string; message?: string } | null;
+  const kind: UnlockErrorKind =
+    obj?.kind === "wrongSecret" || obj?.kind === "corrupt" || obj?.kind === "dbError"
+      ? obj.kind
+      : "dbError";
+  const message =
+    kind === "wrongSecret"
+      ? "Falsches Passwort bzw. Wiederherstellungs-Code."
+      : obj?.message || (typeof e === "string" ? e : "Entsperren fehlgeschlagen.");
+  return new UnlockError(kind, message);
 }
 
-// --- öffentliche API --------------------------------------------------------
+let statusCache: StartStatus | undefined;
 
-/** True, wenn bereits ein Passwort festgelegt wurde. */
-export async function isPasswordSet(): Promise<boolean> {
-  const kf = await readKeyfile();
-  return !!kf && typeof kf.argon2 === "string" && kf.argon2.length > 0;
+/** Startentscheidung vom Rust-Backend (firstRun/needsMigration/encrypted/error). */
+export async function getStartStatus(): Promise<StartStatus> {
+  if (statusCache) return statusCache;
+  statusCache = await invoke<StartStatus>("db_status");
+  return statusCache;
 }
 
-/** Legt erstmalig ein Passwort fest (Ersteinrichtung). */
-export async function setupPassword(password: string): Promise<void> {
-  if (await isPasswordSet()) {
-    throw new Error("Es ist bereits ein Passwort gesetzt.");
-  }
-  validatePasswordPolicy(password);
-  const phc = await invoke<string>("argon2_hash", { password });
-  await writeKeyfile({
-    version: KEYFILE_VERSION,
-    argon2: phc,
-    autoLockMinutes: DEFAULT_AUTOLOCK_MIN,
-  });
+function invalidateStatus() {
+  statusCache = undefined;
 }
 
-/** Prüft ein Passwort gegen den gespeicherten Argon2id-Hash. */
-export async function verifyPassword(password: string): Promise<boolean> {
-  const kf = await readKeyfile();
-  if (!kf || !kf.argon2) return false;
-  return invoke<boolean>("argon2_verify", { password, phc: kf.argon2 });
-}
-
-/** Ändert das Passwort. Das alte muss korrekt sein. */
-export async function changePassword(
-  oldPassword: string,
-  newPassword: string
-): Promise<void> {
-  const kf = await readKeyfile();
-  if (!kf || !(await verifyPassword(oldPassword))) {
-    throw new Error("Das aktuelle Passwort ist falsch.");
-  }
-  validatePasswordPolicy(newPassword);
-  const phc = await invoke<string>("argon2_hash", { password: newPassword });
-  await writeKeyfile({ ...kf, version: KEYFILE_VERSION, argon2: phc });
-}
-
-/** Mindest-Policy für das Passwort (bewusst schlank in Phase 1). */
+/** Mindest-Policy für das Passwort (bewusst schlank). */
 export function validatePasswordPolicy(password: string): void {
   if (password.length < 8) {
     throw new Error("Das Passwort muss mindestens 8 Zeichen lang sein.");
   }
 }
 
-// --- Auto-Lock-Dauer --------------------------------------------------------
+/**
+ * Erst-Einrichtung (keine bestehende DB): legt eine neue verschlüsselte DB an.
+ * Gibt den Recovery-Code (Anzeigeform) zurück – nur hier einmalig.
+ */
+export async function setupEncryption(password: string): Promise<string> {
+  validatePasswordPolicy(password);
+  const r = await invoke<{ recoveryCode: string }>("crypto_setup", { password });
+  invalidateStatus();
+  return r.recoveryCode;
+}
+
+/**
+ * Migration einer bestehenden Klartext-DB in eine verschlüsselte. `password`
+ * ist das neue Passwort. Gibt den Recovery-Code zurück.
+ */
+export async function migrate(password: string): Promise<string> {
+  validatePasswordPolicy(password);
+  const r = await invoke<{ recoveryCode: string }>("crypto_migrate", { password });
+  invalidateStatus();
+  return r.recoveryCode;
+}
+
+async function doUnlock(secret: string, kind: "password" | "recovery"): Promise<void> {
+  try {
+    await invoke("crypto_unlock", { secret, kind });
+  } catch (e) {
+    throw toUnlockError(e);
+  }
+}
+
+export function unlockWithPassword(password: string): Promise<void> {
+  return doUnlock(password, "password");
+}
+
+export function unlockWithRecovery(code: string): Promise<void> {
+  return doUnlock(code, "recovery");
+}
+
+/** Sperren: Rust dropt die Connection und verwirft den Schlüssel aus dem RAM. */
+export async function lock(): Promise<void> {
+  await invoke("crypto_lock");
+}
+
+/** Passwort ändern (DEK wird nur neu gekapselt; Recovery-Code bleibt gültig). */
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string
+): Promise<void> {
+  validatePasswordPolicy(newPassword);
+  try {
+    await invoke("crypto_change_password", { oldPassword, newPassword });
+  } catch (e) {
+    throw toUnlockError(e);
+  }
+}
+
+/** Neuen Recovery-Code erzeugen (altes Passwort bestätigt Besitz). */
+export async function regenerateRecovery(password: string): Promise<string> {
+  try {
+    const r = await invoke<{ recoveryCode: string }>("crypto_regenerate_recovery", {
+      password,
+    });
+    return r.recoveryCode;
+  } catch (e) {
+    throw toUnlockError(e);
+  }
+}
+
+// --- Auto-Lock-Dauer ---
 
 export async function getAutoLockMinutes(): Promise<number> {
-  const kf = await readKeyfile();
-  const n = kf ? kf.autoLockMinutes : NaN;
-  if (Number.isFinite(n) && n >= MIN_AUTOLOCK_MIN && n <= MAX_AUTOLOCK_MIN) {
-    return n;
-  }
-  return DEFAULT_AUTOLOCK_MIN;
+  const s = await getStartStatus();
+  const n = s.autoLockMinutes;
+  if (Number.isFinite(n) && n >= MIN_AUTOLOCK_MIN && n <= MAX_AUTOLOCK_MIN) return n;
+  return 5;
 }
 
 export async function setAutoLockMinutes(minutes: number): Promise<void> {
-  const kf = await readKeyfile();
-  if (!kf) return; // ohne Passwort existiert keine Keyfile
   const clamped = Math.min(
     MAX_AUTOLOCK_MIN,
     Math.max(MIN_AUTOLOCK_MIN, Math.round(minutes))
   );
-  await writeKeyfile({ ...kf, autoLockMinutes: clamped });
+  await invoke("crypto_set_autolock", { minutes: clamped });
+  invalidateStatus();
 }
 
-// --- Inaktivitäts-/Auto-Lock-Timer -----------------------------------------
+/** Klartext-Backup (.pre-encrypt.bak) nach bestätigter Migration löschen. */
+export async function deletePlaintextBackup(): Promise<void> {
+  await invoke("delete_plaintext_backup");
+}
+
+// --- Inaktivitäts-/Auto-Lock-Timer ---
 
 /**
- * Startet einen Inaktivitäts-Timer. Ruft `onLock()` auf, wenn `minutes` lang
- * keine Nutzeraktivität (Maus/Tasten/Touch/Fokus) registriert wurde.
- * Gibt eine Cleanup-Funktion zurück (analog watchSystemTheme in theme.ts).
+ * Startet einen Inaktivitäts-Timer. Ruft `onLock()` nach `minutes` ohne
+ * Aktivität (Maus/Tasten/Touch/Fokus). Gibt eine Cleanup-Funktion zurück.
  */
 export function startIdleTimer(minutes: number, onLock: () => void): () => void {
   const ms = Math.max(MIN_AUTOLOCK_MIN, minutes) * 60_000;
   let timer: number | undefined;
-
   const reset = () => {
     if (timer !== undefined) window.clearTimeout(timer);
     timer = window.setTimeout(onLock, ms);
   };
-
   const events: (keyof WindowEventMap)[] = [
     "mousemove",
     "mousedown",
@@ -156,11 +177,8 @@ export function startIdleTimer(minutes: number, onLock: () => void): () => void 
     "touchstart",
     "focus",
   ];
-  for (const ev of events) {
-    window.addEventListener(ev, reset, { passive: true });
-  }
-  reset(); // sofort scharf schalten
-
+  for (const ev of events) window.addEventListener(ev, reset, { passive: true });
+  reset();
   return () => {
     if (timer !== undefined) window.clearTimeout(timer);
     for (const ev of events) window.removeEventListener(ev, reset);
