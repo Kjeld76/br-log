@@ -27,6 +27,11 @@ pub struct DbLocation {
 const DATA_DIR_NAME: &str = "BR-Log-Data";
 const DB_FILE_NAME: &str = "br_zeiten.db";
 const MARKER_NAME: &str = "portable.txt";
+/// Kennzeile, die in portable.txt stehen MUSS, damit der portable Modus greift.
+/// Bloße Existenz genügt NICHT -> eine leere oder fremde `portable.txt` aktiviert
+/// nichts. Schutz davor, das BR-Geheimnis versehentlich in einen
+/// Cloud-synchronisierten Ordner (OneDrive/Dropbox) zu legen.
+const MARKER_SENTINEL: &str = "BR-Log-Portable";
 
 /// Ordner der laufenden EXE. current_exe() löst Symlinks auf, .parent() entfernt
 /// den Dateinamen.
@@ -55,11 +60,25 @@ fn is_writable(dir: &Path) -> bool {
     }
 }
 
+/// true, wenn neben der EXE eine GÜLTIGE Markerdatei liegt: portable.txt muss
+/// existieren UND eine Zeile gleich MARKER_SENTINEL enthalten.
+fn marker_present(dir: &Path) -> bool {
+    match fs::read_to_string(dir.join(MARKER_NAME)) {
+        // Führendes UTF-8-BOM entfernen (Windows-Editoren wie Notepad fügen es ein;
+        // Rust-trim() würde es nicht abstreifen und den Sentinel-Vergleich brechen).
+        Ok(content) => content
+            .trim_start_matches('\u{feff}')
+            .lines()
+            .any(|l| l.trim() == MARKER_SENTINEL),
+        Err(_) => false,
+    }
+}
+
 /// Entscheidet portabel vs. installiert und liefert den absoluten DB-Pfad.
 /// `app_config_dir` ist das bereits aufgelöste %APPDATA%/<identifier>.
 pub fn resolve(app_config_dir: PathBuf) -> DbLocation {
     if let Some(dir) = exe_dir() {
-        if dir.join(MARKER_NAME).exists() {
+        if marker_present(&dir) {
             let data_dir = dir.join(DATA_DIR_NAME);
             let db_file = data_dir.join(DB_FILE_NAME);
             // Datenordner anlegen (idempotent); Erfolg + Schreibprobe = Stick beschreibbar.

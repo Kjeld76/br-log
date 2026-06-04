@@ -38,6 +38,9 @@ Der genaue Pfad wird in der App unter **„Über / Daten"** angezeigt; dort öff
 ein Klick den Ordner im Explorer (für manuelle Backups). Zum Sichern einfach die
 Datei `br_zeiten.db` kopieren.
 
+Läuft die App **portabel vom USB-Stick**, liegt die Datenbank stattdessen neben
+der EXE in `BR-Log-Data\br_zeiten.db` (siehe Abschnitt *Portable Version*).
+
 ## Installation (für BR-Kolleginnen und -Kollegen)
 
 1. Auf der **GitHub-Releases-Seite** den neuesten Release öffnen.
@@ -57,6 +60,42 @@ So lässt sich die App trotzdem starten:
 Dies ist nur einmalig erforderlich. (Optional kann der Installer künftig mit
 einem Code-Signing-Zertifikat signiert werden, dann entfällt die Warnung –
 siehe Abschnitt *Entwicklung → Code-Signing*.)
+
+## Portable Version (USB-Stick)
+
+Neben dem Installer gibt es eine **portable Version**, die ohne Installation
+direkt vom USB-Stick läuft – die Daten reisen mit:
+
+1. Auf der **Releases-Seite** die Datei `BR-Log-portable-vX.Y.Z.zip` herunterladen.
+2. Den Inhalt **auf den USB-Stick** entpacken (`BR-Log.exe`, `portable.txt`,
+   Ordner `BR-Log-Data`).
+3. `BR-Log.exe` direkt vom Stick starten.
+
+Die Datenbank liegt dann **neben der EXE** in `BR-Log-Data\br_zeiten.db` und
+wandert mit dem Stick mit. In der App zeigt „Über / Daten" das Abzeichen
+**„Portabel (USB)"** und den tatsächlichen Pfad.
+
+> **⚠️ Vertraulichkeit (BR-Geheimnis):** Den Ordner **nicht** in einen
+> Cloud-synchronisierten Ordner (OneDrive, Dropbox …) entpacken – sonst würde die
+> vertrauliche Datenbank in die Cloud hochgeladen. Nur auf einen echten USB-Stick
+> oder lokalen Datenträger.
+
+### Wie der portable Modus erkannt wird
+
+Der portable Modus greift nur, wenn neben der EXE eine Datei `portable.txt` liegt,
+die eine Zeile **`BR-Log-Portable`** enthält (in der mitgelieferten Datei steht
+sie in der ersten Zeile). Eine leere oder fremde `portable.txt` aktiviert den
+Modus **nicht**. Ist der
+Stick schreibgeschützt und noch keine portable Datenbank vorhanden, fällt die App
+auf den Installations-Pfad zurück; vorhandene Stick-Daten werden nie überschrieben.
+
+### Voraussetzung WebView2
+
+Die schlanke portable Version nutzt die **Microsoft Edge WebView2 Runtime** des
+Rechners (auf Windows 11 vorhanden). Startet die App nicht, die WebView2
+„Evergreen"-Runtime von Microsoft installieren. Der oben beschriebene
+Windows-SmartScreen-Hinweis gilt für die portable EXE genauso. Die portable
+Version ist nur wenige MB groß – ein einfacher USB-Stick genügt.
 
 ## Entwicklung
 

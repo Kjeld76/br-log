@@ -37,6 +37,37 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "BR-Log ${{ github.ref_name }}"
-          releaseBody: "NSIS-Installer (.exe) unten unter Assets. Installation ohne Administratorrechte. Hinweis zum Windows-SmartScreen siehe README."
+          releaseBody: "NSIS-Installer (.exe) und portable ZIP unten unter Assets. Installation ohne Administratorrechte. Portable Version: ZIP auf einen USB-Stick entpacken und BR-Log.exe starten (Details + SmartScreen-Hinweis in der README)."
           releaseDraft: false
           prerelease: false
+
+      # Portable Variante (schlank): rohe EXE + Marker auf einen USB-Stick.
+      # Setzt die Edge-WebView2-Runtime auf dem Zielrechner voraus (auf Win11
+      # vorhanden). Die DB landet dann neben der EXE in BR-Log-Data.
+      - name: Portable-ZIP bauen und anhaengen
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $stage = "portable-stage"
+          New-Item -ItemType Directory -Force -Path "$stage\BR-Log-Data" | Out-Null
+          # Binaername == Cargo-Package-Name (br-log); fest pinnen statt per Glob,
+          # damit kein fremdes/veraltetes Top-Level-.exe erwischt wird.
+          $exe = "src-tauri\target\release\br-log.exe"
+          if (-not (Test-Path $exe)) { throw "Release-EXE nicht gefunden: $exe" }
+          Copy-Item $exe "$stage\BR-Log.exe"
+          # portable.txt MUSS eine Zeile gleich der Sentinel-Kennung enthalten
+          # (db_location::MARKER_SENTINEL); hier steht sie in Zeile 1.
+          $marker = @(
+            'BR-Log-Portable',
+            'Diese Datei aktiviert den portablen Modus. Bitte NICHT loeschen.',
+            'Die Datenbank liegt im Ordner BR-Log-Data neben dieser EXE.',
+            'WICHTIG: Diesen Ordner NICHT in einen Cloud-Ordner (OneDrive/Dropbox)',
+            'entpacken - das BR-Geheimnis wuerde sonst in die Cloud synchronisiert.'
+          )
+          Set-Content -Path "$stage\portable.txt" -Value $marker -Encoding UTF8
+          New-Item -ItemType File -Force -Path "$stage\BR-Log-Data\.keep" | Out-Null
+          $zip = "BR-Log-portable-v$ver.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          gh release upload "${{ github.ref_name }}" $zip --clobber
