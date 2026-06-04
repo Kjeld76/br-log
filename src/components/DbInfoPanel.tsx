@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { appConfigDir, join } from "@tauri-apps/api/path";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+import { Icon } from "./Icon";
 
 export default function DbInfoPanel() {
   const [dir, setDir] = useState("");
@@ -67,11 +68,12 @@ export default function DbInfoPanel() {
           </button>
           <button
             type="button"
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            className="flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
             onClick={reveal}
             disabled={!dbPath}
           >
-            Im Explorer anzeigen
+            <Icon name="folder-open" size={16} />
+            Ordner im Explorer öffnen
           </button>
         </div>
         {error && (

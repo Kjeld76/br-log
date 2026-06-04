@@ -1,5 +1,6 @@
 import type { EntryListItem } from "../types";
 import { minutesToHhmm, formatDurationLong } from "../lib/time";
+import { Icon } from "./Icon";
 
 interface Props {
   entry: EntryListItem;
@@ -84,8 +85,9 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
 
       {/* Vertraulich – nur hier sichtbar */}
       <div className="confidential-block rounded p-3">
-        <h4 className="mb-1 text-sm font-semibold">
-          🔒 Vertraulich – genaue Tätigkeit (BR-Geheimnis)
+        <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+          <Icon name="lock" size={16} />
+          Vertraulich – genaue Tätigkeit (BR-Geheimnis)
         </h4>
         <p className="whitespace-pre-wrap text-sm">
           {entry.secretDetails ? (

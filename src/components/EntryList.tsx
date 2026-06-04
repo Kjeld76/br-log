@@ -3,6 +3,7 @@ import type { EntryListItem, TaskTag } from "../types";
 import { listEntries } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import TagFilterChips from "./TagFilterChips";
+import { Icon } from "./Icon";
 
 interface Props {
   tags: TaskTag[];
@@ -63,8 +64,8 @@ export default function EntryList({
 
   return (
     <div className="space-y-3">
-      {/* Such- und Filterleiste */}
-      <div className="space-y-2">
+      {/* Such- und Filterleiste (sticky) */}
+      <div className="sticky top-0 z-10 space-y-2 bg-slate-50 pb-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
           <input
             className={field + " flex-1 min-w-[12rem]"}
@@ -151,7 +152,8 @@ export default function EntryList({
                     </span>
                   )}
                   {e.objections.length > 0 && (
-                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-800">
+                    <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-800">
+                      <Icon name="alert-triangle" size={11} />
                       {e.objections.length} Widerspruch
                       {e.objections.length > 1 ? "e" : ""}
                     </span>
@@ -176,8 +178,9 @@ export default function EntryList({
                 )}
                 {/* Geheimnis-Schutz: bei Treffer in vertraulichem Feld KEIN Inhalt, nur Label */}
                 {searching && e.search?.hasSecretHit && (
-                  <p className="mt-1 text-xs font-medium text-confidential-text">
-                    🔒 Treffer in vertraulichem Feld (Inhalt nur in der Einzelansicht)
+                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-confidential-text">
+                    <Icon name="lock" size={12} />
+                    Treffer in vertraulichem Feld (Inhalt nur in der Einzelansicht)
                   </p>
                 )}
               </div>

@@ -3,28 +3,17 @@ import { format } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem } from "./types";
 import { initSearch } from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
-import EntryList from "./components/EntryList";
+import Sidebar, { type View } from "./components/Sidebar";
+import QuickEntryView from "./views/QuickEntryView";
+import HistoryView from "./views/HistoryView";
+import DataView from "./views/DataView";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
-import CalendarView from "./components/CalendarView";
-import TagManager from "./components/TagManager";
-import ExportPanel from "./components/ExportPanel";
-import DbInfoPanel from "./components/DbInfoPanel";
-
-type Tab = "uebersicht" | "kalender" | "schlagwoerter" | "export" | "ueber";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
   | { type: "detail"; entry: EntryListItem }
   | null;
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: "uebersicht", label: "Übersicht" },
-  { key: "kalender", label: "Kalender" },
-  { key: "schlagwoerter", label: "Schlagwörter" },
-  { key: "export", label: "Export" },
-  { key: "ueber", label: "Über / Daten" },
-];
 
 function todayIso(): string {
   return format(new Date(), "yyyy-MM-dd");
@@ -32,14 +21,19 @@ function todayIso(): string {
 
 export default function App() {
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState<Tab>("uebersicht");
+  const [initError, setInitError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
-  const [initError, setInitError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const bump = () => setReloadKey((k) => k + 1);
   const loadTags = () => listTags().then(setTags);
+  const showToast = (m: string) => {
+    setToast(m);
+    window.setTimeout(() => setToast(null), 2500);
+  };
 
   useEffect(() => {
     (async () => {
@@ -58,19 +52,18 @@ export default function App() {
   const openDetail = (entry: EntryListItem) =>
     setModal({ type: "detail", entry });
 
-  const handleSaved = () => {
+  const handleModalSaved = () => {
     setModal(null);
     bump();
+    showToast("Eintrag gespeichert");
   };
-
   const handleDelete = async (id: string) => {
     await deleteEntry(id);
     setModal(null);
     bump();
+    showToast("Eintrag gelöscht");
   };
-
   const editFromDetail = async (entry: EntryListItem) => {
-    // Frisch aus der DB laden, falls zwischenzeitlich geändert.
     const fresh = (await getEntry(entry.id)) ?? entry;
     setModal({ type: "form", entry: fresh });
   };
@@ -91,62 +84,38 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-3xl flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="px-4 py-3">
-          <h1 className="text-lg font-bold text-slate-800">BR-Log</h1>
-          <p className="text-xs text-slate-500">
-            Zeiterfassung für Betriebsratsmitglieder
-          </p>
-        </div>
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-2">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={
-                "whitespace-nowrap rounded px-3 py-1.5 text-sm " +
-                (tab === t.key
-                  ? "bg-sky-600 text-white"
-                  : "text-slate-600 hover:bg-slate-100")
-              }
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </header>
+    <div className="flex h-full">
+      <Sidebar view={view} onNavigate={setView} />
 
-      <main className="flex-1 p-4">
-        {tab === "uebersicht" && (
-          <EntryList
+      <main className="flex-1 overflow-y-auto">
+        {view === "erfassen" && (
+          <QuickEntryView
+            tags={tags}
+            onSaved={() => {
+              bump();
+              showToast("Eintrag gespeichert");
+            }}
+          />
+        )}
+        {view === "historie" && (
+          <HistoryView
             tags={tags}
             reloadKey={reloadKey}
-            onOpen={openDetail}
-            onNewEntry={() => openNew()}
-          />
-        )}
-        {tab === "kalender" && (
-          <CalendarView
-            reloadKey={reloadKey}
             onOpenEntry={openDetail}
-            onNewEntry={(iso) => openNew(iso)}
+            onNewEntry={openNew}
           />
         )}
-        {tab === "schlagwoerter" && (
-          <TagManager
+        {view === "daten" && (
+          <DataView
             onChanged={() => {
               loadTags();
               bump();
             }}
           />
         )}
-        {tab === "export" && <ExportPanel onImported={bump} />}
-        {tab === "ueber" && <DbInfoPanel />}
       </main>
 
-      {/* Modal */}
+      {/* Modal: Detailansicht / Bearbeiten / Schnell-Anlegen aus Kalender/Liste */}
       {modal && (
         <div
           className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
@@ -164,7 +133,7 @@ export default function App() {
                 <EntryForm
                   entry={modal.entry}
                   tags={tags}
-                  onSaved={handleSaved}
+                  onSaved={handleModalSaved}
                   onCancel={() => setModal(null)}
                 />
               </>
@@ -183,6 +152,13 @@ export default function App() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
         </div>
       )}
     </div>

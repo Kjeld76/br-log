@@ -1,0 +1,57 @@
+import logo from "../assets/logo.png";
+import { Icon, type IconName } from "./Icon";
+
+export type View = "erfassen" | "historie" | "daten";
+
+const NAV: { key: View; label: string; icon: IconName }[] = [
+  { key: "erfassen", label: "Zeit erfassen", icon: "clock" },
+  { key: "historie", label: "Kalender & Historie", icon: "calendar" },
+  { key: "daten", label: "Über / Daten", icon: "folder-open" },
+];
+
+interface Props {
+  view: View;
+  onNavigate: (v: View) => void;
+}
+
+export default function Sidebar({ view, onNavigate }: Props) {
+  return (
+    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className="p-4">
+        <img src={logo} alt="BR-Log" className="h-9 w-auto" />
+      </div>
+
+      <nav className="flex-1 space-y-1 px-2">
+        {NAV.map((n) => {
+          const active = view === n.key;
+          return (
+            <button
+              key={n.key}
+              type="button"
+              onClick={() => onNavigate(n.key)}
+              className={
+                "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition " +
+                (active
+                  ? "bg-sky-50 font-medium text-sky-800"
+                  : "text-slate-600 hover:bg-slate-50")
+              }
+            >
+              <Icon name={n.icon} size={18} />
+              {n.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Dauerhafte Datenschutzzusicherung (klickbar -> Über/Daten) */}
+      <button
+        type="button"
+        onClick={() => onNavigate("daten")}
+        className="m-2 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500 hover:bg-slate-100"
+      >
+        <Icon name="lock" size={16} className="mt-0.5 shrink-0" />
+        <span>Daten liegen lokal auf diesem Gerät.</span>
+      </button>
+    </aside>
+  );
+}

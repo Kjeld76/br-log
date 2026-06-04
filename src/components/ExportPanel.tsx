@@ -7,6 +7,7 @@ import {
   pickAndReadBackup,
 } from "../export/exporters";
 import { analyzeImport, applyImport } from "../db/repository";
+import { Icon, type IconName } from "./Icon";
 
 interface Props {
   onImported: () => void;
@@ -84,9 +85,17 @@ export default function ExportPanel({ onImported }: Props) {
           disabled={busy}
           onClick={() => run(exportGlCsv, "GL-CSV")}
         >
-          <div className="font-medium">CSV-Export für die Geschäftsleitung</div>
-          <div className="text-xs text-slate-500">
-            Ohne vertrauliche Tätigkeitsdetails (BR-Geheimnis bleibt geschützt).
+          <div className="flex items-start gap-3">
+            <Icon name="eye" size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium">
+                CSV-Export für die Geschäftsleitung
+              </div>
+              <div className="text-xs text-slate-500">
+                Ohne vertrauliche Tätigkeitsdetails (BR-Geheimnis bleibt
+                geschützt).
+              </div>
+            </div>
           </div>
         </button>
 
@@ -96,9 +105,16 @@ export default function ExportPanel({ onImported }: Props) {
           disabled={busy}
           onClick={() => run(exportFullCsv, "Voll-CSV")}
         >
-          <div className="font-medium">Vollständiger CSV-Export (nur für dich)</div>
-          <div className="text-xs text-slate-500">
-            Inklusive vertraulicher Tätigkeitsdetails.
+          <div className="flex items-start gap-3">
+            <Icon name="lock" size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium">
+                Vollständiger CSV-Export (nur für dich)
+              </div>
+              <div className="text-xs text-slate-500">
+                Inklusive vertraulicher Tätigkeitsdetails.
+              </div>
+            </div>
           </div>
         </button>
 
@@ -108,9 +124,14 @@ export default function ExportPanel({ onImported }: Props) {
           disabled={busy}
           onClick={() => run(exportJsonBackup, "JSON-Backup")}
         >
-          <div className="font-medium">JSON-Backup speichern</div>
-          <div className="text-xs text-slate-500">
-            Vollständige Sicherung / Übertragung auf ein anderes Gerät.
+          <div className="flex items-start gap-3">
+            <Icon name="download" size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium">JSON-Backup speichern</div>
+              <div className="text-xs text-slate-500">
+                Vollständige Sicherung / Übertragung auf ein anderes Gerät.
+              </div>
+            </div>
           </div>
         </button>
 
@@ -120,9 +141,14 @@ export default function ExportPanel({ onImported }: Props) {
           disabled={busy}
           onClick={startImport}
         >
-          <div className="font-medium">JSON-Backup importieren</div>
-          <div className="text-xs text-slate-500">
-            Merge mit Konfliktprüfung – neuere Version gewinnt.
+          <div className="flex items-start gap-3">
+            <Icon name="upload" size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <div className="font-medium">JSON-Backup importieren</div>
+              <div className="text-xs text-slate-500">
+                Merge mit Konfliktprüfung – neuere Version gewinnt.
+              </div>
+            </div>
           </div>
         </button>
       </div>
