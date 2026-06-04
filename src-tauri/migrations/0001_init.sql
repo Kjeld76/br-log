@@ -1,4 +1,4 @@
--- 0001_init.sql – Basis-Schema BR-Log
+-- 0001_init.sql – Basis-Schema BR-Zeiten
 -- Versionierte Migration (Version 1). Spätere Schemaänderungen NUR als neue,
 -- höher nummerierte Migration anhängen, nie diese Datei ändern.
 

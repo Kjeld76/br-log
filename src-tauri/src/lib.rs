@@ -15,8 +15,12 @@ fn read_text_file(path: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Versionierte Migrationen. Künftige Schemaänderungen nur ANHÄNGEN
-    // (neue Migration mit höherer version), bestehende nie ändern.
+    // Versionierte Migrationen. Künftige Schemaänderungen NUR ANHÄNGEN
+    // (neue Migration mit höherer version).
+    // WARNUNG: Eine bereits ausgelieferte Migrationsdatei darf NIE geändert werden –
+    // auch kein Kommentar/Whitespace. tauri-plugin-sql (sqlx) prüft eine Prüfsumme
+    // über den SQL-Text; jede Änderung bricht bestehende DBs mit
+    // "migration X was previously applied but has been modified".
     let migrations = vec![Migration {
         version: 1,
         description: "init schema",
