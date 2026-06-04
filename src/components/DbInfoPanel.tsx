@@ -85,7 +85,7 @@ export default function DbInfoPanel() {
           Über
         </h3>
         <p className="text-sm text-slate-700 dark:text-slate-200">
-          BR-Log – Version 1.1.1
+          BR-Log – Version 1.1.2
         </p>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
           © 2026 Mario König. Alle Rechte vorbehalten.

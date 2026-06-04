@@ -1,5 +1,3 @@
-use tauri_plugin_sql::{Migration, MigrationKind};
-
 /// Schreibt eine Textdatei an einen beliebigen, vom Nutzer im Dialog gewählten
 /// Pfad. Eigene Command-Funktion statt fs-Plugin -> keine Scope-Konfiguration nötig.
 #[tauri::command]
@@ -15,27 +13,15 @@ fn read_text_file(path: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Versionierte Migrationen. Künftige Schemaänderungen NUR ANHÄNGEN
-    // (neue Migration mit höherer version).
-    // WARNUNG: Eine bereits ausgelieferte Migrationsdatei darf NIE geändert werden –
-    // auch kein Kommentar/Whitespace. tauri-plugin-sql (sqlx) prüft eine Prüfsumme
-    // über den SQL-Text; jede Änderung bricht bestehende DBs mit
-    // "migration X was previously applied but has been modified".
-    let migrations = vec![Migration {
-        version: 1,
-        description: "init schema",
-        sql: include_str!("../migrations/0001_init.sql"),
-        kind: MigrationKind::Up,
-    }];
-
+    // Hinweis: KEINE prüfsummen-validierten Migrationen mehr. Das Schema wird im
+    // Frontend idempotent angelegt (src/db/schema.ts, CREATE TABLE IF NOT EXISTS).
+    // Grund: tauri-plugin-sql (sqlx) prüft eine SHA-Prüfsumme über den Migrations-
+    // SQL; Zeilenenden-Unterschiede (CRLF auf CI vs. LF lokal) oder jede
+    // Inhaltsänderung brachen bestehende DBs mit "migration ... has been modified".
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:br_zeiten.db", migrations)
-                .build(),
-        )
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .invoke_handler(tauri::generate_handler![write_text_file, read_text_file])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

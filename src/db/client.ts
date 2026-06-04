@@ -1,14 +1,33 @@
 import Database from "@tauri-apps/plugin-sql";
+import { SCHEMA_STATEMENTS } from "./schema";
 
 const DB_URL = "sqlite:br_zeiten.db";
 
 let dbPromise: Promise<Database> | null = null;
 let ftsAvailable = false;
 let initPromise: Promise<void> | null = null;
+let schemaPromise: Promise<void> | null = null;
 
 export function getDb(): Promise<Database> {
   if (!dbPromise) dbPromise = Database.load(DB_URL);
   return dbPromise;
+}
+
+/**
+ * Legt das Schema idempotent an (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE).
+ * Ersetzt die früheren prüfsummen-validierten Migrationen von tauri-plugin-sql,
+ * die je nach Zeilenenden (CRLF/LF) / Build-Umgebung unterschiedliche Prüfsummen
+ * erzeugten und bestehende DBs mit "migration ... has been modified" brachen.
+ */
+export async function initSchema(): Promise<void> {
+  if (schemaPromise) return schemaPromise;
+  schemaPromise = (async () => {
+    const db = await getDb();
+    for (const stmt of SCHEMA_STATEMENTS) {
+      await db.execute(stmt);
+    }
+  })();
+  return schemaPromise;
 }
 
 export function isFtsAvailable(): boolean {

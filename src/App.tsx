@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem } from "./types";
-import { initSearch } from "./db/client";
+import { initSchema, initSearch } from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import Sidebar, { type View } from "./components/Sidebar";
@@ -48,6 +48,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
+        await initSchema();
         await initSearch();
         await loadTags();
         setReady(true);

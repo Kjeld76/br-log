@@ -1,0 +1,10 @@
+# Deterministische Zeilenenden über alle Build-Umgebungen (lokal/CI).
+# Verhindert CRLF/LF-Unterschiede, die früher Migrations-Prüfsummen brachen.
+* text=auto eol=lf
+
+# Binärdateien nicht anfassen.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
