@@ -428,7 +428,21 @@ fn crypto_migrate(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Schema idempotent im Frontend (schema.ts). KEINE prüfsummen-Migrationen.
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Single-Instance MUSS als erstes Plugin registriert werden (Doku-Vorgabe).
+    // Desktop-only: verhindert zwei parallele Fenster auf derselben SQLite-DB
+    // (sonst sehen sich beide Instanzen gegenseitig nicht -> Last-Write-Wins).
+    // Zweitstart fokussiert einfach das bestehende Hauptfenster.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

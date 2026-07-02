@@ -123,7 +123,6 @@ export default function App() {
       stopIdle();
       unlistenMin?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, locked, autoLockMin]);
 
   const openNew = (iso?: string) =>

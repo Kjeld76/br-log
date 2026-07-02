@@ -153,6 +153,7 @@ fn derive_kek(secret: &[u8], salt: &[u8], kdf: &Kdf) -> Result<Zeroizing<[u8; 32
 }
 
 /// Fehler beim Entkapseln – sauber getrennt: falsches Geheimnis vs. Defekt.
+#[derive(Debug)]
 pub enum UnwrapError {
     WrongSecret,
     Corrupt(String),
@@ -300,4 +301,195 @@ pub fn write_keyfile_atomic(data_dir: &Path, kf: &KeyfileV2) -> Result<(), Strin
         .map_err(|e| format!("Keyfile nicht schreibbar ({}): {e}", tmp.display()))?;
     std::fs::rename(&tmp, &path)
         .map_err(|e| format!("Keyfile nicht ersetzbar ({}): {e}", path.display()))
+}
+
+// ---------- Tests (bewusst Tauri-frei, siehe Modul-Kommentar oben) ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Eindeutiges, isoliertes Verzeichnis unter dem System-Temp-Ordner für
+    /// Dateisystem-Tests (Keyfile-IO). Aufräumen übernimmt der Aufrufer.
+    fn temp_test_dir(label: &str) -> std::path::PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "br-log-crypto-test-{label}-{}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("Temp-Testverzeichnis anlegen");
+        dir
+    }
+
+    #[test]
+    fn wrap_unwrap_roundtrip_password_und_recovery() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let kf = build_keyfile(&dek, "mein-passwort", &recovery, 5).expect("build_keyfile");
+
+        let dek_pw = unwrap_with_password(&kf, "mein-passwort").expect("unwrap mit Passwort");
+        assert_eq!(&*dek_pw, &*dek);
+
+        let dek_rc = unwrap_with_recovery(&kf, &recovery).expect("unwrap mit Recovery-Code");
+        assert_eq!(&*dek_rc, &*dek);
+    }
+
+    #[test]
+    fn falsches_passwort_liefert_wrong_secret() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let kf = build_keyfile(&dek, "richtig", &recovery, 5).expect("build_keyfile");
+
+        let err = unwrap_with_password(&kf, "falsch").unwrap_err();
+        assert!(matches!(err, UnwrapError::WrongSecret));
+    }
+
+    #[test]
+    fn falscher_recovery_code_liefert_wrong_secret() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let kf = build_keyfile(&dek, "pw", &recovery, 5).expect("build_keyfile");
+
+        // 24 Zeichen (korrekte Länge), aber falscher Inhalt.
+        let err = unwrap_with_recovery(&kf, "ZZZZZZZZZZZZZZZZZZZZZZZZ").unwrap_err();
+        assert!(matches!(err, UnwrapError::WrongSecret));
+    }
+
+    #[test]
+    fn recovery_code_format_24_zeichen_aus_dem_alphabet() {
+        let recovery = gen_recovery_canonical();
+        assert_eq!(recovery.len(), 24);
+        assert!(recovery.bytes().all(|b| RECOVERY_ALPHABET.contains(&b)));
+
+        let display = format_recovery(&recovery);
+        // 4 Gruppen a 6 Zeichen mit 3 Bindestrichen -> 27 Zeichen Anzeigeform.
+        assert_eq!(display.len(), 27);
+        assert_eq!(display.matches('-').count(), 3);
+        // Normalisieren der Anzeigeform muss wieder die kanonische Form ergeben.
+        assert_eq!(normalize_recovery(&display), *recovery);
+    }
+
+    #[test]
+    fn recovery_alphabet_schliesst_verwechselbare_zeichen_aus() {
+        // I, O, 0, 1 sind absichtlich nicht im Alphabet (Verwechslungsgefahr).
+        for c in [b'I', b'O', b'0', b'1'] {
+            assert!(!RECOVERY_ALPHABET.contains(&c));
+        }
+    }
+
+    #[test]
+    fn manipulierte_kdf_parameter_werden_durch_aad_erkannt() {
+        // AAD bindet die KDF-Parameter -> ein nachträglich verändertes m/t/p
+        // (z. B. durch Editieren der keyfile.json) lässt die Poly1305-Prüfung
+        // fehlschlagen, obwohl das Passwort korrekt ist.
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw", &recovery, 5).expect("build_keyfile");
+        kf.kdf.t += 1; // KDF-Parameter nachträglich manipuliert
+
+        let err = unwrap_with_password(&kf, "pw").unwrap_err();
+        assert!(matches!(err, UnwrapError::WrongSecret));
+    }
+
+    #[test]
+    fn manipulierter_ciphertext_wird_erkannt() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw", &recovery, 5).expect("build_keyfile");
+        // Ein Byte im gekapselten Ciphertext kippen -> Tag-Prüfung schlägt fehl.
+        let mut bytes = hex::decode(&kf.pw.wrapped).unwrap();
+        bytes[0] ^= 0xff;
+        kf.pw.wrapped = hex::encode(bytes);
+
+        let err = unwrap_with_password(&kf, "pw").unwrap_err();
+        assert!(matches!(err, UnwrapError::WrongSecret));
+    }
+
+    #[test]
+    fn passwort_wechsel_erhaelt_recovery_code_und_ersetzt_altes_passwort() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "alt", &recovery, 5).expect("build_keyfile");
+
+        rewrap_password(&mut kf, &dek, "neu").expect("rewrap_password");
+
+        assert!(matches!(
+            unwrap_with_password(&kf, "alt"),
+            Err(UnwrapError::WrongSecret)
+        ));
+        let dek2 = unwrap_with_password(&kf, "neu").expect("neues Passwort muss funktionieren");
+        assert_eq!(&*dek2, &*dek);
+        // Recovery-Code bleibt unverändert gültig (kein Re-Wrap nötig).
+        let dek3 = unwrap_with_recovery(&kf, &recovery).expect("Recovery bleibt gültig");
+        assert_eq!(&*dek3, &*dek);
+    }
+
+    #[test]
+    fn neuer_recovery_code_macht_den_alten_ungueltig() {
+        let dek = gen_dek();
+        let old_recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw", &old_recovery, 5).expect("build_keyfile");
+
+        let new_recovery = gen_recovery_canonical();
+        rewrap_recovery(&mut kf, &dek, &new_recovery).expect("rewrap_recovery");
+
+        assert!(matches!(
+            unwrap_with_recovery(&kf, &old_recovery),
+            Err(UnwrapError::WrongSecret)
+        ));
+        let dek2 = unwrap_with_recovery(&kf, &new_recovery).expect("neuer Code muss funktionieren");
+        assert_eq!(&*dek2, &*dek);
+    }
+
+    #[test]
+    fn dek_pragma_literal_ist_x_gequotetes_hex() {
+        let dek = gen_dek();
+        let literal = dek_pragma_literal(&dek);
+        assert!(literal.starts_with("x'"));
+        assert!(literal.ends_with('\''));
+        assert_eq!(literal.len(), 2 + 64 + 1); // x' + 64 Hex-Zeichen (32 B) + '
+    }
+
+    #[test]
+    fn normalize_recovery_entfernt_trenner_und_grossschreibt() {
+        assert_eq!(normalize_recovery("ab12-cd34"), "AB12CD34");
+        assert_eq!(normalize_recovery(" a b c "), "ABC");
+    }
+
+    #[test]
+    fn classify_keyfile_none_wenn_keine_datei_vorhanden() {
+        let dir = temp_test_dir("none");
+        assert!(matches!(classify_keyfile(&dir), KeyfileState::None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn classify_keyfile_corrupt_bei_kaputtem_json() {
+        let dir = temp_test_dir("corrupt");
+        std::fs::write(dir.join(KEYFILE_NAME), "{ das ist kein json").unwrap();
+        assert!(matches!(classify_keyfile(&dir), KeyfileState::Corrupt(_)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_keyfile_atomic_roundtrip_ueber_classify() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let kf = build_keyfile(&dek, "pw", &recovery, 7).expect("build_keyfile");
+
+        let dir = temp_test_dir("roundtrip");
+        write_keyfile_atomic(&dir, &kf).expect("write_keyfile_atomic");
+
+        match classify_keyfile(&dir) {
+            KeyfileState::V2(loaded) => {
+                assert_eq!(loaded.auto_lock_minutes, 7);
+                let dek2 = unwrap_with_password(&loaded, "pw").expect("unwrap nach Reload");
+                assert_eq!(&*dek2, &*dek);
+            }
+            _ => panic!("erwartet KeyfileState::V2 nach write_keyfile_atomic"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

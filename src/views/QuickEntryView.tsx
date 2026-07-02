@@ -15,7 +15,10 @@ interface Props {
 
 export default function QuickEntryView({ tags, onSaved }: Props) {
   // Nach dem Speichern wird die Maske durch Remount (neuer key) geleert.
+  // formKey wird bewusst NICHT im Memo-Body gelesen, sondern dient nur als
+  // Trigger für die Neuberechnung -> exhaustive-deps hält ihn für unnötig.
   const [formKey, setFormKey] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const entry = useMemo(() => newEntry(todayIso()), [formKey]);
 
   return (

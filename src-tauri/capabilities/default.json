@@ -8,6 +8,14 @@
     "dialog:default",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
-    "opener:allow-open-path"
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPCONFIG" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$EXE/BR-Log-Data" },
+        { "path": "$EXE/BR-Log-Data/**" }
+      ]
+    }
   ]
 }

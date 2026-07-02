@@ -77,7 +77,15 @@ fn marker_present(dir: &Path) -> bool {
 /// Entscheidet portabel vs. installiert und liefert den absoluten DB-Pfad.
 /// `app_config_dir` ist das bereits aufgelöste %APPDATA%/<identifier>.
 pub fn resolve(app_config_dir: PathBuf) -> DbLocation {
-    if let Some(dir) = exe_dir() {
+    resolve_with_exe_dir(exe_dir(), app_config_dir)
+}
+
+/// Kern der Entscheidungslogik mit injizierbarem EXE-Ordner -> ohne diese
+/// Trennung ließe sich der Portabel-Zweig in Tests nicht erreichen, weil
+/// `exe_dir()` im Test-Binary auf `target/.../deps` zeigt, nicht auf einen
+/// kontrollierbaren Ordner.
+fn resolve_with_exe_dir(exe_dir: Option<PathBuf>, app_config_dir: PathBuf) -> DbLocation {
+    if let Some(dir) = exe_dir {
         if marker_present(&dir) {
             let data_dir = dir.join(DATA_DIR_NAME);
             let db_file = data_dir.join(DB_FILE_NAME);
@@ -105,5 +113,156 @@ pub fn resolve(app_config_dir: PathBuf) -> DbLocation {
         db_file: app_config_dir.join(DB_FILE_NAME),
         data_dir: app_config_dir,
         portable: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Eindeutiges, isoliertes Verzeichnis unter dem System-Temp-Ordner.
+    fn temp_test_dir(label: &str) -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "br-log-dbloc-test-{label}-{}-{n}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("Temp-Testverzeichnis anlegen");
+        dir
+    }
+
+    // ---------- is_writable ----------
+
+    #[test]
+    fn is_writable_true_fuer_vorhandenes_beschreibbares_verzeichnis() {
+        let dir = temp_test_dir("writable");
+        assert!(is_writable(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_writable_false_fuer_nicht_existierendes_verzeichnis() {
+        // OpenOptions::create() legt keine fehlenden Elternverzeichnisse an ->
+        // ein nicht vorhandenes Verzeichnis ist zuverlässig "nicht beschreibbar".
+        let missing = std::env::temp_dir().join("br-log-dbloc-test-does-not-exist-xyz");
+        let _ = fs::remove_dir_all(&missing);
+        assert!(!is_writable(&missing));
+    }
+
+    // ---------- marker_present ----------
+
+    #[test]
+    fn marker_present_true_bei_exaktem_sentinel() {
+        let dir = temp_test_dir("marker-ok");
+        fs::write(dir.join(MARKER_NAME), "BR-Log-Portable\nweiterer Text").unwrap();
+        assert!(marker_present(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn marker_present_true_trotz_bom_und_umgebendem_whitespace() {
+        let dir = temp_test_dir("marker-bom");
+        let content = "\u{feff}Kopfzeile\r\n  BR-Log-Portable  \r\nFusszeile\r\n";
+        fs::write(dir.join(MARKER_NAME), content).unwrap();
+        assert!(marker_present(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn marker_present_false_ohne_datei() {
+        let dir = temp_test_dir("marker-missing");
+        assert!(!marker_present(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn marker_present_false_bei_falschem_inhalt() {
+        let dir = temp_test_dir("marker-wrong");
+        // Bloße Existenz der Datei genügt NICHT -> Inhalt muss stimmen.
+        fs::write(dir.join(MARKER_NAME), "irgendein anderer Text").unwrap();
+        assert!(!marker_present(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---------- resolve_with_exe_dir ----------
+
+    #[test]
+    fn installations_modus_ohne_marker() {
+        let exe = temp_test_dir("resolve-no-marker-exe");
+        let cfg = temp_test_dir("resolve-no-marker-cfg");
+
+        let loc = resolve_with_exe_dir(Some(exe.clone()), cfg.clone());
+
+        assert!(!loc.portable);
+        assert_eq!(loc.data_dir, cfg);
+        assert_eq!(loc.db_file, cfg.join(DB_FILE_NAME));
+        assert!(cfg.exists()); // wird bei Bedarf angelegt
+
+        let _ = fs::remove_dir_all(&exe);
+        let _ = fs::remove_dir_all(&cfg);
+    }
+
+    #[test]
+    fn installations_modus_wenn_exe_ordner_unbekannt() {
+        let cfg = temp_test_dir("resolve-no-exe-cfg");
+        let loc = resolve_with_exe_dir(None, cfg.clone());
+        assert!(!loc.portable);
+        assert_eq!(loc.data_dir, cfg);
+        let _ = fs::remove_dir_all(&cfg);
+    }
+
+    #[test]
+    fn portabler_modus_bei_gueltigem_marker() {
+        let exe = temp_test_dir("resolve-portable-exe");
+        fs::write(exe.join(MARKER_NAME), "BR-Log-Portable").unwrap();
+        let cfg = temp_test_dir("resolve-portable-cfg");
+
+        let loc = resolve_with_exe_dir(Some(exe.clone()), cfg.clone());
+
+        assert!(loc.portable);
+        assert_eq!(loc.data_dir, exe.join(DATA_DIR_NAME));
+        assert_eq!(loc.db_file, exe.join(DATA_DIR_NAME).join(DB_FILE_NAME));
+        assert!(loc.data_dir.exists()); // idempotent angelegt
+
+        let _ = fs::remove_dir_all(&exe);
+        let _ = fs::remove_dir_all(&cfg);
+    }
+
+    #[test]
+    fn installations_modus_bei_marker_ohne_sentinel_zeile() {
+        let exe = temp_test_dir("resolve-bad-marker-exe");
+        fs::write(exe.join(MARKER_NAME), "leer/falsch").unwrap();
+        let cfg = temp_test_dir("resolve-bad-marker-cfg");
+
+        let loc = resolve_with_exe_dir(Some(exe.clone()), cfg.clone());
+
+        assert!(!loc.portable);
+        assert_eq!(loc.data_dir, cfg);
+
+        let _ = fs::remove_dir_all(&exe);
+        let _ = fs::remove_dir_all(&cfg);
+    }
+
+    #[test]
+    fn portabler_modus_bleibt_bestehen_wenn_bereits_eine_portable_db_existiert() {
+        // Deckt den "kein stiller Rückfall"-Zweig ab: liegt bereits eine DB im
+        // (bei Testlauf reell beschreibbaren) Portable-Ordner, bleibt der Modus
+        // portabel, unabhängig vom is_writable-Ergebnis.
+        let exe = temp_test_dir("resolve-existing-db-exe");
+        fs::write(exe.join(MARKER_NAME), "BR-Log-Portable").unwrap();
+        let data_dir = exe.join(DATA_DIR_NAME);
+        fs::create_dir_all(&data_dir).unwrap();
+        fs::write(data_dir.join(DB_FILE_NAME), b"dummy").unwrap();
+        let cfg = temp_test_dir("resolve-existing-db-cfg");
+
+        let loc = resolve_with_exe_dir(Some(exe.clone()), cfg.clone());
+
+        assert!(loc.portable);
+        assert_eq!(loc.db_file, data_dir.join(DB_FILE_NAME));
+
+        let _ = fs::remove_dir_all(&exe);
+        let _ = fs::remove_dir_all(&cfg);
     }
 }

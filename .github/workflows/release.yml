@@ -22,7 +22,8 @@ jobs:
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
       - name: Rust-Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -34,10 +35,10 @@ jobs:
         uses: ilammy/setup-nasm@v1
 
       - name: Frontend-Abhängigkeiten installieren
-        run: npm install
+        run: npm ci
 
       - name: Build & Release (NSIS-Installer)
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
