@@ -7,6 +7,8 @@ import {
   pickAndReadBackup,
 } from "../export/exporters";
 import { analyzeImport, applyImport } from "../db/repository";
+import { backupNow } from "../db/client";
+import { toUserMessage } from "../lib/errors";
 import { Icon, type IconName } from "./Icon";
 
 interface Props {
@@ -40,7 +42,7 @@ const ACTIONS: {
   {
     icon: "upload",
     title: "JSON-Backup importieren",
-    desc: "Merge mit Konfliktprüfung – neuere Version gewinnt.",
+    desc: "Daten von einem anderen Gerät übernehmen (bei doppelten Einträgen gewinnt automatisch die neuere Version).",
     key: "import",
   },
 ];
@@ -62,7 +64,7 @@ export default function ExportPanel({ onImported }: Props) {
       const path = await fn();
       setStatus(path ? `${label} gespeichert: ${path}` : "Abgebrochen.");
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
     } finally {
       setBusy(false);
     }
@@ -81,7 +83,7 @@ export default function ExportPanel({ onImported }: Props) {
       const summary = await analyzeImport(payload);
       setPending({ payload, summary });
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
     } finally {
       setBusy(false);
     }
@@ -91,15 +93,34 @@ export default function ExportPanel({ onImported }: Props) {
     if (!pending) return;
     setBusy(true);
     setError(null);
+
+    // Sicherheits-Backup VOR dem destruktiven Merge (Finding 24): ohne ein
+    // funktionierendes Backup gäbe es nach einem bereuten/fehlerhaften Import
+    // keinen Rückweg. Schlägt die Sicherung fehl, wird NICHT importiert.
     try {
-      const s = await applyImport(pending.payload);
+      await backupNow();
+    } catch (e) {
+      setError(
+        `Import abgebrochen: Das Sicherheits-Backup vor dem Import ist fehlgeschlagen. ${toUserMessage(
+          e
+        )}`
+      );
+      setBusy(false);
+      return;
+    }
+
+    try {
+      // Die bereits in startImport berechnete Vorschau wird wiederverwendet
+      // (precomputedSummary) -- die Konflikt-/Tag-Analyse läuft dadurch nicht
+      // zusätzlich ein zweites Mal beim bestätigten Import (Finding 32).
+      const s = await applyImport(pending.payload, pending.summary);
       setStatus(
         `Import abgeschlossen: ${s.newEntries} neu, ${s.conflicts} aktualisiert, ${s.unchanged} unverändert.`
       );
       setPending(null);
       onImported();
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
     } finally {
       setBusy(false);
     }
@@ -167,9 +188,6 @@ export default function ExportPanel({ onImported }: Props) {
                     className="text-xs text-amber-900 dark:text-amber-200"
                   >
                     <span className="font-medium">{c.date}</span> — {c.label}
-                    <span className="ml-1 opacity-70">
-                      ({c.id.slice(0, 8)}…)
-                    </span>
                   </li>
                 ))}
               </ul>

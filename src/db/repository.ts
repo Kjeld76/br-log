@@ -700,6 +700,20 @@ export async function getAllForBackup(): Promise<BackupPayload> {
   };
 }
 
+/**
+ * Last-Writer-Wins-Entscheidung: gewinnt der importierte Eintrag gegen den
+ * lokalen Stand? `localUpdated` ist `undefined`, wenn die ID lokal noch nicht
+ * existiert (Import gewinnt immer). EINZIGE Implementierung dieser Regel --
+ * analyzeImport (Vorschau) und applyImport (tatsächlicher Merge) nutzen
+ * dieselbe Funktion, damit beide niemals auseinanderlaufen können (Finding 32).
+ */
+function importerWins(
+  localUpdated: string | undefined,
+  importedUpdatedAt: string
+): boolean {
+  return localUpdated === undefined || (importedUpdatedAt || "") > localUpdated;
+}
+
 export async function analyzeImport(
   payload: BackupPayload
 ): Promise<ImportSummary> {
@@ -715,7 +729,7 @@ export async function analyzeImport(
   for (const e of payload.entries) {
     const localUpdated = localMap.get(e.id);
     if (localUpdated === undefined) newEntries++;
-    else if ((e.updatedAt || "") > localUpdated) {
+    else if (importerWins(localUpdated, e.updatedAt)) {
       conflicts++;
       conflictIds.push(e.id); // wird überschrieben
     } else unchanged++;
@@ -780,11 +794,16 @@ export async function analyzeImport(
 }
 
 /**
- * Führt den Merge aus: bei UUID-Kollision gewinnt der neuere updated_at. Der
- * gesamte Merge (Tags + Einträge + FTS) läuft in EINER Transaktion (db_batch) –
- * kein halb gemergter Zustand bei Abbruch. `precomputedSummary` erlaubt es, die
- * zuvor angezeigte Analyse wiederzuverwenden (spätere Welle: Doppelausführung
- * vermeiden).
+ * Führt den Merge aus: bei UUID-Kollision gewinnt der neuere updated_at
+ * (importerWins, s.o. -- dieselbe Regel wie in analyzeImport). Der gesamte
+ * Merge (Tags + Einträge + FTS) läuft in EINER Transaktion (db_batch) – kein
+ * halb gemergter Zustand bei Abbruch. `precomputedSummary` erlaubt es, die
+ * zuvor angezeigte Analyse wiederzuverwenden (die UI übergibt hier die in der
+ * Import-Vorschau bereits berechnete Summary, s. ExportPanel.confirmImport) –
+ * vermeidet die doppelte Ausführung der Konflikt-/Tag-Analyse beim bestätigten
+ * Import (Finding 32). Die Gewinner-Ermittlung je Eintrag für den tatsächlichen
+ * Schreibvorgang läuft dennoch separat (braucht den DB-Stand zum Apply-
+ * Zeitpunkt, nicht nur die aggregierten Zahlen der Vorschau).
  */
 export async function applyImport(
   payload: BackupPayload,
@@ -833,14 +852,19 @@ export async function applyImport(
   for (const e of payload.entries) {
     const localUpdated = localMap.get(e.id);
     const isNew = localUpdated === undefined;
-    const importerWins = isNew || (e.updatedAt || "") > localUpdated!;
-    if (!importerWins) continue; // lokal gleich/älter -> bleibt
+    if (!importerWins(localUpdated, e.updatedAt)) continue; // lokal gleich/älter -> bleibt
     statements.push(
       ...entryWriteStatements({
         // Backup-Dateien können unvollständig sein -> Listen defensiv absichern.
         entry: { ...e, tagIds: e.tagIds ?? [], objections: e.objections ?? [] },
         exists: !isNew,
-        updatedAt: now,
+        // WICHTIG (Finding 10): den ORIGINALEN updated_at aus dem Backup
+        // erhalten statt auf 'jetzt' zu stempeln. Sonst verfälscht jeder
+        // Import die Zeitstempel aller übernommenen Einträge -> Last-Writer-
+        // Wins vergleicht beim nächsten Sync den Import-Zeitpunkt statt des
+        // echten Änderungszeitpunkts und kann neuere Änderungen eines anderen
+        // Geräts mit einem älteren Stand überschreiben (siehe Finding-Text).
+        updatedAt: e.updatedAt || now,
         createdAtDefault: now,
         tagLabelById,
       })
@@ -851,13 +875,88 @@ export async function applyImport(
   return summary;
 }
 
+/** Höchste vom Code verstandene Backup-Schema-Version (siehe getAllForBackup). */
+const SUPPORTED_SCHEMA_VERSION = 1;
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Pflichtfeld-/Typprüfung je Import-Eintrag (Finding 1). Verhindert, dass eine
+ * kaputte, handeditierte oder fremde Backup-Datei stillschweigend Datensätze
+ * mit fehlender/leerer id (dupliziert bei jedem erneuten Import, weder
+ * editier- noch löschbar), fehlendem/ungültigem Datum oder negativer/kaputter
+ * Dauer in den Merge einspeist. Wirft mit einer konkreten, deutschen Meldung
+ * VOR dem ersten Schreibzugriff, statt den Fehler erst als rohen SQL-/
+ * Constraint-Fehler mitten in der Import-Transaktion zu erleben.
+ */
+function validateBackupEntry(raw: unknown, index: number): void {
+  if (!isPlainObject(raw)) {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag ${index + 1} ist kein gültiges Objekt.`
+    );
+  }
+  if (typeof raw.id !== "string" || raw.id.trim() === "") {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag ${index + 1} hat keine gültige ID.`
+    );
+  }
+  if (typeof raw.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat kein gültiges Datum (erwartet JJJJ-MM-TT).`
+    );
+  }
+  if (
+    typeof raw.durationMinutes !== "number" ||
+    !Number.isFinite(raw.durationMinutes) ||
+    raw.durationMinutes < 0
+  ) {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat eine ungültige Dauer.`
+    );
+  }
+  if (raw.tagIds !== undefined && !Array.isArray(raw.tagIds)) {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat ungültige Schlagwort-Zuordnungen.`
+    );
+  }
+  if (raw.objections !== undefined && !Array.isArray(raw.objections)) {
+    throw new Error(
+      `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat ungültige Widersprüche.`
+    );
+  }
+}
+
 export function parseBackup(raw: string): BackupPayload {
-  const data = JSON.parse(raw) as BackupPayload;
-  if (!data || !Array.isArray(data.entries)) {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("Ungültige Backup-Datei: Die Datei enthält kein gültiges JSON.");
+  }
+  if (!isPlainObject(data) || !Array.isArray(data.entries)) {
     throw new Error("Ungültige Backup-Datei: 'entries' fehlt.");
   }
+  // schemaVersion nur ablehnen, wenn sie explizit gesetzt UND neuer als
+  // unterstützt ist (unbekannte künftige Version, die dieser Code-Stand nicht
+  // versteht). Fehlt sie (ältere/manuell gebaute Datei), wird defensiv wie
+  // Version 1 behandelt -- die eigentliche Härtung gegen kaputte/fremde
+  // Dateien leisten die Feldprüfungen je Eintrag unten.
+  if (
+    data.schemaVersion !== undefined &&
+    (typeof data.schemaVersion !== "number" ||
+      data.schemaVersion > SUPPORTED_SCHEMA_VERSION)
+  ) {
+    throw new Error(
+      `Ungültige Backup-Datei: Unbekannte Schema-Version (${String(
+        data.schemaVersion
+      )}). Diese App-Version unterstützt Backups bis Version ${SUPPORTED_SCHEMA_VERSION} – bitte die App aktualisieren.`
+    );
+  }
+  data.entries.forEach((e, i) => validateBackupEntry(e, i));
   if (!Array.isArray(data.tags)) data.tags = [];
-  return data;
+  return data as unknown as BackupPayload;
 }
 
 // ---------- FTS-Rebuild / -Abgleich ----------

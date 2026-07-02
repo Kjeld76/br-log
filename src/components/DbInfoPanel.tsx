@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
-import { getDbPathInfo } from "../db/client";
+import { getDbPathInfo, backupNow } from "../db/client";
 import { deletePlaintextBackup } from "../lib/auth";
+import { toUserMessage } from "../lib/errors";
 import { Icon } from "./Icon";
 
 export default function DbInfoPanel() {
@@ -11,6 +12,8 @@ export default function DbInfoPanel() {
   const [hasBackup, setHasBackup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -21,7 +24,7 @@ export default function DbInfoPanel() {
         setPortable(info.portable);
         setHasBackup(info.hasPlaintextBackup);
       } catch (e) {
-        setError(String(e));
+        setError(toUserMessage(e));
       }
     })();
   }, []);
@@ -32,7 +35,7 @@ export default function DbInfoPanel() {
       await deletePlaintextBackup();
       setHasBackup(false);
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
     }
   };
 
@@ -44,7 +47,7 @@ export default function DbInfoPanel() {
       try {
         await openPath(dir);
       } catch (e) {
-        setError(String(e));
+        setError(toUserMessage(e));
       }
     }
   };
@@ -56,7 +59,24 @@ export default function DbInfoPanel() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
+    }
+  };
+
+  // Manuelles Sofort-Backup über denselben Rust-Command wie das automatische
+  // Backup beim Entsperren (Finding 6): trivial, weil er nur den bestehenden
+  // db_backup-Aufruf wiederverwendet.
+  const runBackup = async () => {
+    setError(null);
+    setBackupStatus(null);
+    setBackupBusy(true);
+    try {
+      const path = await backupNow();
+      setBackupStatus(`Gesichert nach: ${path}`);
+    } catch (e) {
+      setError(toUserMessage(e));
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -98,6 +118,17 @@ export default function DbInfoPanel() {
           Schlüsselunabhängig ist der JSON-Export unter „Daten → Sicherung &amp;
           Übertragung" – er braucht weder keyfile.json noch Passwort.
         </p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          Zusätzlich legt die App bei jedem Entsperren automatisch eine
+          Sicherung (Datenbank + keyfile.json) im Unterordner{" "}
+          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">
+            backups/
+          </code>{" "}
+          neben der Hauptdatenbank an – rotierend, die letzten 5 Stände
+          bleiben erhalten. Zum Wiederherstellen bei geschlossener App die
+          gewünschten Dateien aus <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">backups/</code> zurück
+          auf br_zeiten.db bzw. keyfile.json kopieren.
+        </p>
         <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
           {dbPath || "Pfad wird ermittelt…"}
         </div>
@@ -109,7 +140,15 @@ export default function DbInfoPanel() {
             <Icon name="folder-open" size={16} />
             Ordner im Explorer öffnen
           </button>
+          <button type="button" className={btn} onClick={runBackup} disabled={backupBusy}>
+            {backupBusy ? "Sichert…" : "Jetzt sichern"}
+          </button>
         </div>
+        {backupStatus && (
+          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+            {backupStatus}
+          </p>
+        )}
         {hasBackup && (
           <div className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
             Aus der Verschlüsselung existiert noch eine{" "}

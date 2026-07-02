@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry, listEntries } from "../db/repository";
+import { toUserMessage } from "../lib/errors";
 import {
   addMinutesToTime,
   computeDuration,
@@ -252,7 +253,7 @@ export default function EntryForm({
       });
       onSaved();
     } catch (e) {
-      setError(String(e));
+      setError(toUserMessage(e));
     } finally {
       setSaving(false);
     }

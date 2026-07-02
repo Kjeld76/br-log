@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem, EntryFullItem } from "./types";
-import { initSchema, initSearch, resetDbCaches, getDbPathInfo } from "./db/client";
+import {
+  initSchema,
+  initSearch,
+  resetDbCaches,
+  getDbPathInfo,
+  backupNow,
+} from "./db/client";
 import { listTags, newEntry, deleteEntry, getEntry } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
+import { toUserMessage } from "./lib/errors";
 import {
   type StartMode,
   getStartStatus,
@@ -80,7 +87,7 @@ export default function App() {
         setStartMessage(s.message);
         setStartMode(s.mode);
       } catch (e) {
-        setStartMessage(String(e));
+        setStartMessage(toUserMessage(e));
         setStartMode("error");
       }
     })();
@@ -100,8 +107,16 @@ export default function App() {
       setReady(true);
       setStartMode("encrypted"); // ab jetzt ist die DB verschlüsselt -> Unlock
       setLocked(false);
+      // Automatisches Sicherheits-Backup NACH erfolgreichem Entsperren
+      // (Finding 5): best-effort, blockiert den Start nicht. Schutz gegen
+      // Fehlbedienung/Plattenausfall -- ein Fehlschlag wird nur geloggt +
+      // dezent als Toast gemeldet, nicht als harter Fehler behandelt.
+      void backupNow().catch((e) => {
+        console.warn("Automatisches Backup fehlgeschlagen.", e);
+        showToast("Automatisches Backup fehlgeschlagen (siehe Konsole).");
+      });
     } catch (e) {
-      setInitError(String(e));
+      setInitError(toUserMessage(e));
       setLocked(false); // raus aus dem LockScreen, Fehler anzeigen
     }
   };

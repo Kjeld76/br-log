@@ -56,6 +56,13 @@ nicht mit dem Wiederherstellungs-Code (der entkapselt nur die in der
 speichern) – er funktioniert ohne `keyfile.json` und ohne Passwort und ist
 damit der robustere Weg für Geräteübertragungen und Zweitsicherungen.
 
+Zusätzlich legt die App bei jedem Entsperren automatisch ein konsistentes
+Backup (Datenbank + `keyfile.json` zusammen) im Unterordner `backups/` neben
+der Hauptdatenbank an, rotierend über die letzten 5 Stände. Zum
+Wiederherstellen bei geschlossener App die gewünschten Dateien aus `backups/`
+zurück auf `br_zeiten.db` bzw. `keyfile.json` kopieren. Unter „Über / Daten"
+lässt sich zusätzlich jederzeit manuell ein Backup anstoßen.
+
 Läuft die App **portabel vom USB-Stick**, liegt die Datenbank stattdessen neben
 der EXE in `BR-Log-Data\br_zeiten.db` (siehe Abschnitt *Portable Version*).
 

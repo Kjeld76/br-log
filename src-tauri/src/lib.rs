@@ -599,6 +599,113 @@ fn delete_plaintext_backup(loc: State<'_, AppDbLocation>) -> Result<(), String> 
     Ok(())
 }
 
+// ---------- Automatisches Backup (Finding 5/24) ----------
+
+/// Anzahl der rotierend behaltenen Backup-Stände (siehe db_backup/rotate_backups).
+const BACKUP_KEEP_COUNT: usize = 5;
+
+/// Findet für einen (sortierbaren) Zeitstempel einen freien Dateinamen im
+/// Backup-Ordner: hängt bei Kollision (zwei Backups im selben Millisekunden-
+/// Zeitfenster, z. B. automatisches Backup direkt gefolgt von einem manuellen
+/// Klick auf "Jetzt sichern") einen laufenden Suffix an, statt VACUUM INTO an
+/// eine bereits existierende Zieldatei scheitern zu lassen.
+fn unique_backup_paths(dir: &Path, stamp: &str) -> (PathBuf, PathBuf) {
+    let mut suffix = String::new();
+    let mut n: u32 = 0;
+    loop {
+        let db_path = dir.join(format!("br_zeiten-{stamp}{suffix}.db"));
+        if !db_path.exists() {
+            let kf_path = dir.join(format!("keyfile-{stamp}{suffix}.json"));
+            return (db_path, kf_path);
+        }
+        n += 1;
+        suffix = format!("-{n}");
+    }
+}
+
+/// Erstellt ein konsistentes, verschlüsseltes Backup (Datenbank + keyfile.json
+/// zusammen -- ohne keyfile.json ist eine DB-Kopie wertlos) im Unterordner
+/// `backups/` neben der Hauptdatenbank und rotiert danach auf die letzten
+/// BACKUP_KEEP_COUNT Stände.
+///
+/// `stamp` ist ein vom Frontend vorformatierter, chronologisch sortierbarer
+/// Zeitstempel (z. B. "20260702-143000-125") -- damit braucht Rust keine
+/// Datums-/Kalenderlogik (keine neue Dependency wie chrono nötig).
+///
+/// VACUUM INTO läuft über die bereits offene, entsperrte Connection und
+/// erzeugt dadurch eine konsistente, mit demselben Schlüssel verschlüsselte
+/// Kopie -- das frühere WAL-Risiko einer reinen Datei-Kopie (siehe Audit-
+/// Finding 5/6) entfällt strukturell, ein separater Checkpoint ist nicht
+/// nötig. Ohne entsperrte DB (gesperrt) schlägt der Aufruf fehl, statt still
+/// nichts zu tun -- der Aufrufer (client-seitig best-effort) entscheidet, wie
+/// er mit dem Fehler umgeht.
+#[tauri::command]
+fn db_backup(
+    state: State<'_, DbState>,
+    loc: State<'_, AppDbLocation>,
+    stamp: String,
+) -> Result<String, String> {
+    if stamp.trim().is_empty()
+        || !stamp.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err("Ungültiger Zeitstempel für das Backup".to_string());
+    }
+    let guard = state.lock().map_err(|e| e.to_string())?;
+    let kc = guard.as_ref().ok_or_else(|| "DB gesperrt".to_string())?;
+
+    let backups_dir = loc.0.data_dir.join("backups");
+    std::fs::create_dir_all(&backups_dir).map_err(|e| e.to_string())?;
+
+    let (db_backup_file, keyfile_backup_file) = unique_backup_paths(&backups_dir, &stamp);
+
+    // Einfaches Quoting reicht: der Pfad kommt aus unserem eigenen data_dir,
+    // nicht aus Nutzereingabe; ' wird trotzdem defensiv escaped (Muster wie
+    // beim ATTACH DATABASE in crypto_migrate oben).
+    let target_sql = db_backup_file.to_string_lossy().replace('\'', "''");
+    kc.conn
+        .execute_batch(&format!("VACUUM INTO '{target_sql}';"))
+        .map_err(|e| format!("Backup fehlgeschlagen: {e}"))?;
+
+    let keyfile_src = loc.0.data_dir.join(crypto::KEYFILE_NAME);
+    if let Err(e) = std::fs::copy(&keyfile_src, &keyfile_backup_file) {
+        // Ohne keyfile.json ist die DB-Kopie nicht entschlüsselbar und damit
+        // wertlos -> lieber gar kein Backup als ein trügerisch unvollständiges.
+        let _ = std::fs::remove_file(&db_backup_file);
+        return Err(format!("Sicherung der Schlüsseldatei fehlgeschlagen: {e}"));
+    }
+
+    rotate_backups(&backups_dir, BACKUP_KEEP_COUNT);
+
+    Ok(db_backup_file.to_string_lossy().into_owned())
+}
+
+/// Behält nur die letzten `keep` Backup-Stände (DB + zugehörige Keyfile-Kopie)
+/// im Ordner, sortiert am (sortierbaren) Zeitstempel im Dateinamen. Best-
+/// effort: ein Lösch- oder Lesefehler bricht das gerade erstellte Backup NICHT
+/// ab (Rotation ist Aufräumen, kein Teil der eigentlichen Sicherung).
+fn rotate_backups(backups_dir: &Path, keep: usize) {
+    let mut stamps: Vec<String> = match std::fs::read_dir(backups_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.strip_prefix("br_zeiten-")
+                    .and_then(|s| s.strip_suffix(".db"))
+                    .map(|s| s.to_string())
+            })
+            .collect(),
+        Err(_) => return,
+    };
+    stamps.sort();
+    if stamps.len() <= keep {
+        return;
+    }
+    for old in &stamps[..stamps.len() - keep] {
+        let _ = std::fs::remove_file(backups_dir.join(format!("br_zeiten-{old}.db")));
+        let _ = std::fs::remove_file(backups_dir.join(format!("keyfile-{old}.json")));
+    }
+}
+
 fn count_table(conn: &Connection, table: &str) -> Result<i64, String> {
     conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
         .map_err(|e| e.to_string())
@@ -746,7 +853,8 @@ pub fn run() {
             crypto_regenerate_recovery,
             crypto_set_autolock,
             crypto_migrate,
-            delete_plaintext_backup
+            delete_plaintext_backup,
+            db_backup
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");
@@ -986,5 +1094,116 @@ mod db_status_tests {
         assert_eq!(status["mode"], "firstRun");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+// ---------- Tests: Backup-Rotation/Namensfindung (reine Dateisystemlogik) ----------
+
+#[cfg(test)]
+mod backup_tests {
+    use super::{rotate_backups, unique_backup_paths, BACKUP_KEEP_COUNT};
+    use std::fs;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn temp_test_dir(label: &str) -> std::path::PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "br-log-backup-test-{label}-{}-{n}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("Temp-Testverzeichnis anlegen");
+        dir
+    }
+
+    fn touch_backup(dir: &std::path::Path, stamp: &str) {
+        fs::write(dir.join(format!("br_zeiten-{stamp}.db")), b"db").unwrap();
+        fs::write(dir.join(format!("keyfile-{stamp}.json")), b"kf").unwrap();
+    }
+
+    // ---------- unique_backup_paths ----------
+
+    #[test]
+    fn unique_backup_paths_ohne_kollision_nutzt_stamp_direkt() {
+        let dir = temp_test_dir("unique-no-collision");
+        let (db, kf) = unique_backup_paths(&dir, "20260702-120000-000");
+        assert_eq!(db, dir.join("br_zeiten-20260702-120000-000.db"));
+        assert_eq!(kf, dir.join("keyfile-20260702-120000-000.json"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_backup_paths_haengt_bei_kollision_einen_suffix_an() {
+        let dir = temp_test_dir("unique-collision");
+        let stamp = "20260702-120000-000";
+        touch_backup(&dir, stamp); // Zieldatei existiert schon (z. B. Doppelaufruf im selben Millisekunden-Fenster)
+
+        let (db, kf) = unique_backup_paths(&dir, stamp);
+
+        assert_eq!(db, dir.join(format!("br_zeiten-{stamp}-1.db")));
+        assert_eq!(kf, dir.join(format!("keyfile-{stamp}-1.json")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_backup_paths_zaehlt_bei_mehrfacher_kollision_hoch() {
+        let dir = temp_test_dir("unique-multi-collision");
+        let stamp = "20260702-120000-000";
+        touch_backup(&dir, stamp);
+        touch_backup(&dir, &format!("{stamp}-1"));
+
+        let (db, _kf) = unique_backup_paths(&dir, stamp);
+
+        assert_eq!(db, dir.join(format!("br_zeiten-{stamp}-2.db")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---------- rotate_backups ----------
+
+    #[test]
+    fn rotate_backups_behaelt_alles_wenn_nicht_mehr_als_keep_vorhanden() {
+        let dir = temp_test_dir("rotate-under-limit");
+        for i in 0..3 {
+            touch_backup(&dir, &format!("2026070{i}-000000-000"));
+        }
+
+        rotate_backups(&dir, BACKUP_KEEP_COUNT);
+
+        let remaining = fs::read_dir(&dir).unwrap().count();
+        assert_eq!(remaining, 6); // 3 * (db + keyfile), nichts gelöscht
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rotate_backups_loescht_die_aeltesten_ueber_dem_limit() {
+        let dir = temp_test_dir("rotate-over-limit");
+        // 7 Stände anlegen, sortierbare Zeitstempel (chronologisch aufsteigend).
+        let stamps: Vec<String> = (0..7)
+            .map(|i| format!("20260702-{i:02}0000-000"))
+            .collect();
+        for s in &stamps {
+            touch_backup(&dir, s);
+        }
+
+        rotate_backups(&dir, 5);
+
+        // Die zwei ältesten (Index 0,1) müssen weg sein, DB + Keyfile jeweils.
+        for old in &stamps[..2] {
+            assert!(!dir.join(format!("br_zeiten-{old}.db")).exists());
+            assert!(!dir.join(format!("keyfile-{old}.json")).exists());
+        }
+        // Die fünf neuesten bleiben erhalten.
+        for kept in &stamps[2..] {
+            assert!(dir.join(format!("br_zeiten-{kept}.db")).exists());
+            assert!(dir.join(format!("keyfile-{kept}.json")).exists());
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rotate_backups_ist_ein_no_op_bei_leerem_oder_fehlendem_ordner() {
+        let dir = temp_test_dir("rotate-missing").join("does-not-exist");
+        // Darf nicht panicken, wenn der Ordner gar nicht existiert.
+        rotate_backups(&dir, BACKUP_KEEP_COUNT);
     }
 }

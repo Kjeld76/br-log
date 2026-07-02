@@ -373,6 +373,67 @@ describe("applyImport – atomarer Merge", () => {
     );
     expect(etInserts.map((s) => s.params[1])).toEqual(["imp-2"]);
   });
+
+  it("erhält den ORIGINALEN updated_at aus dem Backup, statt auf 'jetzt' zu stempeln (Finding 10)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return []; // lokal leer -> Eintrag ist neu
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const importedUpdatedAt = "2026-01-10T09:00:00.000Z"; // deutlich in der Vergangenheit
+    const payload: BackupPayload = {
+      schemaVersion: 1,
+      exportedAt: "2026-01-20T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [baseEntry({ id: "e-new", updatedAt: importedUpdatedAt })],
+    };
+
+    await repo.applyImport(payload);
+
+    const insert = batchStatement("INSERT INTO entries");
+    expect(insert).toBeDefined();
+    // Letzter Parameter des INSERT ist updated_at (s. entryWriteStatements) --
+    // muss der importierte Zeitstempel sein, NICHT ein frisch generiertes 'jetzt'.
+    expect(insert!.params[insert!.params.length - 1]).toBe(importedUpdatedAt);
+  });
+
+  it("nutzt eine vorab berechnete Summary (precomputedSummary), ohne die Konflikt-Analyse erneut auszuführen", async () => {
+    let analyzeQueryCount = 0;
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) {
+        analyzeQueryCount++;
+        return [];
+      }
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const payload: BackupPayload = {
+      schemaVersion: 1,
+      exportedAt: "2026-01-20T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [baseEntry({ id: "e-new" })],
+    };
+    const precomputed = {
+      newEntries: 1,
+      conflicts: 0,
+      unchanged: 0,
+      newTags: 0,
+      conflictItems: [],
+    };
+
+    const summary = await repo.applyImport(payload, precomputed);
+
+    // Die übergebene Summary wird 1:1 zurückgegeben (keine erneute Voll-Analyse).
+    expect(summary).toBe(precomputed);
+    // "SELECT id, updated_at FROM entries" läuft dennoch genau EINMAL (für den
+    // tatsächlichen Schreibvorgang) -- nicht zweimal wie bei doppelter
+    // analyzeImport-Ausführung.
+    expect(analyzeQueryCount).toBe(1);
+  });
 });
 
 describe("parseBackup", () => {
@@ -408,5 +469,69 @@ describe("parseBackup", () => {
 
   it("wirft bei kaputtem JSON", () => {
     expect(() => repo.parseBackup("{nicht json")).toThrow();
+  });
+
+  it("parst einen vollständig gültigen Eintrag anstandslos (Feldvalidierung, Finding 1)", () => {
+    const raw = JSON.stringify({
+      schemaVersion: 1,
+      entries: [
+        {
+          id: "e1",
+          date: "2026-01-15",
+          durationMinutes: 60,
+          tagIds: ["t1"],
+          objections: [],
+        },
+      ],
+    });
+    const result = repo.parseBackup(raw);
+    expect(result.entries).toHaveLength(1);
+  });
+
+  it("wirft bei einer unbekannten/zukünftigen schemaVersion", () => {
+    const raw = JSON.stringify({ schemaVersion: 2, entries: [] });
+    expect(() => repo.parseBackup(raw)).toThrow("Schema-Version");
+  });
+
+  it("akzeptiert eine fehlende schemaVersion defensiv wie Version 1", () => {
+    const raw = JSON.stringify({ entries: [] });
+    expect(() => repo.parseBackup(raw)).not.toThrow();
+  });
+
+  it("wirft bei einem Eintrag ohne gültige id", () => {
+    const raw = JSON.stringify({
+      entries: [{ id: "", date: "2026-01-15", durationMinutes: 60 }],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("keine gültige ID");
+  });
+
+  it("wirft bei einem Eintrag mit ungültigem/fehlendem Datum", () => {
+    const raw = JSON.stringify({
+      entries: [{ id: "e1", date: "15.01.2026", durationMinutes: 60 }],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("gültiges Datum");
+  });
+
+  it("wirft bei einem Eintrag mit negativer Dauer", () => {
+    const raw = JSON.stringify({
+      entries: [{ id: "e1", date: "2026-01-15", durationMinutes: -5 }],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("ungültige Dauer");
+  });
+
+  it("wirft bei einem Eintrag mit nicht-numerischer Dauer", () => {
+    const raw = JSON.stringify({
+      entries: [{ id: "e1", date: "2026-01-15", durationMinutes: "60" }],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("ungültige Dauer");
+  });
+
+  it("wirft bei einem Eintrag mit ungültigen tagIds (kein Array)", () => {
+    const raw = JSON.stringify({
+      entries: [
+        { id: "e1", date: "2026-01-15", durationMinutes: 60, tagIds: "t1" },
+      ],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("Schlagwort-Zuordnungen");
   });
 });

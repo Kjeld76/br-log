@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { format } from "date-fns";
 import { SCHEMA_STATEMENTS } from "./schema";
 
 /**
@@ -121,6 +122,23 @@ export async function initSearch(): Promise<void> {
     if (initPromise === p) initPromise = null;
   });
   return p;
+}
+
+/**
+ * Erstellt ein konsistentes, verschlüsseltes Backup (DB + keyfile.json) im
+ * Unterordner `backups/` neben der Hauptdatenbank (Finding 5/24). Läuft über
+ * `VACUUM INTO` auf der offenen, entsperrten Connection -- liefert dadurch
+ * eine mit demselben Schlüssel verschlüsselte, konsistente Kopie ohne das
+ * frühere WAL-Risiko einer reinen Datei-Kopie. Rotiert Rust-seitig auf die
+ * letzten Stände. Der Zeitstempel wird HIER (nicht in Rust) formatiert, damit
+ * Rust ohne Datums-/Kalenderlogik auskommt (keine neue Dependency).
+ *
+ * Wirft bei Fehlern (z. B. gesperrte DB) -- Aufrufer entscheiden bewusst
+ * best-effort, wie sie reagieren (kein Startabbruch, siehe App.tsx).
+ */
+export async function backupNow(): Promise<string> {
+  const stamp = format(new Date(), "yyyyMMdd-HHmmss-SSS");
+  return invoke<string>("db_backup", { stamp });
 }
 
 /** DB-Pfad + Modus (portabel/installiert), wie von Rust ermittelt. */
