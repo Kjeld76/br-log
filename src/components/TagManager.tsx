@@ -7,6 +7,7 @@ import {
   setTagArchived,
 } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
+import { inputCls } from "../lib/ui";
 
 interface Props {
   onChanged: () => void;
@@ -76,7 +77,7 @@ export default function TagManager({ onChanged, reloadKey }: Props) {
     <div className="space-y-4">
       <div className="flex gap-2">
         <input
-          className="flex-1 rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+          className={inputCls + " flex-1"}
           placeholder="Neues Schlagwort"
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
@@ -162,7 +163,7 @@ function TagRow({
     <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
       {editing ? (
         <input
-          className="flex-1 rounded border border-slate-300 bg-white p-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+          className={inputCls + " flex-1"}
           value={label}
           autoFocus
           onChange={(e) => setLabel(e.target.value)}

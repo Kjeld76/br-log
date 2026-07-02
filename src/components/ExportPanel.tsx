@@ -9,6 +9,7 @@ import {
 import { analyzeImport, applyImport } from "../db/repository";
 import { backupNow } from "../db/client";
 import { toUserMessage } from "../lib/errors";
+import { inputCls } from "../lib/ui";
 import { Icon, type IconName } from "./Icon";
 
 interface Props {
@@ -142,8 +143,7 @@ export default function ExportPanel({ onImported }: Props) {
 
   const btn =
     "w-full rounded border border-slate-300 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700";
-  const field =
-    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
+  const field = inputCls;
 
   return (
     <div className="space-y-4">

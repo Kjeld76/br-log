@@ -6,7 +6,12 @@ export interface CsvColumn<T> {
   value: (row: T) => string | number | null | undefined;
 }
 
-export interface CsvOptions {
+// Nicht exportiert (Finding 51): toCsv wird im gesamten Code ausschließlich
+// zweiargumentig aufgerufen (exporters.ts), delimiter/bom werden nirgends von
+// außen übergeben. Als Typ des optionalen dritten Parameters bleibt die
+// Erweiterungsstelle (siehe Kopf-Kommentar) erhalten, ohne eine ungenutzte
+// öffentliche API-Fläche vorzutäuschen.
+interface CsvOptions {
   delimiter?: string; // Standard ";" (Excel DE)
   bom?: boolean; // Standard true (UTF-8 mit BOM, Umlaute in Excel)
 }

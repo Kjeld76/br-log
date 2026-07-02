@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { format, differenceInCalendarDays, parseISO } from "date-fns";
+import { differenceInCalendarDays, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag, EntryListItem, EntryFullItem } from "./types";
 import {
   initSchema,
@@ -17,7 +17,8 @@ import {
 } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
-import { formatDateDe } from "./lib/calendar";
+import { formatDateDe, todayIso } from "./lib/calendar";
+import { secondaryBtnCls } from "./lib/ui";
 import {
   type StartMode,
   getStartStatus,
@@ -39,10 +40,6 @@ type Modal =
   | { type: "detail"; entry: EntryFullItem }
   | null;
 
-function todayIso(): string {
-  return format(new Date(), "yyyy-MM-dd");
-}
-
 /**
  * Fokussiert beim Öffnen das erste fokussierbare Element im Dialog-Container
  * und hält Tab/Shift+Tab innerhalb des Dialogs (Fokusfalle). Ohne das springt
@@ -52,7 +49,15 @@ function todayIso(): string {
  */
 function useModalFocusTrap(
   ref: React.RefObject<HTMLElement | null>,
-  active: boolean
+  active: boolean,
+  // Finding B5: ohne explizite Zielangabe fokussiert die Falle blind das
+  // ERSTE fokussierbare Element im Container -- im Bearbeiten-Modal kann das
+  // z. B. der "Übernehmen"-Hinweis-Button (showLastDefaultsHint) VOR dem
+  // Datumsfeld sein und damit den seit W1 vorgesehenen Autofokus auf das
+  // Datumsfeld unterlaufen. initialFocusRef erlaubt es dem Aufrufer, das
+  // tatsächlich gewünschte Ziel vorzugeben; ohne Angabe bleibt das bisherige
+  // Verhalten (erstes fokussierbares Element) unverändert.
+  initialFocusRef?: React.RefObject<HTMLElement | null>
 ) {
   useEffect(() => {
     if (!active || !ref.current) return;
@@ -64,7 +69,7 @@ function useModalFocusTrap(
         )
       ).filter((el) => !el.hasAttribute("disabled"));
 
-    const first = focusables()[0];
+    const first = initialFocusRef?.current ?? focusables()[0];
     (first ?? container).focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -83,7 +88,7 @@ function useModalFocusTrap(
     };
     container.addEventListener("keydown", onKeyDown);
     return () => container.removeEventListener("keydown", onKeyDown);
-  }, [ref, active]);
+  }, [ref, active, initialFocusRef]);
 }
 
 export default function App() {
@@ -154,7 +159,16 @@ export default function App() {
   // Fokusfallen für die beiden Dialoge (Finding 41), siehe useModalFocusTrap oben.
   const modalRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(modalRef, !!modal);
+  // Finding B5: Ziel-Ref für den Autofokus im Bearbeiten-Modal (Datumsfeld),
+  // wird nur bei modal.type === "form" an useModalFocusTrap durchgereicht --
+  // die Detailansicht behält das bisherige Verhalten (erstes fokussierbares
+  // Element).
+  const dateFieldRef = useRef<HTMLInputElement>(null);
+  useModalFocusTrap(
+    modalRef,
+    !!modal,
+    modal?.type === "form" ? dateFieldRef : undefined
+  );
   useModalFocusTrap(confirmRef, !!confirmDiscard);
 
   // Theme anwenden (FOUC-Script hat die Klasse bereits gesetzt; hier zusätzlich
@@ -573,6 +587,7 @@ export default function App() {
                 <EntryForm
                   entry={modal.entry}
                   tags={allTags}
+                  dateInputRef={dateFieldRef}
                   onSaved={handleModalSaved}
                   onCancel={requestCloseModal}
                   onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
@@ -623,7 +638,7 @@ export default function App() {
             <div className="mt-3 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                className={secondaryBtnCls}
                 onClick={() => setConfirmDiscard(null)}
               >
                 Zurück

@@ -4,7 +4,10 @@ import { listEntries } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { formatDateDe } from "../lib/calendar";
 import { toUserMessage } from "../lib/errors";
+import { toggleId } from "../lib/collections";
+import { inputCls } from "../lib/ui";
 import TagFilterChips from "./TagFilterChips";
+import TagChip from "./TagChip";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -72,13 +75,9 @@ export default function EntryList({
     .reduce((s, e) => s + e.durationMinutes, 0);
   const searching = debouncedTerm.trim().length > 0;
 
-  const toggleTag = (id: string) =>
-    setTagIds((cur) =>
-      cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id]
-    );
+  const toggleTag = (id: string) => setTagIds((cur) => toggleId(cur, id));
 
-  const field =
-    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
+  const field = inputCls;
 
   return (
     <div className="space-y-3">
@@ -210,12 +209,7 @@ export default function EntryList({
                 {e.tagLabels.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {e.tagLabels.map((l) => (
-                      <span
-                        key={l}
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-                      >
-                        {l}
-                      </span>
+                      <TagChip key={l} variant="readonly" label={l} />
                     ))}
                   </div>
                 )}

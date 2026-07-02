@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { EntryListItem } from "../types";
-import { daySums, listEntries } from "../db/repository";
+import { daySums, getWorkAndCompensationMinutes, listEntries } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
+import { secondaryBtnSmCls } from "../lib/ui";
 import {
   monthGrid,
   monthLabel,
@@ -25,12 +26,17 @@ export default function CalendarView({
 }: Props) {
   const [month, setMonth] = useState<Date>(() => new Date());
   const [sums, setSums] = useState<Record<string, number>>({});
+  // Finding B2 (Summen-Konsistenz): die Monatssumme im Header zählte über
+  // daySums bisher Freizeitausgleich-Minuten MIT, während die Auswertung
+  // (StatsView) sie ausschließt -- getrennte, schlanke Abfrage statt daySums
+  // (das weiterhin ALLE Aktivität für die Tages-Marker im Raster liefert).
+  const [monthWorkMinutes, setMonthWorkMinutes] = useState(0);
+  const [monthCompensationMinutes, setMonthCompensationMinutes] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dayEntries, setDayEntries] = useState<EntryListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const cells = monthGrid(month);
-  const monthMinutes = Object.values(sums).reduce((s, m) => s + m, 0);
 
   // Finding 53: weder der Lade-Effekt noch handleDayClick hatten einen
   // Race-Guard. requestIdRef markiert jeden Monats-/Reload-Wechsel als neue
@@ -46,9 +52,12 @@ export default function CalendarView({
     let active = true;
     const { from, to } = monthRangeIso(month);
     setError(null);
-    daySums(from, to)
-      .then((s) => {
-        if (active && requestIdRef.current === id) setSums(s);
+    Promise.all([daySums(from, to), getWorkAndCompensationMinutes(from, to)])
+      .then(([s, split]) => {
+        if (!active || requestIdRef.current !== id) return;
+        setSums(s);
+        setMonthWorkMinutes(split.work);
+        setMonthCompensationMinutes(split.compensation);
       })
       .catch((e) => {
         if (active && requestIdRef.current === id) setError(toUserMessage(e));
@@ -81,8 +90,7 @@ export default function CalendarView({
     }
   };
 
-  const navBtn =
-    "rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+  const navBtn = secondaryBtnSmCls;
 
   return (
     <div className="space-y-3">
@@ -96,9 +104,12 @@ export default function CalendarView({
         </button>
         <h3 className="text-base font-semibold capitalize text-slate-800 dark:text-slate-100">
           {monthLabel(month)}
-          {monthMinutes > 0 && (
+          {(monthWorkMinutes > 0 || monthCompensationMinutes > 0) && (
             <span className="ml-2 text-sm font-normal normal-case text-slate-500 dark:text-slate-400">
-              ({minutesToHhmm(monthMinutes)} Std)
+              ({minutesToHhmm(monthWorkMinutes)} Std
+              {monthCompensationMinutes > 0 &&
+                ` · + ${minutesToHhmm(monthCompensationMinutes)} Std Freizeitausgleich`}
+              )
             </span>
           )}
         </h3>
@@ -191,7 +202,7 @@ export default function CalendarView({
                 <div className="flex justify-between">
                   <span className="flex min-w-0 items-center gap-1.5 truncate text-slate-700 dark:text-slate-200">
                     {e.isCompensation && (
-                      <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                         Freizeitausgleich
                       </span>
                     )}

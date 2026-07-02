@@ -9,6 +9,7 @@ import {
 } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
+import { inputCls } from "../lib/ui";
 
 interface Props {
   reloadKey: number;
@@ -61,8 +62,7 @@ export default function StatsView({ reloadKey }: Props) {
     };
   }, [from, to, reloadKey]);
 
-  const field =
-    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
+  const field = inputCls;
   const card =
     "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
   const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";

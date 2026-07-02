@@ -1,5 +1,6 @@
 import { getDb, isFtsAvailable, type Db, type BatchStatement } from "./client";
 import { buildPublicContent, buildSecretContent, buildFtsMatch } from "./ftsContent";
+import { AppError } from "../lib/errors";
 import type {
   TimeEntry,
   TaskTag,
@@ -142,12 +143,17 @@ async function selectByIdChunks<Row>(
   return out;
 }
 
-/** Lädt Schlagwort-Labels und Widersprüche für die übergebenen Eintrags-IDs. */
-async function loadRelations(ids: string[]): Promise<{
-  tagsByEntry: Map<string, { id: string; label: string }[]>;
-  objByEntry: Map<string, Objection[]>;
-}> {
-  const db = await getDb();
+/**
+ * Lädt (entry_id -> Tag-Liste) für die übergebenen Eintrags-IDs. EINZIGE
+ * Implementierung des entry_tags/task_tags-Joins für Label-Fetches (Finding
+ * 46) -- von loadRelations (Listen/Detail/FTS-Pfad) UND analyzeImport
+ * (Konflikt-Vorschau, dort nur als Label-Fallback-Beschreibung gebraucht,
+ * daher kein eigener Aufruf von loadRelations mit unnötigem Objections-Mitzug).
+ */
+async function loadTagsByEntryIds(
+  db: Db,
+  ids: string[]
+): Promise<Map<string, { id: string; label: string }[]>> {
   const tagRows = await selectByIdChunks<{
     entry_id: string;
     id: string;
@@ -159,6 +165,22 @@ async function loadRelations(ids: string[]): Promise<{
        FROM entry_tags et JOIN task_tags t ON t.id = et.tag_id
       WHERE et.entry_id IN (${ph})`
   );
+  const tagsByEntry = new Map<string, { id: string; label: string }[]>();
+  for (const t of tagRows) {
+    const arr = tagsByEntry.get(t.entry_id) || [];
+    arr.push({ id: t.id, label: t.label });
+    tagsByEntry.set(t.entry_id, arr);
+  }
+  return tagsByEntry;
+}
+
+/** Lädt Schlagwort-Labels und Widersprüche für die übergebenen Eintrags-IDs. */
+async function loadRelations(ids: string[]): Promise<{
+  tagsByEntry: Map<string, { id: string; label: string }[]>;
+  objByEntry: Map<string, Objection[]>;
+}> {
+  const db = await getDb();
+  const tagsByEntry = await loadTagsByEntryIds(db, ids);
   const objRows = await selectByIdChunks<ObjectionRow>(
     db,
     ids,
@@ -166,12 +188,6 @@ async function loadRelations(ids: string[]): Promise<{
       `SELECT id, entry_id, reason, by_whom, date FROM objections WHERE entry_id IN (${ph})`
   );
 
-  const tagsByEntry = new Map<string, { id: string; label: string }[]>();
-  for (const t of tagRows) {
-    const arr = tagsByEntry.get(t.entry_id) || [];
-    arr.push({ id: t.id, label: t.label });
-    tagsByEntry.set(t.entry_id, arr);
-  }
   const objByEntry = new Map<string, Objection[]>();
   for (const o of objRows) {
     const arr = objByEntry.get(o.entry_id) || [];
@@ -358,16 +374,19 @@ export async function listTags(includeArchived = false): Promise<TaskTag[]> {
 export async function createTag(label: string): Promise<TaskTag> {
   const db = await getDb();
   const trimmed = label.trim();
-  if (!trimmed) throw new Error("Bitte ein Schlagwort eingeben.");
-  // Case-insensitiver Vorab-Check gegen bestehende (auch archivierte) Labels –
-  // das Schema hat kein UNIQUE, also verhindert das App-seitig Duplikate
-  // (z. B. bei Doppel-Klick/Doppel-Enter im TagManager).
+  if (!trimmed) throw new AppError("Bitte ein Schlagwort eingeben.");
+  // Case-insensitiver Vorab-Check gegen bestehende (auch archivierte) Labels.
+  // Seit Migration v1 (src-tauri/src/lib.rs run_migrations) trägt task_tags
+  // zusätzlich UNIQUE(label COLLATE NOCASE) als DB-seitiges Sicherheitsnetz;
+  // dieser Vorab-Check bleibt bestehen, damit ein Duplikat als klare deutsche
+  // Fehlermeldung endet statt als roher UNIQUE-Constraint-Fehler (z. B. bei
+  // Doppel-Klick/Doppel-Enter im TagManager).
   const existing = await db.select<{ id: string }[]>(
     "SELECT id FROM task_tags WHERE label = ? COLLATE NOCASE",
     [trimmed]
   );
   if (existing.length > 0) {
-    throw new Error(`Schlagwort „${trimmed}“ existiert bereits.`);
+    throw new AppError(`Schlagwort „${trimmed}“ existiert bereits.`);
   }
   const tag: TaskTag = { id: generateId(), label: trimmed, archived: false };
   await db.execute("INSERT INTO task_tags (id, label, archived) VALUES (?,?,0)", [
@@ -651,6 +670,11 @@ export async function listEntriesFull(
   return items;
 }
 
+/**
+ * Tagessummen ALLER Aktivität (BR-Zeit UND Freizeitausgleich zusammen) --
+ * bewusst ungefiltert, weil die Kalender-Tages-Marker (CalendarView) jede
+ * Aktivität an einem Tag zeigen sollen, unabhängig von ihrer Art.
+ */
 export async function daySums(
   from: string,
   to: string
@@ -663,6 +687,38 @@ export async function daySums(
   const out: Record<string, number> = {};
   for (const r of rows) out[r.date] = r.mins;
   return out;
+}
+
+/**
+ * BR-Arbeitszeit- und Freizeitausgleich-Minuten GETRENNT für einen Zeitraum
+ * (Finding B2/Summen-Konsistenz). Die Kalender-Monatssumme (CalendarView) und
+ * die "Diese Woche"-Summe (QuickEntryView) zählten Ausgleichs-Minuten bisher
+ * über daySums MIT, während die Auswertung (getStatsSummary) sie ausschließt
+ * -- unterschiedliche Zahlen für dieselbe Frage "wie viel BR-Zeit". Eine
+ * eigene, schlanke Abfrage statt daySums mit einem Filter zu überladen: die
+ * Tages-Marker im Kalender sollen weiterhin ALLE Aktivität zeigen (s. o.),
+ * nur die Kopf-/Wochensumme muss zur Auswertung passen. `work` fließt in die
+ * Summe ein, `compensation` wird -- wie in EntryList/PrintReportPanel bereits
+ * üblich -- separat ausgewiesen statt stillschweigend zu verschwinden.
+ */
+export async function getWorkAndCompensationMinutes(
+  from: string,
+  to: string
+): Promise<{ work: number; compensation: number }> {
+  const db = await getDb();
+  const rows = await db.select<
+    { work: number | null; compensation: number | null }[]
+  >(
+    `SELECT
+       SUM(CASE WHEN is_compensation = 0 THEN duration_minutes ELSE 0 END) as work,
+       SUM(CASE WHEN is_compensation = 1 THEN duration_minutes ELSE 0 END) as compensation
+     FROM entries WHERE date >= ? AND date <= ?`,
+    [from, to]
+  );
+  return {
+    work: rows[0]?.work ?? 0,
+    compensation: rows[0]?.compensation ?? 0,
+  };
 }
 
 /**
@@ -764,22 +820,12 @@ export async function analyzeImport(
     const labelById = new Map(
       rows.map((r) => [r.id, { date: r.date, info: r.info_for_management }])
     );
-    // Schlagwort-Labels als Fallback-Beschreibung
-    const tagRows = await selectByIdChunks<{ entry_id: string; label: string }>(
-      db,
-      conflictIds,
-      (ph) =>
-        `SELECT et.entry_id, t.label FROM entry_tags et JOIN task_tags t ON t.id = et.tag_id WHERE et.entry_id IN (${ph})`
-    );
-    const tagsById = new Map<string, string[]>();
-    for (const tr of tagRows) {
-      const arr = tagsById.get(tr.entry_id) || [];
-      arr.push(tr.label);
-      tagsById.set(tr.entry_id, arr);
-    }
+    // Schlagwort-Labels als Fallback-Beschreibung (Finding 46: teilt sich den
+    // Join mit loadRelations statt ihn erneut zu duplizieren).
+    const tagsByEntry = await loadTagsByEntryIds(db, conflictIds);
     for (const id of conflictIds) {
       const base = labelById.get(id);
-      const tagLabels = (tagsById.get(id) || []).join(", ");
+      const tagLabels = (tagsByEntry.get(id) || []).map((t) => t.label).join(", ");
       const label =
         (base?.info && base.info.trim()) || tagLabels || "(ohne Beschreibung)";
       conflictItems.push({ id, date: base?.date ?? "?", label });
@@ -906,17 +952,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  */
 function validateBackupEntry(raw: unknown, index: number): void {
   if (!isPlainObject(raw)) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag ${index + 1} ist kein gültiges Objekt.`
     );
   }
   if (typeof raw.id !== "string" || raw.id.trim() === "") {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag ${index + 1} hat keine gültige ID.`
     );
   }
   if (typeof raw.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat kein gültiges Datum (erwartet JJJJ-MM-TT).`
     );
   }
@@ -925,17 +971,17 @@ function validateBackupEntry(raw: unknown, index: number): void {
     !Number.isFinite(raw.durationMinutes) ||
     raw.durationMinutes < 0
   ) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat eine ungültige Dauer.`
     );
   }
   if (raw.tagIds !== undefined && !Array.isArray(raw.tagIds)) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat ungültige Schlagwort-Zuordnungen.`
     );
   }
   if (raw.objections !== undefined && !Array.isArray(raw.objections)) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat ungültige Widersprüche.`
     );
   }
@@ -946,10 +992,10 @@ export function parseBackup(raw: string): BackupPayload {
   try {
     data = JSON.parse(raw);
   } catch {
-    throw new Error("Ungültige Backup-Datei: Die Datei enthält kein gültiges JSON.");
+    throw new AppError("Ungültige Backup-Datei: Die Datei enthält kein gültiges JSON.");
   }
   if (!isPlainObject(data) || !Array.isArray(data.entries)) {
-    throw new Error("Ungültige Backup-Datei: 'entries' fehlt.");
+    throw new AppError("Ungültige Backup-Datei: 'entries' fehlt.");
   }
   // schemaVersion nur ablehnen, wenn sie explizit gesetzt UND neuer als
   // unterstützt ist (unbekannte künftige Version, die dieser Code-Stand nicht
@@ -961,7 +1007,7 @@ export function parseBackup(raw: string): BackupPayload {
     (typeof data.schemaVersion !== "number" ||
       data.schemaVersion > SUPPORTED_SCHEMA_VERSION)
   ) {
-    throw new Error(
+    throw new AppError(
       `Ungültige Backup-Datei: Unbekannte Schema-Version (${String(
         data.schemaVersion
       )}). Diese App-Version unterstützt Backups bis Version ${SUPPORTED_SCHEMA_VERSION} – bitte die App aktualisieren.`

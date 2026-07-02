@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import { listEntries } from "../db/repository";
 import type { EntryListItem } from "../types";
 import { minutesToHhmm } from "../lib/time";
-import { formatDateDe } from "../lib/calendar";
+import { formatDateDe, todayIso } from "../lib/calendar";
 import { toUserMessage } from "../lib/errors";
+import { inputCls, secondaryBtnCls } from "../lib/ui";
 import { Icon } from "./Icon";
 
 // Finding 13: druckbarer Monats-/Zeitraumnachweis. Bewusst window.print() +
@@ -79,7 +79,7 @@ export default function PrintReportPanel() {
           (s, e) => s + e.durationMinutes,
           0
         ),
-        createdAt: formatDateDe(format(new Date(), "yyyy-MM-dd")),
+        createdAt: formatDateDe(todayIso()),
       });
     } catch (e) {
       setError(toUserMessage(e));
@@ -93,8 +93,7 @@ export default function PrintReportPanel() {
     window.print();
   };
 
-  const field =
-    "mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
+  const field = inputCls + " mt-1 w-full";
 
   return (
     <div className="space-y-3">
@@ -147,7 +146,7 @@ export default function PrintReportPanel() {
           {report && (
             <button
               type="button"
-              className="flex items-center gap-1.5 rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              className={"flex items-center gap-1.5 " + secondaryBtnCls}
               onClick={doPrint}
             >
               <Icon name="printer" size={16} />

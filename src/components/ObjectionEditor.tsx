@@ -1,5 +1,6 @@
 import type { Objection } from "../types";
 import { newObjection } from "../db/repository";
+import { inputCls, secondaryBtnSmCls } from "../lib/ui";
 
 interface Props {
   objections: Objection[];
@@ -11,9 +12,6 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
     onChange(objections.map((o) => (o.id === id ? { ...o, ...patch } : o)));
   const remove = (id: string) => onChange(objections.filter((o) => o.id !== id));
   const add = () => onChange([...objections, newObjection()]);
-
-  const inputCls =
-    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
 
   return (
     <div className="space-y-2">
@@ -57,11 +55,7 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
           </div>
         </div>
       ))}
-      <button
-        type="button"
-        className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-        onClick={add}
-      >
+      <button type="button" className={secondaryBtnSmCls} onClick={add}>
         + Widerspruch hinzufügen
       </button>
     </div>

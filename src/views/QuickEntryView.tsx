@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, subDays } from "date-fns";
 import type { EntryListItem, TaskTag, TimeEntry } from "../types";
-import { daySums, listEntries, newEntry } from "../db/repository";
-import { weekRangeIso, formatDateDe } from "../lib/calendar";
+import { getWorkAndCompensationMinutes, listEntries, newEntry } from "../db/repository";
+import { weekRangeIso, formatDateDe, todayIso } from "../lib/calendar";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
 import EntryForm from "../components/EntryForm";
-
-function todayIso(): string {
-  return format(new Date(), "yyyy-MM-dd");
-}
 
 // Zwischenstand des Erfassen-Formulars, damit ein App-Neustart (z. B. nach
 // versehentlichem Schließen) nichts verliert. Enthält bewusst auch
@@ -71,6 +67,11 @@ export default function QuickEntryView({
   // ungefilterten listEntries({}): vermeidet, für 5 Zeilen den kompletten
   // Datenbestand zu laden (bei Jahren an Historie relevant).
   const [weekMinutes, setWeekMinutes] = useState(0);
+  // Finding B2 (Summen-Konsistenz): "Diese Woche" zählte über daySums bisher
+  // Freizeitausgleich-Minuten MIT, während die Auswertung (StatsView) sie
+  // ausschließt -- getWorkAndCompensationMinutes liefert beide getrennt,
+  // Ausgleich wird wie in EntryList/PrintReportPanel separat ausgewiesen.
+  const [weekCompensationMinutes, setWeekCompensationMinutes] = useState(0);
   const [recent, setRecent] = useState<EntryListItem[]>([]);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -79,12 +80,13 @@ export default function QuickEntryView({
     setStatsError(null);
     const { from, to } = weekRangeIso(new Date());
     Promise.all([
-      daySums(from, to),
+      getWorkAndCompensationMinutes(from, to),
       listEntries({ from: format(subDays(new Date(), 30), "yyyy-MM-dd"), to: todayIso() }),
     ])
-      .then(([sums, items]) => {
+      .then(([split, items]) => {
         if (!active) return;
-        setWeekMinutes(Object.values(sums).reduce((s, m) => s + m, 0));
+        setWeekMinutes(split.work);
+        setWeekCompensationMinutes(split.compensation);
         setRecent(items.slice(0, 5));
       })
       .catch((e) => {
@@ -138,6 +140,11 @@ export default function QuickEntryView({
           <span className="text-slate-600 dark:text-slate-300">Diese Woche</span>
           <span className="font-semibold text-slate-800 dark:text-slate-100">
             {minutesToHhmm(weekMinutes)} Std
+            {weekCompensationMinutes > 0 && (
+              <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">
+                (+ {minutesToHhmm(weekCompensationMinutes)} Std Freizeitausgleich)
+              </span>
+            )}
           </span>
         </div>
         {statsError && (

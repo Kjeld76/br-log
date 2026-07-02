@@ -5,6 +5,7 @@ import {
   getAutoLockMinutes,
   setAutoLockMinutes,
 } from "../lib/auth";
+import { secondaryBtnSmCls } from "../lib/ui";
 import RecoveryCodeReveal from "./RecoveryCodeReveal";
 
 interface Props {
@@ -80,8 +81,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged }: Props) {
     "w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
   const btn =
     "rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
-  const outlineBtn =
-    "rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+  const outlineBtn = secondaryBtnSmCls;
 
   return (
     <div className="space-y-5">

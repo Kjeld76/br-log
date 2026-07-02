@@ -70,6 +70,16 @@ export function formatDurationLong(total: number): string {
   return `${h} Std ${m} Min`;
 }
 
+/**
+ * Kombinierte Kurz-/Langform "H:MM Std (H Std M Min)" -- EINZIGE Stelle, die
+ * beide Formatter zusammensetzt. War zuvor wortgleich doppelt inline gebaut
+ * in EntryForm (Live-Dauer im Formular) und EntryDetail (Detailansicht)
+ * (Finding 49).
+ */
+export function formatDurationFull(total: number): string {
+  return `${minutesToHhmm(total)} Std (${formatDurationLong(total)})`;
+}
+
 /** Minuten -> Dezimalstunden (2 Nachkommastellen), z. B. für die Abrechnung. */
 export function minutesToDecimalHours(total: number): number {
   return Math.round((total / 60) * 100) / 100;

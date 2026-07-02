@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { TaskTag } from "../types";
+import TagChip from "./TagChip";
 
 interface Props {
   tags: TaskTag[]; // nur nicht-archivierte
@@ -26,24 +27,15 @@ export default function TagFilterChips({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {visible.map((t) => {
-        const active = selected.includes(t.id);
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onToggle(t.id)}
-            className={
-              "rounded-full border px-3 py-1 text-xs transition " +
-              (active
-                ? "border-sky-600 bg-sky-600 text-white"
-                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
-            }
-          >
-            {t.label}
-          </button>
-        );
-      })}
+      {visible.map((t) => (
+        <TagChip
+          key={t.id}
+          variant="selectable"
+          label={t.label}
+          active={selected.includes(t.id)}
+          onClick={() => onToggle(t.id)}
+        />
+      ))}
       {collapsible && (
         <button
           type="button"

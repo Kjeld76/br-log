@@ -1,7 +1,9 @@
 import type { EntryFullItem } from "../types";
-import { minutesToHhmm, formatDurationLong } from "../lib/time";
+import { formatDurationFull } from "../lib/time";
 import { formatDateDe } from "../lib/calendar";
 import { formatObjectionMeta } from "../lib/objections";
+import { secondaryBtnCls } from "../lib/ui";
+import TagChip from "./TagChip";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -40,23 +42,13 @@ export default function EntryDetail({
             ? `${entry.startTime} – ${entry.endTime}`
             : "—"
         )}
-        {row(
-          "Dauer",
-          `${minutesToHhmm(entry.durationMinutes)} Std (${formatDurationLong(
-            entry.durationMinutes
-          )})`
-        )}
+        {row("Dauer", formatDurationFull(entry.durationMinutes))}
         {row(
           "Schlagwörter",
           entry.tagLabels.length ? (
             <div className="flex flex-wrap gap-1">
               {entry.tagLabels.map((l) => (
-                <span
-                  key={l}
-                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200"
-                >
-                  {l}
-                </span>
+                <TagChip key={l} variant="readonly" label={l} />
               ))}
             </div>
           ) : (
@@ -137,14 +129,14 @@ export default function EntryDetail({
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            className={secondaryBtnCls}
             onClick={onClose}
           >
             Schließen
           </button>
           <button
             type="button"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            className={secondaryBtnCls}
             onClick={onDuplicate}
             title="Als Vorlage für heute übernehmen"
           >

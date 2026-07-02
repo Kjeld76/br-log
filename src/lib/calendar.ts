@@ -67,3 +67,12 @@ export function formatDateDe(iso: string): string {
 }
 
 export const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+/**
+ * Heutiges Datum als YYYY-MM-DD. EINZIGE Implementierung -- war zuvor
+ * wortgleich dreifach kopiert: todayIso() in App.tsx, todayIso() in
+ * QuickEntryView.tsx und stamp() in exporters.ts (Finding 45).
+ */
+export function todayIso(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}

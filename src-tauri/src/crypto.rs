@@ -205,10 +205,16 @@ fn unwrap_dek(
     let kek = derive_kek(secret, &salt, kdf).map_err(UnwrapError::Corrupt)?;
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek[..]));
     let aad = build_aad(domain, kdf);
-    let pt = cipher
-        .decrypt(XNonce::from_slice(&nonce), Payload { msg: &wrapped, aad: &aad })
-        // Tag-Fehler = falsches Geheimnis (oder manipulierte Parameter).
-        .map_err(|_| UnwrapError::WrongSecret)?;
+    // In Zeroizing heben: pt enthaelt die entschluesselte Klartext-DEK. Ohne
+    // das wird der Vec<u8> beim Verlassen der Funktion (Rueckgabe, frueher
+    // Return oder Fehlerpfad) normal gedroppt und NICHT ueberschrieben --
+    // die DEK bliebe als Speicherabbild-Artefakt im Prozessspeicher zurueck.
+    let pt = Zeroizing::new(
+        cipher
+            .decrypt(XNonce::from_slice(&nonce), Payload { msg: &wrapped, aad: &aad })
+            // Tag-Fehler = falsches Geheimnis (oder manipulierte Parameter).
+            .map_err(|_| UnwrapError::WrongSecret)?,
+    );
     if pt.len() != DEK_LEN {
         return Err(UnwrapError::Corrupt("DEK-Länge".into()));
     }

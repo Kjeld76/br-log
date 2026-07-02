@@ -13,7 +13,9 @@ function prefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-export function isDark(theme: Theme): boolean {
+// Nicht exportiert (Finding 51): nur intern von applyTheme genutzt, kein
+// externer Aufrufer (Grep-verifiziert).
+function isDark(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && prefersDark());
 }
 

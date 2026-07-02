@@ -8,10 +8,13 @@ import {
   computeDuration,
   durationInputToMinutes,
   minutesToHhmm,
-  formatDurationLong,
+  formatDurationFull,
   rangesOverlap,
 } from "../lib/time";
+import { toggleId } from "../lib/collections";
+import { inputCls, secondaryBtnCls } from "../lib/ui";
 import ObjectionEditor from "./ObjectionEditor";
+import TagChip from "./TagChip";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -23,6 +26,12 @@ interface Props {
   // Trägt sowohl die Dirty-Prüfung (Backdrop/Escape/View-Wechsel) als auch die
   // Draft-Persistenz der aufrufenden View (siehe QuickEntryView).
   onDraftChange?: (draft: TimeEntry, dirty: boolean) => void;
+  // Optionale externe Ref auf das Datumsfeld (Finding B5): App.tsx übergibt
+  // hier dieselbe Ref, die useModalFocusTrap als initialFocusRef bekommt --
+  // damit die Fokusfalle des Modals gezielt das Datumsfeld fokussiert statt
+  // (mangels Kenntnis der Formular-internen Reihenfolge) das erste
+  // fokussierbare Element im Dialog, z. B. den "Übernehmen"-Hinweis-Button.
+  dateInputRef?: React.RefObject<HTMLInputElement>;
 }
 
 type Mode = "range" | "duration";
@@ -75,6 +84,7 @@ export default function EntryForm({
   onSaved,
   onCancel,
   onDraftChange,
+  dateInputRef: externalDateInputRef,
 }: Props) {
   const [draft, setDraft] = useState<TimeEntry>(entry);
   const [mode, setMode] = useState<Mode>(() => initialMode(entry));
@@ -86,7 +96,8 @@ export default function EntryForm({
   const [saving, setSaving] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [objOpen, setObjOpen] = useState(entry.objections.length > 0);
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const ownDateInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = externalDateInputRef ?? ownDateInputRef;
 
   // Finding 41: Labels waren nicht per htmlFor/id mit ihren Feldern verknüpft
   // (Screenreader/Klick-auf-Label funktionierte nicht). useId liefert pro
@@ -107,9 +118,13 @@ export default function EntryForm({
   );
   const lastDefaults = useMemo(() => loadLastDefaults(), []);
 
-  // Erstes Feld beim Öffnen fokussieren (Modal wie Startseite).
+  // Erstes Feld beim Öffnen fokussieren (Modal wie Startseite). dateInputRef
+  // ist entweder eine stabile lokale useRef-Instanz oder eine vom Aufrufer
+  // übergebene, ebenfalls stabile Ref (App.tsx hält sie in einer useRef-
+  // Variable) -- absichtlich nur beim Mount, kein Re-Fokus bei Folge-Renders.
   useEffect(() => {
     dateInputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const patch = (p: Partial<TimeEntry>) => setDraft((d) => ({ ...d, ...p }));
@@ -125,12 +140,7 @@ export default function EntryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, mode, durationText]);
 
-  const toggleTag = (id: string) =>
-    patch({
-      tagIds: draft.tagIds.includes(id)
-        ? draft.tagIds.filter((t) => t !== id)
-        : [...draft.tagIds, id],
-    });
+  const toggleTag = (id: string) => patch({ tagIds: toggleId(draft.tagIds, id) });
 
   // Zugewiesene Tags (auch archivierte, damit sie sichtbar/entfernbar bleiben).
   const assignedTags = tags.filter((t) => draft.tagIds.includes(t.id));
@@ -291,8 +301,7 @@ export default function EntryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, mode, durationText, saving, onCancel]);
 
-  const field =
-    "w-full rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500";
+  const field = inputCls + " w-full";
   const labelCls =
     "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
   const blockCls =
@@ -449,9 +458,11 @@ export default function EntryForm({
             {durationPreviewError
               ? durationPreviewError
               : durationPreviewMinutes !== null
-              ? `${minutesToHhmm(durationPreviewMinutes)} Std (${formatDurationLong(
-                  durationPreviewMinutes
-                )})${mode === "range" && rangeDuration.overnight ? " – über Mitternacht" : ""}`
+              ? `${formatDurationFull(durationPreviewMinutes)}${
+                  mode === "range" && rangeDuration.overnight
+                    ? " – über Mitternacht"
+                    : ""
+                }`
               : "— noch keine gültige Eingabe —"}
           </div>
         </div>
@@ -467,25 +478,14 @@ export default function EntryForm({
           <label className={labelCls}>Schlagwörter / Aufgaben</label>
           <div className="flex flex-wrap items-center gap-1.5">
             {assignedTags.map((t) => (
-              <span
+              <TagChip
                 key={t.id}
-                className={
-                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-white " +
-                  (t.archived ? "bg-slate-400 dark:bg-slate-600" : "bg-sky-600")
-                }
-              >
-                {t.label}
-                {t.archived && <span className="opacity-80">(archiviert)</span>}
-                <button
-                  type="button"
-                  className="text-white/80 hover:text-white"
-                  onClick={() => toggleTag(t.id)}
-                  aria-label="Entfernen"
-                  disabled={draft.isCompensation}
-                >
-                  ×
-                </button>
-              </span>
+                variant="removable"
+                label={t.label}
+                archived={t.archived}
+                disabled={draft.isCompensation}
+                onClick={() => toggleTag(t.id)}
+              />
             ))}
             <button
               type="button"
@@ -503,24 +503,15 @@ export default function EntryForm({
                   Keine Schlagwörter – unter „Über / Daten" anlegen.
                 </span>
               )}
-              {pickableTags.map((t) => {
-                const active = draft.tagIds.includes(t.id);
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => toggleTag(t.id)}
-                    className={
-                      "rounded-full border px-3 py-1 text-xs " +
-                      (active
-                        ? "border-sky-600 bg-sky-600 text-white"
-                        : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
-                    }
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
+              {pickableTags.map((t) => (
+                <TagChip
+                  key={t.id}
+                  variant="selectable"
+                  label={t.label}
+                  active={draft.tagIds.includes(t.id)}
+                  onClick={() => toggleTag(t.id)}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -684,11 +675,7 @@ export default function EntryForm({
       {/* Aktionsleiste */}
       <div className="flex justify-end gap-2">
         {onCancel && (
-          <button
-            type="button"
-            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-            onClick={onCancel}
-          >
+          <button type="button" className={secondaryBtnCls} onClick={onCancel}>
             Abbrechen
           </button>
         )}

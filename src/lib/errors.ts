@@ -4,6 +4,22 @@
 // Detail angehängt -- für den seltenen Support-Fall, aber NICHT mehr als
 // einziger, unübersetzter Text.
 
+/**
+ * Markierung für bereits deutsche, für Endnutzer geschriebene Fehlermeldungen
+ * (z. B. Validierungsfehler wie "Ungültige Backup-Datei: ..." oder "Bitte ein
+ * Schlagwort eingeben."). toUserMessage gibt deren Text unverändert durch,
+ * statt sie wie einen unbekannten technischen Fehler generisch mit "Es ist
+ * ein unerwarteter Fehler aufgetreten. (Technisches Detail: …)" zu wrappen --
+ * das passierte bisher z. B. beim Backup-Import (parseBackup wirft AppError,
+ * ExportPanel zeigt das Ergebnis von toUserMessage an).
+ */
+export class AppError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AppError";
+  }
+}
+
 interface Mapping {
   test: (lower: string) => boolean;
   message: string;
@@ -60,6 +76,7 @@ const MAPPINGS: Mapping[] = [
  * (statt des rohen technischen Strings) mit demselben Detail-Anhang.
  */
 export function toUserMessage(e: unknown): string {
+  if (e instanceof AppError) return e.message;
   const raw = e instanceof Error ? e.message : String(e);
   const lower = raw.toLowerCase();
   const hit = MAPPINGS.find((m) => m.test(lower));

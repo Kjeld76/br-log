@@ -1,6 +1,5 @@
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { format } from "date-fns";
 import { toCsv, type CsvColumn } from "./toCsv";
 import {
   listEntries,
@@ -11,6 +10,7 @@ import {
 } from "../db/repository";
 import { minutesToHhmm, formatDecimalHoursDe } from "../lib/time";
 import { formatObjectionMeta } from "../lib/objections";
+import { todayIso } from "../lib/calendar";
 import type {
   EntryListItem,
   EntryFullItem,
@@ -99,10 +99,6 @@ async function saveText(
   return path;
 }
 
-function stamp(): string {
-  return format(new Date(), "yyyy-MM-dd");
-}
-
 /** Dateiname inkl. Zeitraum, falls eine Von-/Bis-Auswahl (Finding 8) getroffen wurde. */
 function csvFileName(prefix: string, period?: PeriodFilter): string {
   if (period?.from || period?.to) {
@@ -110,7 +106,7 @@ function csvFileName(prefix: string, period?: PeriodFilter): string {
       period.to ?? "Ende"
     }.csv`;
   }
-  return `BR-Log_${prefix}_${stamp()}.csv`;
+  return `BR-Log_${prefix}_${todayIso()}.csv`;
 }
 
 /**
@@ -137,7 +133,7 @@ export async function exportFullCsv(
 export async function exportJsonBackup(): Promise<string | null> {
   const payload = await getAllForBackup();
   const json = JSON.stringify(payload, null, 2);
-  return saveText(`BR-Log_Backup_${stamp()}.json`, json, "json", "JSON");
+  return saveText(`BR-Log_Backup_${todayIso()}.json`, json, "json", "JSON");
 }
 
 /**

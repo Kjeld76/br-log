@@ -2,8 +2,14 @@ import { useState } from "react";
 import type { EntryListItem, TaskTag } from "../types";
 import EntryList from "../components/EntryList";
 import CalendarView from "../components/CalendarView";
+import SegmentedControl from "../components/SegmentedControl";
 
 type SubTab = "liste" | "kalender";
+
+const SUB_TAB_OPTIONS: { value: SubTab; label: string }[] = [
+  { value: "liste", label: "Liste" },
+  { value: "kalender", label: "Kalender" },
+];
 
 // Finding 29: Der Sub-Tab stand hart auf "liste" (useState ohne Persistenz);
 // da App.tsx HistoryView nur bei view==="historie" rendert, wurde die
@@ -53,23 +59,7 @@ export default function HistoryView({
         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
           Kalender &amp; Historie
         </h2>
-        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm dark:border-slate-700 dark:bg-slate-800">
-          {(["liste", "kalender"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => selectSub(s)}
-              className={
-                "rounded px-3 py-1 " +
-                (sub === s
-                  ? "bg-sky-600 text-white"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700")
-              }
-            >
-              {s === "liste" ? "Liste" : "Kalender"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl options={SUB_TAB_OPTIONS} value={sub} onChange={selectSub} />
       </header>
 
       {sub === "liste" ? (

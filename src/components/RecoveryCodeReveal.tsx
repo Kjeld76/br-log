@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { secondaryBtnSmCls } from "../lib/ui";
 
 interface Props {
   code: string;
@@ -52,8 +53,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
     }
   };
 
-  const btn =
-    "rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+  const btn = secondaryBtnSmCls;
 
   return (
     <div className="space-y-4">

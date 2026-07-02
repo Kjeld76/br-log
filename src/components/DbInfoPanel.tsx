@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { getDbPathInfo, backupNow } from "../db/client";
+import { rebuildFts } from "../db/repository";
 import { deletePlaintextBackup } from "../lib/auth";
 import { toUserMessage } from "../lib/errors";
+import { secondaryBtnSmCls } from "../lib/ui";
 import { Icon } from "./Icon";
 
 export default function DbInfoPanel() {
@@ -14,6 +17,9 @@ export default function DbInfoPanel() {
   const [copied, setCopied] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [indexBusy, setIndexBusy] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<string | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
   // Finding 54 (Nebenbefund): copied-Timeout wurde bei jedem Aufruf neu
   // gesetzt, ohne einen vorherigen zu clearen -- zwei schnelle Klicks auf
   // "Pfad kopieren" ließen die Bestätigung vorzeitig verschwinden.
@@ -38,6 +44,19 @@ export default function DbInfoPanel() {
         setError(toUserMessage(e));
       }
     })();
+  }, []);
+
+  // Finding 62: Version stand bisher hart im UI-Text ("BR-Log – Version
+  // 1.2.0") und musste bei jedem Release manuell synchron zu package.json/
+  // Cargo.toml/tauri.conf.json nachgezogen werden. getVersion() liest die in
+  // tauri.conf.json gepflegte Version zur Laufzeit -- kein manueller
+  // Gleichlauf mehr nötig, kein Risiko einer veralteten Anzeige.
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {
+        /* Versionsanzeige ist nur Komfort -- kein Fehlerfall im UI. */
+      });
   }, []);
 
   const removeBackup = async () => {
@@ -95,10 +114,27 @@ export default function DbInfoPanel() {
     }
   };
 
+  // Finding 51: rebuildFts existierte bereits im Repository (Wartungswerkzeug
+  // für den FTS-Suchindex), hatte aber keinen Aufrufer -- der im W1-Review
+  // vorgesehene Verwendungszweck (manueller "Suchindex neu aufbauen"-Button)
+  // war nie verdrahtet.
+  const runRebuildIndex = async () => {
+    setError(null);
+    setIndexStatus(null);
+    setIndexBusy(true);
+    try {
+      await rebuildFts();
+      setIndexStatus("Suchindex neu aufgebaut.");
+    } catch (e) {
+      setError(toUserMessage(e));
+    } finally {
+      setIndexBusy(false);
+    }
+  };
+
   const card =
     "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
-  const btn =
-    "flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+  const btn = "flex items-center gap-1.5 " + secondaryBtnSmCls + " disabled:opacity-50";
 
   return (
     <div className="space-y-5">
@@ -158,10 +194,24 @@ export default function DbInfoPanel() {
           <button type="button" className={btn} onClick={runBackup} disabled={backupBusy}>
             {backupBusy ? "Sichert…" : "Jetzt sichern"}
           </button>
+          <button
+            type="button"
+            className={btn}
+            onClick={runRebuildIndex}
+            disabled={indexBusy}
+            title="Baut den Volltext-Suchindex aus dem Datenbestand neu auf (Wartung, z. B. nach einem Wiederherstellen)"
+          >
+            {indexBusy ? "Baut Index…" : "Suchindex neu aufbauen"}
+          </button>
         </div>
         {backupStatus && (
           <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
             {backupStatus}
+          </p>
+        )}
+        {indexStatus && (
+          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+            {indexStatus}
           </p>
         )}
         {hasBackup && (
@@ -191,7 +241,7 @@ export default function DbInfoPanel() {
           Über
         </h3>
         <p className="text-sm text-slate-700 dark:text-slate-200">
-          BR-Log – Version 1.2.0
+          BR-Log – Version {version ?? "…"}
         </p>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
           © 2026 Mario König. Alle Rechte vorbehalten.

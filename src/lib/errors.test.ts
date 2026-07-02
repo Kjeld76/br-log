@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toUserMessage } from "./errors";
+import { toUserMessage, AppError } from "./errors";
 
 describe("toUserMessage", () => {
   it("übersetzt 'database is locked' in eine deutsche Meldung mit Handlungsempfehlung", () => {
@@ -29,5 +29,14 @@ describe("toUserMessage", () => {
   it("funktioniert auch mit reinen String-Fehlern (Tauri-IPC liefert oft keinen Error)", () => {
     const msg = toUserMessage("Zugriff verweigert");
     expect(msg).toContain("Zugriff verweigert");
+  });
+
+  it("reicht eigene AppError-Meldungen unverändert durch, statt sie zu wrappen", () => {
+    const msg = toUserMessage(
+      new AppError("Ungültige Backup-Datei: Eintrag 3 hat keine gültige ID.")
+    );
+    expect(msg).toBe("Ungültige Backup-Datei: Eintrag 3 hat keine gültige ID.");
+    expect(msg).not.toContain("unerwarteter Fehler");
+    expect(msg).not.toContain("Technisches Detail");
   });
 });

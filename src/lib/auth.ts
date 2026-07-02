@@ -5,6 +5,7 @@
 // Frontend gespeichert.
 
 import { invoke } from "@tauri-apps/api/core";
+import { AppError } from "./errors";
 
 const MIN_AUTOLOCK_MIN = 1;
 const MAX_AUTOLOCK_MIN = 120;
@@ -62,7 +63,7 @@ function invalidateStatus() {
 /** Mindest-Policy für das Passwort (bewusst schlank). */
 export function validatePasswordPolicy(password: string): void {
   if (password.length < 8) {
-    throw new Error("Das Passwort muss mindestens 8 Zeichen lang sein.");
+    throw new AppError("Das Passwort muss mindestens 8 Zeichen lang sein.");
   }
 }
 
