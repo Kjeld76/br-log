@@ -14,6 +14,8 @@ interface Props {
 export default function TagManager({ onChanged }: Props) {
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [newLabel, setNewLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = () => listTags(true).then(setTags);
 
@@ -25,6 +27,26 @@ export default function TagManager({ onChanged }: Props) {
     await fn();
     await reload();
     onChanged();
+  };
+
+  // Anlegen mit busy-Guard: verhindert parallele createTag-Aufrufe (Doppel-Klick
+  // /Doppel-Enter, solange das Feld noch nicht geleert ist) und zeigt Fehler
+  // (z. B. „existiert bereits") in der UI an, statt sie stumm zu verschlucken.
+  const addTag = async () => {
+    const label = newLabel.trim();
+    if (!label || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createTag(label);
+      setNewLabel("");
+      await reload();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const active = tags.filter((t) => !t.archived);
@@ -39,22 +61,21 @@ export default function TagManager({ onChanged }: Props) {
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && newLabel.trim()) {
-              mutate(() => createTag(newLabel)).then(() => setNewLabel(""));
-            }
+            if (e.key === "Enter") void addTag();
           }}
         />
         <button
           type="button"
           className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
-          disabled={!newLabel.trim()}
-          onClick={() =>
-            mutate(() => createTag(newLabel)).then(() => setNewLabel(""))
-          }
+          disabled={!newLabel.trim() || busy}
+          onClick={() => void addTag()}
         >
           Hinzufügen
         </button>
       </div>
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
 
       <div>
         <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">

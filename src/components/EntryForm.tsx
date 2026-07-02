@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { addDays, format, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag } from "../types";
-import { saveEntry } from "../db/repository";
-import { computeDuration, minutesToHhmm, formatDurationLong } from "../lib/time";
+import { saveEntry, listEntries } from "../db/repository";
+import {
+  addMinutesToTime,
+  computeDuration,
+  durationInputToMinutes,
+  minutesToHhmm,
+  formatDurationLong,
+  rangesOverlap,
+} from "../lib/time";
 import ObjectionEditor from "./ObjectionEditor";
 import { Icon } from "./Icon";
 
@@ -10,18 +18,99 @@ interface Props {
   tags: TaskTag[];
   onSaved: () => void;
   onCancel?: () => void; // optional: im Seiten-Modus (Startseite) ausgeblendet
+  // Meldet jede Änderung am Entwurf + ob er vom Ausgangszustand abweicht.
+  // Trägt sowohl die Dirty-Prüfung (Backdrop/Escape/View-Wechsel) als auch die
+  // Draft-Persistenz der aufrufenden View (siehe QuickEntryView).
+  onDraftChange?: (draft: TimeEntry, dirty: boolean) => void;
 }
 
-export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
+type Mode = "range" | "duration";
+
+const QUICK_MINUTES = [15, 30, 45, 60, 90, 120];
+const LAST_DEFAULTS_KEY = "brlog.lastEntryDefaults";
+
+interface LastDefaults {
+  tagIds: string[];
+  infoForManagement: string;
+  hadPlannedShift: boolean;
+}
+
+function loadLastDefaults(): LastDefaults | null {
+  try {
+    const raw = localStorage.getItem(LAST_DEFAULTS_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as LastDefaults;
+    if (!Array.isArray(d.tagIds) || typeof d.infoForManagement !== "string") return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastDefaults(d: LastDefaults): void {
+  try {
+    localStorage.setItem(LAST_DEFAULTS_KEY, JSON.stringify(d));
+  } catch {
+    // localStorage kann in seltenen Fällen (z. B. Kontingent) fehlschlagen -> ignorieren,
+    // die Vorauswahl ist nur eine Erleichterung, kein Pflichtpfad.
+  }
+}
+
+function initialMode(entry: TimeEntry): Mode {
+  return !entry.startTime && !entry.endTime && entry.durationMinutes > 0
+    ? "duration"
+    : "range";
+}
+
+function initialDurationText(entry: TimeEntry, mode: Mode): string {
+  return mode === "duration" && entry.durationMinutes > 0
+    ? minutesToHhmm(entry.durationMinutes)
+    : "";
+}
+
+export default function EntryForm({
+  entry,
+  tags,
+  onSaved,
+  onCancel,
+  onDraftChange,
+}: Props) {
   const [draft, setDraft] = useState<TimeEntry>(entry);
+  const [mode, setMode] = useState<Mode>(() => initialMode(entry));
+  const [durationText, setDurationText] = useState(() =>
+    initialDurationText(entry, initialMode(entry))
+  );
   const [error, setError] = useState<string | null>(null);
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [objOpen, setObjOpen] = useState(entry.objections.length > 0);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Ausgangszustand für den Dirty-Check (Backdrop-Klick, Abbrechen, Escape,
+  // View-Wechsel). Bleibt über die Lebensdauer der Komponente unverändert.
+  const baselineRef = useRef(
+    JSON.stringify({ draft: entry, mode: initialMode(entry), durationText: initialDurationText(entry, initialMode(entry)) })
+  );
+  const lastDefaults = useMemo(() => loadLastDefaults(), []);
+
+  // Erstes Feld beim Öffnen fokussieren (Modal wie Startseite).
+  useEffect(() => {
+    dateInputRef.current?.focus();
+  }, []);
 
   const patch = (p: Partial<TimeEntry>) => setDraft((d) => ({ ...d, ...p }));
 
-  const duration = computeDuration(draft.startTime, draft.endTime);
+  // Dirty-Zustand + Entwurf nach oben melden (Draft-Persistenz, Wechsel-Sperre).
+  useEffect(() => {
+    const dirty =
+      JSON.stringify({ draft, mode, durationText }) !== baselineRef.current;
+    onDraftChange?.(draft, dirty);
+    // Ein Überlappungs-/Wertehinweis von vorher gilt nicht mehr, sobald sich
+    // die Zeitangaben ändern.
+    setOverlapWarning(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, mode, durationText]);
 
   const toggleTag = (id: string) =>
     patch({
@@ -30,22 +119,137 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         : [...draft.tagIds, id],
     });
 
-  const selectedTags = tags.filter((t) => draft.tagIds.includes(t.id));
+  // Zugewiesene Tags (auch archivierte, damit sie sichtbar/entfernbar bleiben).
+  const assignedTags = tags.filter((t) => draft.tagIds.includes(t.id));
+  // Im Picker neu zuweisbar sind nur aktive Schlagwörter.
+  const pickableTags = tags.filter((t) => !t.archived);
 
-  const handleSave = async () => {
+  const rangeDuration = computeDuration(draft.startTime, draft.endTime);
+  const durationPreviewMinutes =
+    mode === "range" ? rangeDuration.minutes : durationInputToMinutes(durationText);
+  const durationPreviewError =
+    mode === "range" ? rangeDuration.error : null;
+
+  const showLastDefaultsHint =
+    !!lastDefaults &&
+    draft.tagIds.length === 0 &&
+    !draft.infoForManagement.trim() &&
+    (lastDefaults.tagIds.length > 0 || lastDefaults.infoForManagement.trim() !== "");
+
+  const applyLastDefaults = () => {
+    if (!lastDefaults) return;
+    patch({
+      tagIds: lastDefaults.tagIds,
+      infoForManagement: lastDefaults.infoForManagement,
+      hadPlannedShift: lastDefaults.hadPlannedShift,
+    });
+  };
+
+  const switchMode = (m: Mode) => {
+    if (m === mode) return;
+    setMode(m);
+    if (m === "duration") {
+      patch({ startTime: null, endTime: null, durationMinutes: 0 });
+    } else {
+      setDurationText("");
+      patch({ durationMinutes: 0 });
+    }
+  };
+
+  // durationMinutes im Draft wird auch im Dauer-Modus live mitgeführt (nicht nur
+  // beim Speichern berechnet) – nur so kann ein Neustart-Draft (Persistenz in
+  // QuickEntryView) den Dauer-Modus korrekt wiederherstellen.
+  const setDurationTextAndDraft = (v: string) => {
+    setDurationText(v);
+    const mins = durationInputToMinutes(v);
+    patch({ durationMinutes: mins ?? 0 });
+  };
+
+  const nowHhmm = () => format(new Date(), "HH:mm");
+
+  const applyQuickMinutes = (mins: number) => {
+    if (mode === "duration") {
+      setDurationTextAndDraft(String(mins));
+      return;
+    }
+    const start = draft.startTime ?? nowHhmm();
+    const end = addMinutesToTime(start, mins);
+    patch({ startTime: start, endTime: end ?? draft.endTime });
+  };
+
+  // Warnt (nicht-blockierend) vor Überschneidungen mit bestehenden Einträgen
+  // desselben oder des Vortags – inkl. Über-Mitternacht-Schichten des Vortags.
+  const findOverlap = async (start: string, end: string) => {
+    const prevDayIso = format(addDays(parseISO(draft.date), -1), "yyyy-MM-dd");
+    const nearby = await listEntries({ from: prevDayIso, to: draft.date });
+    return nearby.find(
+      (e) =>
+        e.id !== draft.id &&
+        e.startTime &&
+        e.endTime &&
+        rangesOverlap(
+          { date: draft.date, start, end },
+          { date: e.date, start: e.startTime, end: e.endTime }
+        )
+    );
+  };
+
+  const handleSave = async (opts?: { skipOverlapCheck?: boolean }) => {
     setError(null);
     if (!draft.date) return setError("Bitte ein Datum angeben.");
-    if (!draft.startTime || !draft.endTime)
-      return setError("Bitte Von und Bis angeben.");
-    if (duration.error) return setError(duration.error);
-    if (duration.minutes === null || duration.minutes <= 0)
-      return setError("Die Dauer muss größer als 0 sein.");
+
+    let finalStart: string | null = null;
+    let finalEnd: string | null = null;
+    let finalMinutes: number;
+
+    if (mode === "range") {
+      if (!draft.startTime || !draft.endTime)
+        return setError("Bitte Von und Bis angeben.");
+      const duration = computeDuration(draft.startTime, draft.endTime);
+      if (duration.error) return setError(duration.error);
+      if (duration.minutes === null)
+        return setError("Die Dauer muss größer als 0 sein.");
+      finalStart = draft.startTime;
+      finalEnd = draft.endTime;
+      finalMinutes = duration.minutes;
+    } else {
+      const mins = durationInputToMinutes(durationText);
+      if (mins === null)
+        return setError("Bitte eine Dauer angeben (z. B. 1:30 oder 90).");
+      if (mins <= 0) return setError("Die Dauer muss größer als 0 sein.");
+      finalMinutes = mins;
+    }
+
     if (!draft.infoForManagement.trim())
       return setError("Info für die Geschäftsleitung ist ein Pflichtfeld.");
 
+    if (mode === "range" && finalStart && finalEnd && !opts?.skipOverlapCheck) {
+      const conflict = await findOverlap(finalStart, finalEnd);
+      if (conflict) {
+        setOverlapWarning(
+          `Überschneidet sich mit dem Eintrag vom ${conflict.date}, ${conflict.startTime}–${conflict.endTime}` +
+            (conflict.infoForManagement ? ` (${conflict.infoForManagement})` : "") +
+            ". Trotzdem speichern?"
+        );
+        return;
+      }
+    }
+    setOverlapWarning(null);
+
     setSaving(true);
     try {
-      await saveEntry({ ...draft, durationMinutes: duration.minutes });
+      const toSave: TimeEntry = {
+        ...draft,
+        startTime: finalStart,
+        endTime: finalEnd,
+        durationMinutes: finalMinutes,
+      };
+      await saveEntry(toSave);
+      saveLastDefaults({
+        tagIds: toSave.tagIds,
+        infoForManagement: toSave.infoForManagement,
+        hadPlannedShift: toSave.hadPlannedShift,
+      });
       onSaved();
     } catch (e) {
       setError(String(e));
@@ -53,6 +257,23 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
       setSaving(false);
     }
   };
+
+  // Tastaturkürzel: Strg/Cmd+Enter speichert, Escape bricht ab (Dirty-Check
+  // übernimmt der Aufrufer über onCancel, siehe App.tsx/QuickEntryView).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (!saving) void handleSave();
+      } else if (e.key === "Escape" && onCancel) {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, mode, durationText, saving, onCancel]);
 
   const field =
     "w-full rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500";
@@ -63,64 +284,155 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
 
   return (
     <div className="space-y-4">
+      {showLastDefaultsHint && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+          <span>Wie beim letzten Eintrag übernehmen?</span>
+          <button
+            type="button"
+            className="rounded-full bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-700"
+            onClick={applyLastDefaults}
+          >
+            Übernehmen
+          </button>
+        </div>
+      )}
+
       {/* Block 1: Zeit & Art */}
       <div className={blockCls}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-          Zeit &amp; Art
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            Zeit &amp; Art
+          </h3>
+          <div className="flex overflow-hidden rounded-full border border-slate-300 text-xs dark:border-slate-600">
+            <button
+              type="button"
+              className={
+                "px-3 py-1 " +
+                (mode === "range"
+                  ? "bg-sky-600 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
+              }
+              onClick={() => switchMode("range")}
+            >
+              Von/Bis
+            </button>
+            <button
+              type="button"
+              className={
+                "px-3 py-1 " +
+                (mode === "duration"
+                  ? "bg-sky-600 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
+              }
+              onClick={() => switchMode("duration")}
+            >
+              Dauer
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label className={labelCls}>
               Datum <span className="text-red-500">*</span>
             </label>
             <input
+              ref={dateInputRef}
               type="date"
               className={field}
               value={draft.date}
               onChange={(e) => patch({ date: e.target.value })}
             />
           </div>
-          <div>
-            <label className={labelCls}>
-              Von <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="time"
-              className={field}
-              value={draft.startTime ?? ""}
-              onChange={(e) => patch({ startTime: e.target.value || null })}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>
-              Bis <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="time"
-              className={field}
-              value={draft.endTime ?? ""}
-              onChange={(e) => patch({ endTime: e.target.value || null })}
-            />
-          </div>
+
+          {mode === "range" ? (
+            <>
+              <div>
+                <label className={labelCls}>
+                  Von <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-1">
+                  <input
+                    type="time"
+                    className={field}
+                    value={draft.startTime ?? ""}
+                    onChange={(e) => patch({ startTime: e.target.value || null })}
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded border border-slate-300 px-2 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                    title="Aktuelle Uhrzeit übernehmen"
+                    onClick={() => patch({ startTime: nowHhmm() })}
+                  >
+                    Jetzt
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>
+                  Bis <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="time"
+                  className={field}
+                  value={draft.endTime ?? ""}
+                  onChange={(e) => patch({ endTime: e.target.value || null })}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="sm:col-span-2">
+              <label className={labelCls}>
+                Dauer (Std:Min oder Minuten) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="z. B. 1:30 oder 90"
+                className={field}
+                value={durationText}
+                onChange={(e) => setDurationTextAndDraft(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Schnellwahl */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Schnellwahl:
+          </span>
+          {QUICK_MINUTES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+              onClick={() => applyQuickMinutes(m)}
+            >
+              {m} Min
+            </button>
+          ))}
         </div>
 
         <div>
-          <label className={labelCls}>Dauer (automatisch berechnet)</label>
+          <label className={labelCls}>
+            {mode === "range" ? "Dauer (automatisch berechnet)" : "Dauer"}
+          </label>
           <div
             className={
               "rounded border p-2 text-sm " +
-              (duration.error
+              (durationPreviewError
                 ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300"
                 : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300")
             }
           >
-            {duration.error
-              ? duration.error
-              : duration.minutes !== null
-              ? `${minutesToHhmm(duration.minutes)} Std (${formatDurationLong(
-                  duration.minutes
-                )})`
-              : "— wird aus Von/Bis berechnet —"}
+            {durationPreviewError
+              ? durationPreviewError
+              : durationPreviewMinutes !== null
+              ? `${minutesToHhmm(durationPreviewMinutes)} Std (${formatDurationLong(
+                  durationPreviewMinutes
+                )})${mode === "range" && rangeDuration.overnight ? " – über Mitternacht" : ""}`
+              : "— noch keine gültige Eingabe —"}
           </div>
         </div>
 
@@ -128,12 +440,16 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         <div>
           <label className={labelCls}>Schlagwörter / Aufgaben</label>
           <div className="flex flex-wrap items-center gap-1.5">
-            {selectedTags.map((t) => (
+            {assignedTags.map((t) => (
               <span
                 key={t.id}
-                className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2.5 py-1 text-xs text-white"
+                className={
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-white " +
+                  (t.archived ? "bg-slate-400 dark:bg-slate-600" : "bg-sky-600")
+                }
               >
                 {t.label}
+                {t.archived && <span className="opacity-80">(archiviert)</span>}
                 <button
                   type="button"
                   className="text-white/80 hover:text-white"
@@ -154,12 +470,12 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
           </div>
           {tagPickerOpen && (
             <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900/50">
-              {tags.length === 0 && (
+              {pickableTags.length === 0 && (
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   Keine Schlagwörter – unter „Über / Daten" anlegen.
                 </span>
               )}
-              {tags.map((t) => {
+              {pickableTags.map((t) => {
                 const active = draft.tagIds.includes(t.id);
                 return (
                   <button
@@ -279,6 +595,28 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
         </p>
       )}
 
+      {overlapWarning && (
+        <div className="space-y-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+          <p>{overlapWarning}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded border border-amber-300 px-3 py-1 text-xs hover:bg-white dark:border-amber-700 dark:hover:bg-amber-900/40"
+              onClick={() => setOverlapWarning(null)}
+            >
+              Zeiten prüfen
+            </button>
+            <button
+              type="button"
+              className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+              onClick={() => handleSave({ skipOverlapCheck: true })}
+            >
+              Trotzdem speichern
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Aktionsleiste */}
       <div className="flex justify-end gap-2">
         {onCancel && (
@@ -294,7 +632,8 @@ export default function EntryForm({ entry, tags, onSaved, onCancel }: Props) {
           type="button"
           disabled={saving}
           className="rounded bg-sky-600 px-6 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-          onClick={handleSave}
+          onClick={() => handleSave()}
+          title="Strg/Cmd+Enter"
         >
           {saving ? "Speichern…" : "Speichern"}
         </button>

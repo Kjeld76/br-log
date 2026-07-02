@@ -7,20 +7,30 @@ export interface Objection {
   date: string | null; // optional, YYYY-MM-DD
 }
 
-export interface TimeEntry {
+// Basis eines Eintrags OHNE das vertrauliche `secretDetails`. Dient als schlanke
+// Grundlage für Listen-/Kalender-/Suchansichten: so kann das BR-Geheimnis dort
+// strukturell (nicht nur per UI-Konvention) gar nicht erst geladen werden.
+export interface TimeEntryBase {
   id: string;
   date: string; // YYYY-MM-DD (tagesgenau)
   startTime: string | null; // HH:mm, optional
   endTime: string | null; // HH:mm, optional
   durationMinutes: number; // abgerechnete Dauer in Minuten (Kernwert)
   infoForManagement: string; // Was die Geschäftsleitung erfahren darf
-  secretDetails: string; // BR-Geheimnis – nie im GL-Export, nie in Listen im Klartext
   hadPlannedShift: boolean; // geplante Schicht zu der Zeit?
   shiftCompensationNote: string; // Freitext, nur relevant wenn hadPlannedShift = false
+  isCompensation?: boolean; // Eintrag ist Freizeitausgleich (§37 Abs. 3 BetrVG); Auswertung folgt später
   tagIds: string[]; // Schlagwörter (Mehrfachauswahl)
   objections: Objection[]; // mehrere GL-Widersprüche möglich
   createdAt: string; // ISO
   updatedAt: string; // ISO
+}
+
+// Vollständiger Eintrag inkl. BR-Geheimnis. Nur dort verwenden, wo das
+// vertrauliche Feld wirklich gebraucht wird: Formular, Detailansicht, Backup,
+// vertraulicher Voll-Export.
+export interface TimeEntry extends TimeEntryBase {
+  secretDetails: string; // BR-Geheimnis – nie im GL-Export, nie in Listen im Klartext
 }
 
 export interface TaskTag {
@@ -35,8 +45,17 @@ export interface SearchHit {
   hasSecretHit: boolean;
 }
 
-// Eintrag wie in der Übersichtsliste dargestellt.
-export interface EntryListItem extends TimeEntry {
+// Eintrag wie in der Übersichtsliste dargestellt – bewusst OHNE `secretDetails`
+// (erbt von TimeEntryBase, nicht von TimeEntry). Verhindert, dass das BR-Geheimnis
+// überhaupt in Listen-/Kalender-/Suchansichten geladen wird.
+export interface EntryListItem extends TimeEntryBase {
+  tagLabels: string[];
+  search?: SearchHit;
+}
+
+// Voll geladener Eintrag inkl. `secretDetails` und Schlagwort-Labels. Für die
+// Detailansicht (getEntry-Refetch) und den vertraulichen Voll-CSV-Export.
+export interface EntryFullItem extends TimeEntry {
   tagLabels: string[];
   search?: SearchHit;
 }

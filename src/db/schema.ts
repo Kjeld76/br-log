@@ -1,10 +1,12 @@
-// Idempotente Schema-Definition. Wird bei jedem App-Start ausgeführt
-// (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE) – KEINE prüfsummen-validierte
-// Migration mehr. Dadurch unabhängig von Zeilenenden/Build-Umgebung und
-// kompatibel mit allen bereits bestehenden Datenbanken.
+// v0-Basisschema. Wird bei jedem App-Start idempotent ausgeführt
+// (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE) und legt den Ausgangsstand an;
+// anschließend führt client.initSchema die nummerierten Rust-Migrationen aus
+// (db_migrate, PRAGMA user_version).
 //
-// Künftige Schemaänderungen: hier idempotent ergänzen; für komplexere Fälle
-// PRAGMA user_version als eigene, schlanke Versionierung nutzen.
+// WICHTIG: Dieses Basisschema ist EINGEFROREN (Stand v1.2.0). Künftige
+// Schemaänderungen NICHT hier ergänzen (ein neues Feld in einem CREATE erreicht
+// Bestands-DBs nicht) – stattdessen eine neue Migration in src-tauri/src/lib.rs
+// (run_migrations) hinzufügen und SCHEMA_VERSION erhöhen.
 
 export const SCHEMA_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS entries (

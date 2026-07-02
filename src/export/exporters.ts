@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { toCsv, type CsvColumn } from "./toCsv";
 import {
   listEntries,
+  listEntriesFull,
   getAllForBackup,
   parseBackup,
 } from "../db/repository";
@@ -11,7 +12,12 @@ import {
   minutesToHhmm,
   minutesToDecimalHours,
 } from "../lib/time";
-import type { EntryListItem, BackupPayload, Objection } from "../types";
+import type {
+  EntryListItem,
+  EntryFullItem,
+  BackupPayload,
+  Objection,
+} from "../types";
 
 function fmtObjections(objs: Objection[]): string {
   return objs
@@ -45,16 +51,25 @@ function publicColumns(): CsvColumn<EntryListItem>[] {
   ];
 }
 
-// Vollständige Spalten = öffentlich + vertrauliche Tätigkeit.
-function fullColumns(): CsvColumn<EntryListItem>[] {
+// Vollständige Spalten = öffentlich + vertrauliche Tätigkeit. Braucht das volle
+// Item (EntryFullItem) mit secretDetails; publicColumns (auf EntryListItem) sind
+// kontravariant kompatibel und werden übernommen.
+function fullColumns(): CsvColumn<EntryFullItem>[] {
   return [
     ...publicColumns(),
     { header: "VERTRAULICH – Tätigkeit", value: (e) => e.secretDetails },
   ];
 }
 
+// GL-/schlanker Export: Listen-Items OHNE secretDetails.
 async function allEntriesSorted(): Promise<EntryListItem[]> {
   const items = await listEntries({});
+  return items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+// Vertraulicher Voll-Export: expliziter Voll-Lade-Pfad INKL. secretDetails.
+async function allEntriesSortedFull(): Promise<EntryFullItem[]> {
+  const items = await listEntriesFull({});
   return items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
@@ -86,7 +101,7 @@ export async function exportGlCsv(): Promise<string | null> {
 
 /** Voll-CSV: inkl. vertraulicher Tätigkeit (nur für die eigene Verwendung). */
 export async function exportFullCsv(): Promise<string | null> {
-  const rows = await allEntriesSorted();
+  const rows = await allEntriesSortedFull();
   const csv = toCsv(rows, fullColumns());
   return saveText(`BR-Log_VOLL_${stamp()}.csv`, csv, "csv", "CSV");
 }

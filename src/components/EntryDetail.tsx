@@ -1,15 +1,22 @@
-import type { EntryListItem } from "../types";
+import type { EntryFullItem } from "../types";
 import { minutesToHhmm, formatDurationLong } from "../lib/time";
 import { Icon } from "./Icon";
 
 interface Props {
-  entry: EntryListItem;
+  entry: EntryFullItem;
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onDuplicate: () => void;
 }
 
-export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props) {
+export default function EntryDetail({
+  entry,
+  onEdit,
+  onDelete,
+  onClose,
+  onDuplicate,
+}: Props) {
   const row = (label: string, value: React.ReactNode) => (
     <div className="grid grid-cols-3 gap-2 py-1.5">
       <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -116,6 +123,14 @@ export default function EntryDetail({ entry, onEdit, onDelete, onClose }: Props)
             onClick={onClose}
           >
             Schließen
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            onClick={onDuplicate}
+            title="Als Vorlage für heute übernehmen"
+          >
+            Duplizieren
           </button>
           <button
             type="button"

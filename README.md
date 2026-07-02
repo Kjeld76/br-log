@@ -14,12 +14,22 @@ Es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
 
 ## Funktionen
 
-- Zeiteinträge mit Datum, Von/Bis **oder** direkter Dauer (Std:Min)
+- Zeiteinträge mit Datum, Von/Bis **oder** direkter Dauer (Std:Min/Minuten),
+  inkl. Schichten über Mitternacht und Uhrzeit-/Dauer-Schnellwahl
 - Standard-Aufgaben als editierbare Schlagwörter (BR-Sitzung, Ausschuss,
-  Fahrzeit, Schulung …), Mehrfachauswahl
+  Fahrzeit, Schulung …), Mehrfachauswahl; archivierte, einem Eintrag bereits
+  zugewiesene Schlagwörter bleiben sichtbar und entfernbar
 - Trennung „Info für GL" vs. „Vertraulich" (BR-Geheimnis)
 - Geplante Schicht (ja/nein) + Freitext zum Schichtausgleich
 - Mehrere Widersprüche der Geschäftsleitung je Eintrag (Begründung + Name)
+- Wiederverwendung: Eintrag duplizieren (heutiges Datum, frische ID) sowie
+  „wie beim letzten Eintrag" für Schlagwörter/GL-Info übernehmen
+- Nicht-blockierende Überlappungswarnung beim Speichern, wenn sich ein
+  Zeitraum mit einem bestehenden Eintrag überschneidet
+- Tastaturbedienung im Erfassungsformular: Strg/Cmd+Enter speichert, Escape
+  bricht ab (mit Rückfrage bei ungespeicherten Änderungen), Autofokus
+- Ungespeicherte Eingaben im Erfassen-Formular überstehen App-Neustarts
+  (lokaler Zwischenstand) und lösen beim Verwerfen eine Rückfrage aus
 - Volltextsuche (FTS5) – vertrauliche Treffer werden in Listen nie im Klartext
   gezeigt, nur als „Treffer in vertraulichem Feld"
 - Schlagwort-Filter als Chips, Datums-/Zeitraumfilter, Tages-/Monatssummen

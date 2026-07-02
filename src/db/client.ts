@@ -13,9 +13,17 @@ import { SCHEMA_STATEMENTS } from "./schema";
  *  - FTS5 durch das gebundelte SQLite deterministisch verfügbar,
  *  - keine prüfsummen-validierten Migrationen mehr (Schema idempotent in schema.ts).
  */
+/** Ein einzelnes Schreib-Statement einer atomaren Batch-Transaktion. */
+export interface BatchStatement {
+  sql: string;
+  params: unknown[];
+}
+
 export interface Db {
   execute(sql: string, params?: unknown[]): Promise<number>;
   select<T>(sql: string, params?: unknown[]): Promise<T>;
+  /** Führt mehrere Statements ATOMAR in EINER Transaktion aus (Rust: db_batch). */
+  batch(statements: BatchStatement[]): Promise<void>;
 }
 
 const db: Db = {
@@ -24,6 +32,9 @@ const db: Db = {
   },
   select<T>(sql: string, params: unknown[] = []) {
     return invoke<T>("db_select", { sql, params });
+  },
+  batch(statements) {
+    return invoke<void>("db_batch", { statements });
   },
 };
 
@@ -46,19 +57,27 @@ export function resetDbCaches(): void {
 }
 
 /**
- * Legt das Schema idempotent an (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE).
- * Ersetzt die früheren prüfsummen-validierten Migrationen, die je nach
- * Zeilenenden (CRLF/LF) / Build-Umgebung unterschiedliche Prüfsummen erzeugten
- * und bestehende DBs mit "migration ... has been modified" brachen.
+ * Legt das v0-Basisschema idempotent an (CREATE TABLE IF NOT EXISTS /
+ * INSERT OR IGNORE) und führt anschließend die nummerierten Rust-Migrationen aus
+ * (db_migrate, PRAGMA user_version). So erreichen künftige Schemaänderungen auch
+ * Bestands-DBs zuverlässig, statt still auseinanderzudriften.
+ *
+ * Ein abgelehntes Promise wird NICHT dauerhaft gecacht: ein transienter Fehler
+ * (z. B. kurzer Lock) lässt sich per erneutem Aufruf wiederholen.
  */
 export async function initSchema(): Promise<void> {
   if (schemaPromise) return schemaPromise;
-  schemaPromise = (async () => {
+  const p = (async () => {
     for (const stmt of SCHEMA_STATEMENTS) {
       await db.execute(stmt);
     }
+    await invoke("db_migrate");
   })();
-  return schemaPromise;
+  schemaPromise = p;
+  p.catch(() => {
+    if (schemaPromise === p) schemaPromise = null;
+  });
+  return p;
 }
 
 export function isFtsAvailable(): boolean {
@@ -73,7 +92,7 @@ export function isFtsAvailable(): boolean {
  */
 export async function initSearch(): Promise<void> {
   if (initPromise) return initPromise;
-  initPromise = (async () => {
+  const p = (async () => {
     try {
       await db.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(entry_id UNINDEXED, public_content, secret_content)"
@@ -84,8 +103,24 @@ export async function initSearch(): Promise<void> {
       // Bewusst nur eine Warnung: die App funktioniert mit LIKE-Fallback weiter.
       console.warn("FTS5 nicht verfügbar – Fallback auf LIKE-Suche.", e);
     }
+    // Suchindex mit dem Datenbestand abgleichen (fehlende Einträge nachtragen,
+    // Geisterzeilen entfernen) – deckt Migrationen und einen erstmalig
+    // verfügbaren FTS5-Build ab. Dynamischer Import bricht die statische
+    // Zyklus-Abhängigkeit zu repository.ts.
+    if (ftsAvailable) {
+      try {
+        const repo = await import("./repository");
+        await repo.reconcileFts();
+      } catch (e) {
+        console.warn("FTS-Abgleich übersprungen.", e);
+      }
+    }
   })();
-  return initPromise;
+  initPromise = p;
+  p.catch(() => {
+    if (initPromise === p) initPromise = null;
+  });
+  return p;
 }
 
 /** DB-Pfad + Modus (portabel/installiert), wie von Rust ermittelt. */
@@ -103,6 +138,13 @@ let dbPathPromise: Promise<DbPathInfo> | null = null;
  * Installation). Für die Anzeige im DbInfoPanel; session-weit gecacht.
  */
 export function getDbPathInfo(): Promise<DbPathInfo> {
-  if (!dbPathPromise) dbPathPromise = invoke<DbPathInfo>("db_path");
+  if (!dbPathPromise) {
+    const p = invoke<DbPathInfo>("db_path");
+    dbPathPromise = p;
+    // Abgelehntes Promise nicht dauerhaft cachen -> Retry nach transientem Fehler.
+    p.catch(() => {
+      if (dbPathPromise === p) dbPathPromise = null;
+    });
+  }
   return dbPathPromise;
 }

@@ -49,14 +49,46 @@ fn db_err(m: impl Into<String>) -> CryptoCmdError {
 
 // ---------- Datei-IO (Export/Import, Recovery-Code-TXT) ----------
 
+/// Prüft einen Ziel-/Quellpfad der Datei-Commands. Die Pfade stammen aus dem
+/// nativen Speichern-/Öffnen-Dialog (vom Nutzer bewusst gewählt), deshalb ist ein
+/// strikter Ordner-Allowlist hier bewusst NICHT sinnvoll – er würde legitime
+/// Exporte/Backups an frei gewählte Orte verhindern. Gehärtet wird gegen leere
+/// und relative Pfade (kein CWD-relatives Lesen/Schreiben).
+fn check_user_path(path: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    if path.trim().is_empty() || !p.is_absolute() {
+        return Err("Ungültiger Dateipfad".to_string());
+    }
+    Ok(p)
+}
+
+/// Schreibt eine Textdatei ATOMAR: zuerst in eine Nachbardatei (.brtmp), dann per
+/// Rename über das Ziel. Verhindert eine halb geschriebene Export-/Backup-/
+/// Recovery-Datei bei Absturz/Stromausfall mitten im Schreiben.
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
+    let target = check_user_path(&path)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| "Kein Zielverzeichnis".to_string())?;
+    let mut tmp_name = target
+        .file_name()
+        .ok_or_else(|| "Kein Dateiname".to_string())?
+        .to_os_string();
+    tmp_name.push(".brtmp");
+    let tmp = parent.join(tmp_name);
+    std::fs::write(&tmp, contents.as_bytes()).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&tmp, &target) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    let target = check_user_path(&path)?;
+    std::fs::read_to_string(&target).map_err(|e| e.to_string())
 }
 
 // ---------- DB-Layer (rusqlite/SQLCipher) ----------
@@ -132,6 +164,187 @@ fn db_select(
         out.push(obj);
     }
     Ok(out)
+}
+
+/// Ein einzelnes Statement innerhalb einer Batch-Transaktion.
+#[derive(serde::Deserialize)]
+struct BatchStatement {
+    sql: String,
+    params: Vec<JsonValue>,
+}
+
+/// Führt mehrere Schreib-Statements ATOMAR in EINER Transaktion aus. Ersetzt
+/// manuelle BEGIN/COMMIT-Strings aus dem Frontend (über getrennte Aufrufe nicht
+/// verlässlich). Schlägt ein Statement fehl, wird die gesamte Transaktion
+/// zurückgerollt -> kein Teildatenverlust bei Mehrschritt-Schreiboperationen.
+#[tauri::command]
+fn db_batch(state: State<'_, DbState>, statements: Vec<BatchStatement>) -> Result<(), String> {
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    let kc = guard.as_mut().ok_or_else(|| "DB gesperrt".to_string())?;
+    let tx = kc.conn.transaction().map_err(|e| e.to_string())?;
+    for st in &statements {
+        let p: Vec<SqlValue> = st.params.iter().map(json_to_sql).collect::<Result<_, _>>()?;
+        tx.execute(&st.sql, rusqlite::params_from_iter(p.iter()))
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------- Schema-Migrationen (PRAGMA user_version) ----------
+
+/// Höchste vom Code unterstützte Schema-Version.
+const SCHEMA_VERSION: i64 = 1;
+
+/// Migration 1: Schema-Härtung eines v0-Bestands (Tabellen-Neubau nach dem
+/// SQLite-Standardverfahren, da SQLite kein ADD CONSTRAINT kennt):
+///  - id überall NOT NULL PRIMARY KEY (verhindert mehrfache NULL-id-Zeilen),
+///  - CHECK(duration_minutes >= 0) (Altbestand mit Negativwert wird auf 0 geklemmt,
+///    damit die Migration nie an Alt-Daten scheitert),
+///  - neue Spalte is_compensation (Default 0, Auswertung folgt später),
+///  - Fremdschlüssel entry_tags/objections -> entries(id) ON DELETE CASCADE und
+///    entry_tags -> task_tags(id) ON DELETE CASCADE,
+///  - UNIQUE(label COLLATE NOCASE) auf task_tags; vorhandene, nur in der
+///    Groß-/Kleinschreibung abweichende Duplikate werden vorher gemergt
+///    (Überlebender = kleinste id, entry_tags werden umgehängt),
+///  - Waisen (Kindzeilen ohne existierenden Eintrag/Tag) werden verworfen.
+/// Bewusst KEIN CHECK auf Start/Ende-Kombinationen: Einträge ohne Start/Ende mit
+/// Dauer > 0 und Über-Mitternacht (end < start) bleiben erlaubt.
+const MIGRATE_V1_SQL: &str = r#"
+CREATE TABLE entries_new (
+  id                      TEXT PRIMARY KEY NOT NULL,
+  date                    TEXT NOT NULL,
+  start_time              TEXT,
+  end_time                TEXT,
+  duration_minutes        INTEGER NOT NULL DEFAULT 0 CHECK (duration_minutes >= 0),
+  info_for_management     TEXT NOT NULL DEFAULT '',
+  secret_details          TEXT NOT NULL DEFAULT '',
+  had_planned_shift       INTEGER NOT NULL DEFAULT 1,
+  shift_compensation_note TEXT NOT NULL DEFAULT '',
+  is_compensation         INTEGER NOT NULL DEFAULT 0,
+  created_at              TEXT NOT NULL,
+  updated_at              TEXT NOT NULL
+);
+INSERT INTO entries_new
+  (id,date,start_time,end_time,duration_minutes,info_for_management,secret_details,
+   had_planned_shift,shift_compensation_note,is_compensation,created_at,updated_at)
+  SELECT id,date,start_time,end_time,
+         CASE WHEN duration_minutes < 0 THEN 0 ELSE duration_minutes END,
+         info_for_management,secret_details,had_planned_shift,shift_compensation_note,
+         0,created_at,updated_at
+    FROM entries
+   WHERE id IS NOT NULL;
+DROP TABLE entries;
+ALTER TABLE entries_new RENAME TO entries;
+CREATE INDEX idx_entries_date ON entries(date);
+
+CREATE TABLE task_tags_new (
+  id       TEXT PRIMARY KEY NOT NULL,
+  label    TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (label COLLATE NOCASE)
+);
+INSERT INTO task_tags_new (id,label,archived)
+  SELECT id,label,archived FROM task_tags tt
+   WHERE id IS NOT NULL
+     AND id = (SELECT min(id) FROM task_tags t2 WHERE lower(t2.label) = lower(tt.label));
+
+CREATE TABLE entry_tags_new (
+  entry_id TEXT NOT NULL,
+  tag_id   TEXT NOT NULL,
+  PRIMARY KEY (entry_id, tag_id),
+  FOREIGN KEY (entry_id) REFERENCES entries(id)   ON DELETE CASCADE,
+  FOREIGN KEY (tag_id)   REFERENCES task_tags(id) ON DELETE CASCADE
+);
+INSERT INTO entry_tags_new (entry_id, tag_id)
+  SELECT DISTINCT et.entry_id, surv.sid
+    FROM entry_tags et
+    JOIN task_tags t ON t.id = et.tag_id
+    JOIN (SELECT lower(label) AS lbl, min(id) AS sid FROM task_tags GROUP BY lower(label)) surv
+      ON surv.lbl = lower(t.label)
+    JOIN entries en ON en.id = et.entry_id;
+DROP TABLE entry_tags;
+ALTER TABLE entry_tags_new RENAME TO entry_tags;
+CREATE INDEX idx_entry_tags_tag ON entry_tags(tag_id);
+
+DROP TABLE task_tags;
+ALTER TABLE task_tags_new RENAME TO task_tags;
+
+CREATE TABLE objections_new (
+  id       TEXT PRIMARY KEY NOT NULL,
+  entry_id TEXT NOT NULL,
+  reason   TEXT NOT NULL DEFAULT '',
+  by_whom  TEXT NOT NULL DEFAULT '',
+  date     TEXT,
+  FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+);
+INSERT INTO objections_new (id,entry_id,reason,by_whom,date)
+  SELECT o.id,o.entry_id,o.reason,o.by_whom,o.date
+    FROM objections o
+    JOIN entries en ON en.id = o.entry_id
+   WHERE o.id IS NOT NULL;
+DROP TABLE objections;
+ALTER TABLE objections_new RENAME TO objections;
+CREATE INDEX idx_objections_entry ON objections(entry_id);
+"#;
+
+fn user_version(conn: &Connection) -> Result<i64, String> {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(|e| e.to_string())
+}
+
+/// Führt ausstehende Schema-Migrationen aus. Jede Migration läuft in EINER
+/// Transaktion; PRAGMA user_version verfolgt den Stand, sodass künftige
+/// Schemaänderungen Bestands-DBs zuverlässig erreichen (nicht mehr per
+/// idempotentem CREATE, das auf Alt-DBs stillschweigend ins Leere liefe).
+/// Downgrade-Schutz: eine mit neuerer App erzeugte DB wird nicht geöffnet.
+/// Setzt voraus, dass das v0-Basisschema bereits existiert (Frontend legt es
+/// via schema.ts idempotent an, bevor db_migrate aufgerufen wird).
+fn run_migrations(conn: &mut Connection) -> Result<i64, String> {
+    let version = user_version(conn)?;
+    if version > SCHEMA_VERSION {
+        return Err(format!(
+            "Diese Datenbank wurde mit einer neueren App-Version erstellt (Schema-Version {version}, unterstützt bis {SCHEMA_VERSION}). Bitte die App aktualisieren."
+        ));
+    }
+    if version < 1 {
+        // Tabellen-Neubau erfordert deaktivierte Fremdschlüssel; PRAGMA
+        // foreign_keys wirkt NUR außerhalb einer Transaktion.
+        conn.execute_batch("PRAGMA foreign_keys=OFF;")
+            .map_err(|e| e.to_string())?;
+        let res = (|| -> Result<(), String> {
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            tx.execute_batch(MIGRATE_V1_SQL)
+                .map_err(|e| format!("Migration 1 fehlgeschlagen: {e}"))?;
+            // Integritätskontrolle vor dem Commit: keine verwaisten Referenzen.
+            {
+                let mut stmt = tx
+                    .prepare("PRAGMA foreign_key_check")
+                    .map_err(|e| e.to_string())?;
+                let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+                if rows.next().map_err(|e| e.to_string())?.is_some() {
+                    return Err("Fremdschlüssel-Verletzung nach Migration 1".to_string());
+                }
+            }
+            tx.execute_batch("PRAGMA user_version=1;")
+                .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        // Fremdschlüssel wieder aktivieren – unabhängig von Erfolg/Fehler.
+        let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
+        res?;
+    }
+    Ok(SCHEMA_VERSION)
+}
+
+/// Führt die Schema-Migrationen auf der offenen (entsperrten) DB aus. Wird vom
+/// Frontend nach dem Anlegen des v0-Basisschemas aufgerufen (client.initSchema).
+#[tauri::command]
+fn db_migrate(state: State<'_, DbState>) -> Result<i64, String> {
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    let kc = guard.as_mut().ok_or_else(|| "DB gesperrt".to_string())?;
+    run_migrations(&mut kc.conn)
 }
 
 /// Pfad + Modus für die Anzeige (DbInfoPanel).
@@ -465,6 +678,8 @@ pub fn run() {
             read_text_file,
             db_execute,
             db_select,
+            db_batch,
+            db_migrate,
             db_path,
             db_status,
             crypto_setup,
@@ -478,4 +693,130 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");
+}
+
+// ---------- Tests: Schema-Migration (Tauri-frei, reine rusqlite-Connection) ----------
+
+#[cfg(test)]
+mod migration_tests {
+    use super::{run_migrations, SCHEMA_VERSION};
+    use rusqlite::Connection;
+
+    /// v0-Basisschema (Stand v1.2.0), wie es das Frontend via schema.ts anlegt.
+    /// Bewusst eingefroren: künftige Änderungen laufen über nummerierte Migrationen.
+    const V0_SCHEMA: &str = r#"
+        CREATE TABLE entries (
+          id TEXT PRIMARY KEY, date TEXT NOT NULL, start_time TEXT, end_time TEXT,
+          duration_minutes INTEGER NOT NULL DEFAULT 0, info_for_management TEXT NOT NULL DEFAULT '',
+          secret_details TEXT NOT NULL DEFAULT '', had_planned_shift INTEGER NOT NULL DEFAULT 1,
+          shift_compensation_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE INDEX idx_entries_date ON entries(date);
+        CREATE TABLE task_tags (id TEXT PRIMARY KEY, label TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE entry_tags (entry_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (entry_id, tag_id));
+        CREATE INDEX idx_entry_tags_tag ON entry_tags(tag_id);
+        CREATE TABLE objections (id TEXT PRIMARY KEY, entry_id TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+          by_whom TEXT NOT NULL DEFAULT '', date TEXT);
+        CREATE INDEX idx_objections_entry ON objections(entry_id);
+    "#;
+
+    fn seed_v0(conn: &Connection) {
+        conn.execute_batch(V0_SCHEMA).unwrap();
+        conn.execute_batch(
+            r#"
+            INSERT INTO entries (id,date,duration_minutes,info_for_management,created_at,updated_at)
+              VALUES ('e1','2026-01-01',60,'Info 1','t','t'),
+                     ('e2','2026-01-02',30,'Info 2','t','t');
+            INSERT INTO entries (id,date,duration_minutes,info_for_management,created_at,updated_at)
+              VALUES (NULL,'2026-01-03',15,'Info NULL','t','t');
+            INSERT INTO task_tags (id,label,archived) VALUES
+              ('a1','Fahrzeit',0), ('a2','fahrzeit',0), ('b1','Sitzung',0);
+            INSERT INTO entry_tags (entry_id,tag_id) VALUES
+              ('e1','a1'), ('e1','a2'), ('e1','b1'), ('e2','a2');
+            INSERT INTO objections (id,entry_id,reason,by_whom,date) VALUES
+              ('o1','e1','Grund','GL',NULL);
+        "#,
+        )
+        .unwrap();
+    }
+
+    fn count(conn: &Connection, sql: &str) -> i64 {
+        conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn migriert_v0_auf_v1_vollstaendig() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+
+        let v = run_migrations(&mut conn).unwrap();
+        assert_eq!(v, SCHEMA_VERSION);
+        assert_eq!(count(&conn, "PRAGMA user_version"), 1);
+
+        // NULL-id-Zeile verworfen.
+        assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
+        // Case-insensitive Duplikat-Tag (Fahrzeit/fahrzeit) gemergt.
+        assert_eq!(count(&conn, "SELECT count(*) FROM task_tags"), 2);
+        // e1: a2 auf Überlebenden a1 umgehängt, DISTINCT -> {a1,b1}.
+        assert_eq!(count(&conn, "SELECT count(*) FROM entry_tags WHERE entry_id='e1'"), 2);
+        assert_eq!(count(&conn, "SELECT count(*) FROM entry_tags WHERE entry_id='e1' AND tag_id='a1'"), 1);
+        assert_eq!(count(&conn, "SELECT count(*) FROM entry_tags WHERE entry_id='e1' AND tag_id='b1'"), 1);
+        // e2: a2 -> a1.
+        assert_eq!(count(&conn, "SELECT count(*) FROM entry_tags WHERE entry_id='e2' AND tag_id='a1'"), 1);
+        // Neue Spalte is_compensation, Default 0.
+        assert_eq!(count(&conn, "SELECT is_compensation FROM entries WHERE id='e1'"), 0);
+        // Objection erhalten.
+        assert_eq!(count(&conn, "SELECT count(*) FROM objections WHERE entry_id='e1'"), 1);
+    }
+
+    #[test]
+    fn check_unique_und_fk_aktiv_nach_migration() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+
+        // CHECK(duration_minutes >= 0) lehnt Negativwerte ab.
+        assert!(conn
+            .execute(
+                "INSERT INTO entries (id,date,duration_minutes,created_at,updated_at) VALUES ('x','2026-01-01',-1,'t','t')",
+                [],
+            )
+            .is_err());
+
+        // Erlaubt: ohne Start/Ende mit Dauer > 0 (kein Zeit-CHECK).
+        conn.execute(
+            "INSERT INTO entries (id,date,start_time,end_time,duration_minutes,created_at,updated_at) VALUES ('ok1','2026-01-01',NULL,NULL,120,'t','t')",
+            [],
+        )
+        .unwrap();
+
+        // UNIQUE(label COLLATE NOCASE) lehnt case-insensitive Duplikate ab.
+        assert!(conn
+            .execute("INSERT INTO task_tags (id,label,archived) VALUES ('z','FAHRZEIT',0)", [])
+            .is_err());
+
+        // FK ON DELETE CASCADE: Löschen eines Eintrags entfernt Kindzeilen.
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute("DELETE FROM entries WHERE id='e1'", []).unwrap();
+        assert_eq!(count(&conn, "SELECT count(*) FROM entry_tags WHERE entry_id='e1'"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM objections WHERE entry_id='e1'"), 0);
+    }
+
+    #[test]
+    fn migration_ist_idempotent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+        let v = run_migrations(&mut conn).unwrap();
+        assert_eq!(v, SCHEMA_VERSION);
+        assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
+        assert_eq!(count(&conn, "SELECT count(*) FROM task_tags"), 2);
+    }
+
+    #[test]
+    fn downgrade_wird_abgelehnt() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        conn.execute_batch("PRAGMA user_version=2;").unwrap();
+        assert!(run_migrations(&mut conn).is_err());
+    }
 }

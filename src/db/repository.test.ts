@@ -5,10 +5,15 @@ import type { BackupPayload, TimeEntry } from "../types";
 // repository.ts-Logik wird gegen den Mock getestet, ohne echtes SQLite/Tauri.
 const selectMock = vi.fn();
 const executeMock = vi.fn();
+const batchMock = vi.fn();
 const isFtsAvailableMock = vi.fn();
 
 vi.mock("./client", () => ({
-  getDb: vi.fn(async () => ({ select: selectMock, execute: executeMock })),
+  getDb: vi.fn(async () => ({
+    select: selectMock,
+    execute: executeMock,
+    batch: batchMock,
+  })),
   isFtsAvailable: () => isFtsAvailableMock(),
 }));
 
@@ -38,23 +43,36 @@ function baseEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
 beforeEach(() => {
   selectMock.mockReset();
   executeMock.mockReset();
+  batchMock.mockReset();
   isFtsAvailableMock.mockReset();
   isFtsAvailableMock.mockReturnValue(false); // FTS-Pflege ist nicht Gegenstand dieser Tests
   executeMock.mockResolvedValue(0);
+  batchMock.mockResolvedValue(undefined);
 });
+
+/** Findet ein Statement im (einzigen) db_batch-Aufruf anhand eines SQL-Präfixes. */
+function batchStatement(prefix: string) {
+  const statements = batchMock.mock.calls[0][0] as {
+    sql: string;
+    params: unknown[];
+  }[];
+  return statements.find((s) => s.sql.startsWith(prefix));
+}
 
 describe("saveEntry", () => {
   it("fügt einen neuen Eintrag ein (INSERT), wenn die ID noch nicht existiert", async () => {
-    selectMock.mockResolvedValueOnce([]); // "SELECT id FROM entries WHERE id = ?" -> nicht vorhanden
+    selectMock
+      .mockResolvedValueOnce([]) // "SELECT id FROM entries WHERE id = ?" -> nicht vorhanden
+      .mockResolvedValueOnce([{ id: "tag-1", label: "Tag 1" }]); // loadTagLabels
     const entry = baseEntry({ tagIds: ["tag-1"] });
 
     await repo.saveEntry(entry);
 
-    const insertCall = executeMock.mock.calls.find(([sql]) =>
-      String(sql).startsWith("INSERT INTO entries")
-    );
-    expect(insertCall).toBeDefined();
-    expect(insertCall![1]).toEqual([
+    // Alle Schreib-Statements laufen atomar in EINER db_batch-Transaktion.
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const insert = batchStatement("INSERT INTO entries");
+    expect(insert).toBeDefined();
+    expect(insert!.params).toEqual([
       entry.id,
       entry.date,
       entry.startTime,
@@ -64,19 +82,17 @@ describe("saveEntry", () => {
       entry.secretDetails,
       1, // hadPlannedShift: true -> 1
       entry.shiftCompensationNote,
+      0, // isCompensation: undefined -> 0
       entry.createdAt,
       expect.any(String), // now
     ]);
 
-    // Tags neu gesetzt: erst löschen, dann pro Tag einfügen.
-    const tagDelete = executeMock.mock.calls.find(([sql]) =>
-      String(sql).startsWith("DELETE FROM entry_tags")
-    );
-    expect(tagDelete![1]).toEqual([entry.id]);
-    const tagInsert = executeMock.mock.calls.find(([sql]) =>
-      String(sql).startsWith("INSERT OR IGNORE INTO entry_tags")
-    );
-    expect(tagInsert![1]).toEqual([entry.id, "tag-1"]);
+    // Tags neu gesetzt: erst löschen, dann pro (gültigem) Tag einfügen.
+    expect(batchStatement("DELETE FROM entry_tags")!.params).toEqual([entry.id]);
+    expect(batchStatement("INSERT OR IGNORE INTO entry_tags")!.params).toEqual([
+      entry.id,
+      "tag-1",
+    ]);
   });
 
   it("aktualisiert einen bestehenden Eintrag (UPDATE), wenn die ID schon existiert", async () => {
@@ -85,11 +101,10 @@ describe("saveEntry", () => {
 
     await repo.saveEntry(entry);
 
-    const updateCall = executeMock.mock.calls.find(([sql]) =>
-      String(sql).startsWith("UPDATE entries SET")
-    );
-    expect(updateCall).toBeDefined();
-    expect(updateCall![1]).toEqual([
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const update = batchStatement("UPDATE entries SET");
+    expect(update).toBeDefined();
+    expect(update!.params).toEqual([
       entry.date,
       entry.startTime,
       entry.endTime,
@@ -98,13 +113,11 @@ describe("saveEntry", () => {
       entry.secretDetails,
       1,
       entry.shiftCompensationNote,
+      0, // isCompensation: undefined -> 0
       expect.any(String), // now
       entry.id,
     ]);
-    const insertCall = executeMock.mock.calls.find(([sql]) =>
-      String(sql).startsWith("INSERT INTO entries")
-    );
-    expect(insertCall).toBeUndefined();
+    expect(batchStatement("INSERT INTO entries")).toBeUndefined();
   });
 
   it("überspringt komplett leere Widerspruchszeilen (kein reason/byWhom)", async () => {
@@ -118,12 +131,41 @@ describe("saveEntry", () => {
 
     await repo.saveEntry(entry);
 
-    const objectionInserts = executeMock.mock.calls.filter(([sql]) =>
-      String(sql).startsWith("INSERT INTO objections")
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    const objectionInserts = statements.filter((s) =>
+      s.sql.startsWith("INSERT INTO objections")
     );
     expect(objectionInserts).toHaveLength(1);
-    expect(objectionInserts[0][1][1]).toBe(entry.id);
-    expect(objectionInserts[0][1][2]).toBe("Grund");
+    expect(objectionInserts[0].params[1]).toBe(entry.id);
+    expect(objectionInserts[0].params[2]).toBe("Grund");
+  });
+});
+
+describe("createTag", () => {
+  it("legt ein neues Schlagwort an und trimmt das Label", async () => {
+    selectMock.mockResolvedValueOnce([]); // COLLATE-NOCASE-Check: kein Treffer
+
+    const tag = await repo.createTag("  Fahrzeit  ");
+
+    expect(tag.label).toBe("Fahrzeit");
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    const [sql, params] = executeMock.mock.calls[0];
+    expect(sql).toContain("INSERT INTO task_tags");
+    expect(params).toEqual([tag.id, "Fahrzeit"]);
+  });
+
+  it("wirft bei case-insensitivem Duplikat und legt nichts an", async () => {
+    selectMock.mockResolvedValueOnce([{ id: "vorhanden" }]); // Label existiert bereits
+
+    await expect(repo.createTag("fahrzeit")).rejects.toThrow(
+      "existiert bereits"
+    );
+    // Prüf-SELECT case-insensitiv, kein INSERT.
+    expect(selectMock.mock.calls[0][0]).toContain("COLLATE NOCASE");
+    expect(executeMock).not.toHaveBeenCalled();
   });
 });
 
@@ -145,6 +187,34 @@ describe("listEntries – Filterbau", () => {
       "EXISTS (SELECT 1 FROM entry_tags et WHERE et.entry_id = e.id AND et.tag_id IN (?,?))"
     );
     expect(params).toEqual(["2026-01-01", "2026-01-31", "a", "b"]);
+  });
+
+  it("lädt secret_details NICHT (schlanke Spaltenliste, kein Klartext-Leak)", async () => {
+    selectMock
+      .mockResolvedValueOnce([
+        {
+          id: "e1",
+          date: "2026-01-15",
+          start_time: null,
+          end_time: null,
+          duration_minutes: 60,
+          info_for_management: "Info",
+          had_planned_shift: 1,
+          shift_compensation_note: "",
+          is_compensation: 0,
+          created_at: "2026-01-15T00:00:00.000Z",
+          updated_at: "2026-01-15T00:00:00.000Z",
+        },
+      ]) // Haupt-SELECT (schlanke Zeile ohne secret_details)
+      .mockResolvedValueOnce([]) // Schlagwörter
+      .mockResolvedValueOnce([]); // Widersprüche
+
+    const items = await repo.listEntries({});
+
+    const [sql] = selectMock.mock.calls[0];
+    expect(sql).not.toContain("secret_details");
+    expect(sql).not.toContain("e.*");
+    expect(items[0]).not.toHaveProperty("secretDetails");
   });
 
   it("liefert bei Volltextsuche ohne Treffer sofort [] ohne weiteren DB-Zugriff", async () => {
@@ -191,8 +261,8 @@ describe("analyzeImport – Konfliktlogik", () => {
       if (sql.includes("FROM entry_tags et JOIN task_tags t")) {
         return [];
       }
-      if (sql.startsWith("SELECT id FROM task_tags")) {
-        return [{ id: "tag-existing" }];
+      if (sql.startsWith("SELECT id, label FROM task_tags")) {
+        return [{ id: "tag-existing", label: "Bestehend" }];
       }
       throw new Error(`Unerwartete Query im Test: ${sql}`);
     });
@@ -227,6 +297,81 @@ describe("analyzeImport – Konfliktlogik", () => {
     expect(summary.conflictItems).toEqual([
       { id: "local-conflict", date: "2026-01-01", label: "Alte Info" },
     ]);
+  });
+
+  it("zählt newTags wie applyImport: case-insensitive Label-Duplikate (lokal und im Payload) nicht", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return [];
+      if (sql.startsWith("SELECT id, label FROM task_tags"))
+        return [{ id: "local-1", label: "Fahrzeit" }];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const payload: BackupPayload = {
+      schemaVersion: 1,
+      exportedAt: "2026-01-20T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [
+        { id: "imp-1", label: "fahrzeit", archived: false }, // Dup zu lokal -> zählt nicht
+        { id: "imp-2", label: "Sitzung", archived: false }, // neu -> zählt
+        { id: "imp-3", label: "sitzung", archived: false }, // Payload-interner Dup -> zählt nicht
+      ],
+      entries: [],
+    };
+
+    const summary = await repo.analyzeImport(payload);
+
+    expect(summary.newTags).toBe(1);
+  });
+});
+
+describe("applyImport – atomarer Merge", () => {
+  it("mergt in EINER Transaktion, überspringt label-doppelte Tags und filtert deren Referenzen", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return []; // lokal leer -> alles neu
+      // analyzeImport (newTags) und applyImport (bestehende Tags) lesen beide
+      // `SELECT id, label FROM task_tags`.
+      if (sql.startsWith("SELECT id, label FROM task_tags"))
+        return [{ id: "local-x", label: "Fahrzeit" }];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const payload: BackupPayload = {
+      schemaVersion: 1,
+      exportedAt: "2026-01-20T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [
+        { id: "imp-1", label: "fahrzeit", archived: false }, // Label-Duplikat (case-insensitiv) -> übersprungen
+        { id: "imp-2", label: "Sitzung", archived: false }, // neu -> angelegt
+      ],
+      entries: [baseEntry({ id: "e-new", tagIds: ["imp-1", "imp-2"] })],
+    };
+
+    await repo.applyImport(payload);
+
+    // Gesamter Merge in EINER db_batch-Transaktion.
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+
+    // imp-1 wird wegen des Label-Duplikats NICHT angelegt, imp-2 schon.
+    const tagInserts = statements.filter((s) =>
+      s.sql.startsWith("INSERT OR IGNORE INTO task_tags")
+    );
+    expect(tagInserts.map((s) => s.params[0])).toEqual(["imp-2"]);
+
+    // Neuer Eintrag als INSERT.
+    expect(statements.some((s) => s.sql.startsWith("INSERT INTO entries"))).toBe(
+      true
+    );
+
+    // entry_tags nur für gültige Tags: imp-1 (nicht angelegt) wird herausgefiltert.
+    const etInserts = statements.filter((s) =>
+      s.sql.startsWith("INSERT OR IGNORE INTO entry_tags")
+    );
+    expect(etInserts.map((s) => s.params[1])).toEqual(["imp-2"]);
   });
 });
 
