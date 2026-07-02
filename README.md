@@ -45,8 +45,16 @@ Die Datenbank liegt unter Windows in:
 ```
 
 Der genaue Pfad wird in der App unter **„Über / Daten"** angezeigt; dort öffnet
-ein Klick den Ordner im Explorer (für manuelle Backups). Zum Sichern einfach die
-Datei `br_zeiten.db` kopieren.
+ein Klick den Ordner im Explorer (für manuelle Backups). Die Datenbank ist mit
+SQLCipher verschlüsselt; der Schlüssel liegt gekapselt in einer zweiten Datei
+`keyfile.json` **im selben Ordner**. Für ein manuelles Backup deshalb **immer
+beide Dateien zusammen** sichern (`br_zeiten.db` **und** `keyfile.json`) – eine
+Kopie nur der Datenbank ist ohne die Schlüsseldatei nicht entschlüsselbar, auch
+nicht mit dem Wiederherstellungs-Code (der entkapselt nur die in der
+`keyfile.json` abgelegten Schlüsseldaten). Schlüsselunabhängig ist der
+**JSON-Export** (App → Daten → „Sicherung & Übertragung" → JSON-Backup
+speichern) – er funktioniert ohne `keyfile.json` und ohne Passwort und ist
+damit der robustere Weg für Geräteübertragungen und Zweitsicherungen.
 
 Läuft die App **portabel vom USB-Stick**, liegt die Datenbank stattdessen neben
 der EXE in `BR-Log-Data\br_zeiten.db` (siehe Abschnitt *Portable Version*).
@@ -82,8 +90,9 @@ direkt vom USB-Stick läuft – die Daten reisen mit:
 3. `BR-Log.exe` direkt vom Stick starten.
 
 Die Datenbank liegt dann **neben der EXE** in `BR-Log-Data\br_zeiten.db` und
-wandert mit dem Stick mit. In der App zeigt „Über / Daten" das Abzeichen
-**„Portabel (USB)"** und den tatsächlichen Pfad.
+wandert mit dem Stick mit; die zugehörige `keyfile.json` liegt im selben
+Ordner `BR-Log-Data` und wandert automatisch mit. In der App zeigt „Über /
+Daten" das Abzeichen **„Portabel (USB)"** und den tatsächlichen Pfad.
 
 > **⚠️ Vertraulichkeit (BR-Geheimnis):** Den Ordner **nicht** in einen
 > Cloud-synchronisierten Ordner (OneDrive, Dropbox …) entpacken – sonst würde die

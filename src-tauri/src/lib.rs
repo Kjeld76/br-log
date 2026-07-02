@@ -397,12 +397,12 @@ fn data_dir(loc: &State<'_, AppDbLocation>) -> PathBuf {
     loc.0.data_dir.clone()
 }
 
-/// Startentscheidung: firstRun | needsMigration | encrypted | error.
-#[tauri::command]
-fn db_status(loc: State<'_, AppDbLocation>) -> JsonValue {
-    let dir = &loc.0.data_dir;
-    let db_file = &loc.0.db_file;
-    let plaintext = db_file.exists() && is_plaintext_db(db_file);
+/// Startentscheidung: firstRun | needsMigration | encrypted | keyfileMissing | error.
+/// Reine Pfad-/Dateilogik ohne Tauri-State -> ohne echte SQLCipher-Datei testbar
+/// (siehe db_status_tests unten).
+fn compute_db_status(dir: &Path, db_file: &Path) -> JsonValue {
+    let db_exists = db_file.exists();
+    let plaintext = db_exists && is_plaintext_db(db_file);
     // WICHTIG: V2-Keyfile gilt nur als "encrypted", wenn die DB auch wirklich
     // verschlüsselt ist. Liegt ein V2-Keyfile NEBEN einer noch-Klartext-DB, wurde
     // die Migration zwischen Keyfile-Schreiben und DB-Swap unterbrochen -> die DB
@@ -413,10 +413,43 @@ fn db_status(loc: State<'_, AppDbLocation>) -> JsonValue {
             json!({ "mode": "encrypted", "autoLockMinutes": kf.auto_lock_minutes })
         }
         crypto::KeyfileState::Corrupt(m) if !plaintext => {
-            json!({ "mode": "error", "message": format!("Schlüsseldatei beschädigt: {m}") })
+            json!({ "mode": "error", "autoLockMinutes": 5, "message": format!("Schlüsseldatei beschädigt: {m}") })
         }
         crypto::KeyfileState::V1 { auto_lock_minutes } if plaintext => {
             json!({ "mode": "needsMigration", "autoLockMinutes": auto_lock_minutes })
+        }
+        // Verschlüsselte DB vorhanden (existiert, kein Klartext-Header), aber
+        // keyfile.json fehlt komplett (gelöscht/nicht mitkopiert). NICHT als
+        // firstRun behandeln -> crypto_setup würde sonst "neu einrichten"
+        // anbieten und liefe beim Anlegen zwar ins Vorhandenheits-Guard
+        // ("Es existiert bereits eine Datenbank..."), aber ohne verständliche
+        // Erklärung, was passiert ist und was jetzt zu tun ist. Der
+        // Wiederherstellungs-Code hilft hier NICHT: er entkapselt nur die in
+        // der (fehlenden) keyfile.json abgelegte gewrappte DEK, ist also ohne
+        // die Datei wertlos.
+        crypto::KeyfileState::None if db_exists && !plaintext => {
+            json!({
+                "mode": "keyfileMissing",
+                "autoLockMinutes": 5,
+                "message": format!(
+                    "Es wurde eine verschlüsselte Datenbank gefunden, aber die zugehörige \
+                     Schlüsseldatei \"{}\" fehlt im Ordner \"{}\" (z. B. beim Kopieren vergessen \
+                     oder nachträglich gelöscht). Ohne sie lässt sich die Datenbank nicht \
+                     entsperren – der Wiederherstellungs-Code hilft hier NICHT, da die dafür \
+                     nötigen Daten ausschließlich in dieser Schlüsseldatei liegen. Mögliche \
+                     Optionen: (1) \"{}\" aus einer Sicherung (z. B. Backup des Datenordners) an \
+                     genau diesen Ort zurücklegen und die App neu starten. (2) Ohne eine solche \
+                     Sicherung: die Datei \"{}\" in einen anderen Ordner verschieben (sie bleibt \
+                     dort als Sicherung erhalten, nichts wird gelöscht) und die App neu starten, \
+                     um eine neue, leere Datenbank mit neuem Passwort einzurichten – anschließend \
+                     lässt sich ein zuvor erstelltes JSON-Backup unter „Daten → Sicherung & \
+                     Übertragung → Import\" wieder einspielen.",
+                    crypto::KEYFILE_NAME,
+                    dir.display(),
+                    crypto::KEYFILE_NAME,
+                    db_file.display()
+                )
+            })
         }
         _ => {
             if plaintext {
@@ -428,6 +461,11 @@ fn db_status(loc: State<'_, AppDbLocation>) -> JsonValue {
     }
 }
 
+#[tauri::command]
+fn db_status(loc: State<'_, AppDbLocation>) -> JsonValue {
+    compute_db_status(&loc.0.data_dir, &loc.0.db_file)
+}
+
 /// Erst-Einrichtung OHNE bestehende DB: neue, leere, verschlüsselte DB anlegen.
 /// Gibt den Recovery-Code (Anzeigeform) zurück – nur hier einmalig.
 #[tauri::command]
@@ -436,6 +474,11 @@ fn crypto_setup(
     loc: State<'_, AppDbLocation>,
     password: String,
 ) -> Result<JsonValue, CryptoCmdError> {
+    // Sofort in Zeroizing verpacken: der Klartext-Puffer lebt danach nur noch
+    // hinter einem Typ, der beim Drop (Funktionsende) zuverlässig genullt wird,
+    // statt als gewöhnlicher String im Heap liegen zu bleiben.
+    let password = Zeroizing::new(password);
+    crypto::validate_password_policy(&password).map_err(db_err)?;
     let dir = data_dir(&loc);
     // Schutz: niemals ein vorhandenes Keyfile/DB überschreiben – das würde die
     // einzige gekapselte DEK vernichten und die DB unwiederbringlich machen.
@@ -462,13 +505,17 @@ fn crypto_unlock(
     secret: String,
     kind: String,
 ) -> Result<(), CryptoCmdError> {
+    let secret = Zeroizing::new(secret);
     let kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
         _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden")),
     };
     let dek = if kind == "recovery" {
-        let norm = crypto::normalize_recovery(&secret);
+        // normalize_recovery liefert bewusst weiter einen plain String (reine,
+        // Tauri-freie Funktion, s. crypto.rs) -> hier sofort zeroizen, statt den
+        // normalisierten Code unkontrolliert im Heap liegen zu lassen.
+        let norm = Zeroizing::new(crypto::normalize_recovery(&secret));
         crypto::unwrap_with_recovery(&kf, &norm)?
     } else {
         crypto::unwrap_with_password(&kf, &secret)?
@@ -493,6 +540,9 @@ fn crypto_change_password(
     old_password: String,
     new_password: String,
 ) -> Result<(), CryptoCmdError> {
+    let old_password = Zeroizing::new(old_password);
+    let new_password = Zeroizing::new(new_password);
+    crypto::validate_password_policy(&new_password).map_err(db_err)?;
     let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
@@ -511,6 +561,7 @@ fn crypto_regenerate_recovery(
     loc: State<'_, AppDbLocation>,
     password: String,
 ) -> Result<JsonValue, CryptoCmdError> {
+    let password = Zeroizing::new(password);
     let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
@@ -563,6 +614,8 @@ fn crypto_migrate(
     loc: State<'_, AppDbLocation>,
     password: String,
 ) -> Result<JsonValue, CryptoCmdError> {
+    let password = Zeroizing::new(password);
+    crypto::validate_password_policy(&password).map_err(db_err)?;
     let dir = data_dir(&loc);
     let db_file = loc.0.db_file.clone();
     if !is_plaintext_db(&db_file) {
@@ -596,11 +649,15 @@ fn crypto_migrate(
     let tmp_sql = tmp.to_string_lossy().replace('\'', "''");
     {
         let src = Connection::open(&db_file).map_err(|e| db_err(e.to_string()))?;
-        src.execute_batch(&format!(
+        // Der DEK-Hex-Literal landet hier eingebettet in einem SQL-String; ohne
+        // Zeroizing würde diese Kopie des Schlüsselmaterials als gewöhnlicher
+        // String im Heap zurückbleiben, statt beim Drop genullt zu werden.
+        let attach_sql = Zeroizing::new(format!(
             "ATTACH DATABASE '{}' AS enc KEY \"{}\";",
             tmp_sql, &*keylit
-        ))
-        .map_err(|e| db_err(format!("ATTACH: {e}")))?;
+        ));
+        src.execute_batch(&attach_sql)
+            .map_err(|e| db_err(format!("ATTACH: {e}")))?;
         src.query_row("SELECT sqlcipher_export('enc')", [], |_| Ok(()))
             .map_err(|e| db_err(format!("Export: {e}")))?;
         src.execute_batch("DETACH DATABASE enc;")
@@ -818,5 +875,116 @@ mod migration_tests {
         seed_v0(&conn);
         conn.execute_batch("PRAGMA user_version=2;").unwrap();
         assert!(run_migrations(&mut conn).is_err());
+    }
+}
+
+// ---------- Tests: db_status-Logik (reine Pfad-/Dateilogik, kein echtes SQLCipher) ----------
+
+#[cfg(test)]
+mod db_status_tests {
+    use super::compute_db_status;
+    use crate::crypto;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Eindeutiges, isoliertes Verzeichnis unter dem System-Temp-Ordner.
+    fn temp_test_dir(label: &str) -> std::path::PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "br-log-dbstatus-test-{label}-{}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("Temp-Testverzeichnis anlegen");
+        dir
+    }
+
+    #[test]
+    fn firstrun_wenn_weder_db_noch_keyfile_existieren() {
+        let dir = temp_test_dir("firstrun");
+        let db_file = dir.join("br_zeiten.db");
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "firstRun");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn needs_migration_wenn_klartext_db_ohne_keyfile() {
+        let dir = temp_test_dir("plain-no-keyfile");
+        let db_file = dir.join("br_zeiten.db");
+        std::fs::write(&db_file, b"SQLite format 3\0Rest der Datei irrelevant").unwrap();
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "needsMigration");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn encrypted_wenn_v2_keyfile_und_verschluesselte_db() {
+        let dir = temp_test_dir("encrypted");
+        let db_file = dir.join("br_zeiten.db");
+        // SQLCipher-Header ist ein zufälliges Salt, NICHT "SQLite format 3\0".
+        std::fs::write(&db_file, [0x42u8; 32]).unwrap();
+
+        let dek = crypto::gen_dek();
+        let recovery = crypto::gen_recovery_canonical();
+        let kf = crypto::build_keyfile(&dek, "pw123456", &recovery, 9).unwrap();
+        crypto::write_keyfile_atomic(&dir, &kf).unwrap();
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "encrypted");
+        assert_eq!(status["autoLockMinutes"], 9);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Der Kern-Härtungsfall: verschlüsselte DB vorhanden, keyfile.json fehlt
+    /// (gelöscht oder beim Kopieren vergessen). Darf NICHT als firstRun
+    /// durchgehen (sonst droht "als neu behandeln"/Überschreib-Versuch).
+    #[test]
+    fn keyfile_missing_wenn_verschluesselte_db_ohne_keyfile() {
+        let dir = temp_test_dir("keyfile-missing");
+        let db_file = dir.join("br_zeiten.db");
+        std::fs::write(&db_file, [0x99u8; 32]).unwrap();
+        // Bewusst KEIN keyfile.json angelegt.
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "keyfileMissing");
+        let msg = status["message"].as_str().expect("message vorhanden");
+        assert!(msg.contains("keyfile.json"));
+        assert!(msg.contains("Wiederherstellungs-Code"));
+        assert!(msg.contains(db_file.to_string_lossy().as_ref()));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn error_wenn_keyfile_korrupt_und_db_nicht_klartext() {
+        let dir = temp_test_dir("corrupt");
+        let db_file = dir.join("br_zeiten.db");
+        std::fs::write(&db_file, [0x11u8; 32]).unwrap();
+        std::fs::write(dir.join(crypto::KEYFILE_NAME), "{ kaputtes json").unwrap();
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "error");
+        assert!(status["message"].as_str().unwrap().contains("beschädigt"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn firstrun_bleibt_firstrun_wenn_nur_keyfile_ohne_db_fehlt() {
+        // Randfall: keine DB-Datei vorhanden (auch keine verschlüsselte) und
+        // kein Keyfile -> weiterhin firstRun, NICHT keyfileMissing (die
+        // Härtung greift nur, wenn tatsächlich eine DB-Datei existiert).
+        let dir = temp_test_dir("no-db-no-keyfile");
+        let db_file = dir.join("br_zeiten.db"); // existiert nicht
+
+        let status = compute_db_status(&dir, &db_file);
+        assert_eq!(status["mode"], "firstRun");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

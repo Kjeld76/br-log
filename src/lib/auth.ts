@@ -13,6 +13,7 @@ export type StartMode =
   | "firstRun" // keine DB -> Erst-Einrichtung
   | "needsMigration" // Klartext-DB -> verschlüsseln
   | "encrypted" // verschlüsselte DB -> entsperren
+  | "keyfileMissing" // verschlüsselte DB vorhanden, aber keyfile.json fehlt
   | "error"; // Keyfile beschädigt o. Ä.
 
 export interface StartStatus {

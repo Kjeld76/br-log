@@ -86,11 +86,17 @@ export default function DbInfoPanel() {
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">
           Alle Daten liegen ausschließlich lokal auf diesem Gerät – es gibt keinen
-          Server. Die Datenbank ist mit SQLCipher (AES-256) verschlüsselt; eine
-          Kopie der Datei ist ohne Passwort bzw. Wiederherstellungs-Code wertlos.
+          Server. Die Datenbank ist mit SQLCipher (AES-256) verschlüsselt; der
+          Schlüssel dazu liegt gekapselt in der Datei keyfile.json im selben
+          Ordner. Eine Kopie{" "}
+          <strong>nur der Datenbank</strong> ist ohne diese Schlüsseldatei
+          nicht entschlüsselbar – auch nicht mit dem Wiederherstellungs-Code,
+          der ebenfalls auf die Schlüsseldaten in keyfile.json angewiesen ist.
           {portable
-            ? " Diese Version läuft portabel: Die Datenbank liegt im Ordner BR-Log-Data neben der EXE und wandert mit dem USB-Stick mit."
-            : " Für ein sicheres Backup die Datei br_zeiten.db kopieren oder den JSON-Export nutzen."}
+            ? " Diese Version läuft portabel: Datenbank UND keyfile.json liegen zusammen im Ordner BR-Log-Data neben der EXE und wandern mit dem USB-Stick mit."
+            : " Für ein manuelles Backup deshalb immer br_zeiten.db UND keyfile.json zusammen sichern (liegen im selben Ordner)."}{" "}
+          Schlüsselunabhängig ist der JSON-Export unter „Daten → Sicherung &amp;
+          Übertragung" – er braucht weder keyfile.json noch Passwort.
         </p>
         <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
           {dbPath || "Pfad wird ermittelt…"}

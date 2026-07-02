@@ -92,6 +92,40 @@ export default function LockScreen({ startMode, startMessage, onUnlocked }: Prop
     );
   }
 
+  // --- Verschlüsselte DB vorhanden, aber keyfile.json fehlt (gelöscht/nicht
+  // mitkopiert). Bewusst EIGENER Zustand statt firstRun: die App darf die
+  // vorhandene, nicht mehr entsperrbare Datenbank auf keinen Fall stillschweigend
+  // als "neu" behandeln oder überschreiben. Die Optionen unten sind die
+  // tatsächlich verfügbaren – ein Wiederherstellungs-Code allein hilft hier
+  // NICHT, weil die dafür nötigen Daten in genau der fehlenden Datei lagen.
+  if (startMode === "keyfileMissing") {
+    return shell(
+      <div className="space-y-3 text-left">
+        <div className="text-center">
+          <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
+          <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+            Schlüsseldatei fehlt
+          </p>
+        </div>
+        <p className="break-all text-sm text-slate-600 dark:text-slate-300">
+          {startMessage ||
+            "Es wurde eine verschlüsselte Datenbank gefunden, aber die zugehörige Schlüsseldatei (keyfile.json) fehlt."}
+        </p>
+        <button
+          type="button"
+          className={primaryBtn}
+          onClick={() => window.location.reload()}
+        >
+          Erneut prüfen
+        </button>
+        <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+          Nachdem die Schlüsseldatei zurückgelegt wurde, hier klicken oder die
+          App neu starten.
+        </p>
+      </div>
+    );
+  }
+
   const isUnlock = startMode === "encrypted";
   const isMigrate = startMode === "needsMigration";
 

@@ -129,6 +129,19 @@ pub fn normalize_recovery(input: &str) -> String {
         .collect()
 }
 
+// ---------- Passwort-Policy ----------
+
+/// Mindest-Policy fürs Passwort (Setup/Migration/Passwort-Änderung). Muss mit
+/// validatePasswordPolicy (src/lib/auth.ts) übereinstimmen – zwei unabhängige
+/// Durchsetzungsstellen (Frontend UND Rust-Command), damit ein IPC-Aufruf am
+/// Frontend vorbei (oder ein UI-Bug) die Regel nicht umgehen kann.
+pub fn validate_password_policy(password: &str) -> Result<(), String> {
+    if password.chars().count() < 8 {
+        return Err("Das Passwort muss mindestens 8 Zeichen lang sein.".to_string());
+    }
+    Ok(())
+}
+
 // ---------- KDF + AEAD-Wrapping ----------
 
 fn build_aad(domain: &[u8], kdf: &Kdf) -> Vec<u8> {
@@ -456,6 +469,31 @@ mod tests {
     fn normalize_recovery_entfernt_trenner_und_grossschreibt() {
         assert_eq!(normalize_recovery("ab12-cd34"), "AB12CD34");
         assert_eq!(normalize_recovery(" a b c "), "ABC");
+    }
+
+    #[test]
+    fn validate_password_policy_lehnt_zu_kurzes_passwort_ab() {
+        let err = validate_password_policy("1234567").unwrap_err();
+        assert!(err.contains("mindestens 8 Zeichen"));
+    }
+
+    #[test]
+    fn validate_password_policy_akzeptiert_acht_zeichen() {
+        assert!(validate_password_policy("12345678").is_ok());
+    }
+
+    #[test]
+    fn validate_password_policy_akzeptiert_laengeres_passwort() {
+        assert!(validate_password_policy("ein-ziemlich-langes-passwort").is_ok());
+    }
+
+    #[test]
+    fn validate_password_policy_zaehlt_unicode_zeichen_nicht_bytes() {
+        // 8 Zeichen, aber mehr als 8 Bytes (Umlaute sind 2 Byte in UTF-8) ->
+        // muss dennoch als ausreichend lang gelten (Zeichen zählen, nicht Bytes).
+        let pw = "äöüäöüäö";
+        assert_eq!(pw.chars().count(), 8);
+        assert!(validate_password_policy(pw).is_ok());
     }
 
     #[test]
