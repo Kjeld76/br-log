@@ -233,7 +233,10 @@ export default function EntryForm({
       finalMinutes = mins;
     }
 
-    if (!draft.infoForManagement.trim())
+    // Ein Freizeitausgleich-Eintrag ist keine BR-Tätigkeit (Finding 14) --
+    // Info für die GL ist dafür kein sinnvolles Pflichtfeld, die Felder sind
+    // im Formular entsprechend gesperrt (s. u.).
+    if (!draft.isCompensation && !draft.infoForManagement.trim())
       return setError("Info für die Geschäftsleitung ist ein Pflichtfeld.");
 
     if (mode === "range" && finalStart && finalEnd && !opts?.skipOverlapCheck) {
@@ -453,8 +456,14 @@ export default function EntryForm({
           </div>
         </div>
 
-        {/* Schlagwörter: Dropdown + sichtbare Chips */}
-        <div>
+        {/* Schlagwörter: Dropdown + sichtbare Chips. Bei Freizeitausgleich
+            gesperrt (Finding 14: ein Ausgleichs-Eintrag ist keine BR-Tätigkeit). */}
+        <div
+          className={
+            draft.isCompensation ? "pointer-events-none opacity-40" : undefined
+          }
+          aria-disabled={draft.isCompensation}
+        >
           <label className={labelCls}>Schlagwörter / Aufgaben</label>
           <div className="flex flex-wrap items-center gap-1.5">
             {assignedTags.map((t) => (
@@ -472,6 +481,7 @@ export default function EntryForm({
                   className="text-white/80 hover:text-white"
                   onClick={() => toggleTag(t.id)}
                   aria-label="Entfernen"
+                  disabled={draft.isCompensation}
                 >
                   ×
                 </button>
@@ -481,6 +491,7 @@ export default function EntryForm({
               type="button"
               className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
               onClick={() => setTagPickerOpen((v) => !v)}
+              disabled={draft.isCompensation}
             >
               {tagPickerOpen ? "Fertig ▴" : "+ Schlagwort ▾"}
             </button>
@@ -541,10 +552,35 @@ export default function EntryForm({
             </div>
           )}
         </div>
+
+        {/* Freizeitausgleich (Finding 14, § 37 Abs. 3 BetrVG): ein genommener
+            Ausgleich ist keine BR-Tätigkeit -- Tags/GL-Info/Vertraulich werden
+            deaktiviert statt eine fachlich sinnlose Dokumentation zu erzwingen. */}
+        <div className="space-y-1 rounded border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={!!draft.isCompensation}
+              onChange={(e) => patch({ isCompensation: e.target.checked })}
+            />
+            Freizeitausgleich genommen (§ 37 Abs. 3 BetrVG)
+          </label>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Keine BR-Tätigkeit – Schlagwörter, GL-Info und vertrauliche Details
+            sind hier nicht relevant und werden gesperrt. Fließt separat in
+            den Freizeitausgleich-Saldo der Auswertung ein.
+          </p>
+        </div>
       </div>
 
-      {/* Block 2: Dokumentation */}
-      <div className={blockCls}>
+      {/* Block 2: Dokumentation -- bei Freizeitausgleich komplett gesperrt. */}
+      <div
+        className={
+          "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800" +
+          (draft.isCompensation ? " pointer-events-none opacity-40" : "")
+        }
+        aria-disabled={draft.isCompensation}
+      >
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           Dokumentation
         </h3>
@@ -564,6 +600,7 @@ export default function EntryForm({
             placeholder="Was die Geschäftsleitung erfahren darf"
             value={draft.infoForManagement}
             onChange={(e) => patch({ infoForManagement: e.target.value })}
+            disabled={draft.isCompensation}
           />
         </div>
 
@@ -582,6 +619,7 @@ export default function EntryForm({
             placeholder="Genaue Tätigkeit (optional)"
             value={draft.secretDetails}
             onChange={(e) => patch({ secretDetails: e.target.value })}
+            disabled={draft.isCompensation}
           />
           <p className="mt-1 text-xs text-confidential">
             Wird bei GL-Export ignoriert und in Listen nie im Klartext angezeigt.

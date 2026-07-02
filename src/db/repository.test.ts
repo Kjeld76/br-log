@@ -536,6 +536,113 @@ describe("parseBackup", () => {
   });
 });
 
+describe("getStatsSummary", () => {
+  it("aggregiert Monats-/Jahres-/Schlagwort-Summen und schließt Freizeitausgleich aus (Finding 12/14)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("JOIN entry_tags et ON et.entry_id = e.id")) {
+        return [{ tagId: "t1", label: "BR-Sitzung", minutes: 120 }];
+      }
+      if (sql.includes("HAVING COUNT(*) > 1")) {
+        return [{ minutes: 60 }];
+      }
+      if (sql.includes("NOT IN (SELECT entry_id FROM entry_tags)")) {
+        return [{ minutes: 0 }];
+      }
+      if (sql.includes("FROM objections o JOIN entries e")) {
+        return [{ entryCount: 1, objCount: 2 }];
+      }
+      if (sql.includes("had_planned_shift = 0")) {
+        return [{ minutes: 30 }];
+      }
+      if (sql.startsWith("SELECT substr(date,1,7) as month")) {
+        return [{ month: "2026-01", minutes: 180 }];
+      }
+      if (sql.startsWith("SELECT substr(date,1,4) as year")) {
+        return [{ year: "2026", minutes: 180 }];
+      }
+      if (sql.startsWith("SELECT SUM(duration_minutes) as minutes FROM entries WHERE")) {
+        return [{ minutes: 180 }];
+      }
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const summary = await repo.getStatsSummary({});
+
+    expect(summary.totalMinutes).toBe(180);
+    expect(summary.monthSums).toEqual([{ month: "2026-01", minutes: 180 }]);
+    expect(summary.yearSums).toEqual([{ year: "2026", minutes: 180 }]);
+    expect(summary.tagSums).toEqual([
+      { tagId: "t1", label: "BR-Sitzung", minutes: 120 },
+    ]);
+    expect(summary.multiTagMinutes).toBe(60);
+    expect(summary.untaggedMinutes).toBe(0);
+    expect(summary.outsidePlannedShiftMinutes).toBe(30);
+    expect(summary.objectionEntryCount).toBe(1);
+    expect(summary.objectionCount).toBe(2);
+  });
+
+  it("schließt is_compensation-Einträge aus der Gesamtsumme aus", async () => {
+    let sawExclusion = false;
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("is_compensation = 0")) sawExclusion = true;
+      if (sql.includes("minutes") && sql.includes("null")) return [];
+      return [];
+    });
+    await repo.getStatsSummary({ from: "2026-01-01", to: "2026-01-31" });
+    expect(sawExclusion).toBe(true);
+  });
+
+  it("wendet den Von/Bis-Filter auf die Datumsklauseln an", async () => {
+    let sawFilter = false;
+    selectMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("date >= ?") && (params ?? []).includes("2026-01-01")) {
+        sawFilter = true;
+      }
+      return [];
+    });
+    await repo.getStatsSummary({ from: "2026-01-01", to: "2026-01-31" });
+    expect(sawFilter).toBe(true);
+  });
+});
+
+describe("getCompensationBalance", () => {
+  it("berechnet Guthaben, Verbrauch und Saldo laufend über den Gesamtbestand", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("had_planned_shift = 0 AND is_compensation = 0") && !sql.includes("substr")) {
+        return [{ minutes: 300 }]; // Guthaben gesamt
+      }
+      if (sql.includes("WHERE is_compensation = 1")) {
+        return [{ minutes: 120 }]; // Verbrauch gesamt
+      }
+      if (sql.startsWith("SELECT substr(date,1,7) as month")) {
+        return [
+          { month: "2026-01", credit: 180, used: 60 },
+          { month: "2026-02", credit: 120, used: 60 },
+        ];
+      }
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const balance = await repo.getCompensationBalance();
+
+    expect(balance.credit).toBe(300);
+    expect(balance.used).toBe(120);
+    expect(balance.balance).toBe(180);
+    expect(balance.byMonth).toEqual([
+      { month: "2026-01", credit: 180, used: 60 },
+      { month: "2026-02", credit: 120, used: 60 },
+    ]);
+  });
+
+  it("liefert 0/0/0 ohne Einträge", async () => {
+    selectMock.mockResolvedValue([{ minutes: null }]);
+    const balance = await repo.getCompensationBalance();
+    expect(balance.credit).toBe(0);
+    expect(balance.used).toBe(0);
+    expect(balance.balance).toBe(0);
+  });
+});
+
 // Grundlage der lokalen Erinnerung bei fehlender Erfassung (Finding 31).
 describe("getLastEntryDate", () => {
   it("liefert das Datum des jüngsten Eintrags", async () => {

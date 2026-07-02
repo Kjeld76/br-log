@@ -189,8 +189,15 @@ export default function CalendarView({
                 }}
               >
                 <div className="flex justify-between">
-                  <span className="truncate text-slate-700 dark:text-slate-200">
-                    {e.tagLabels.join(", ") || e.infoForManagement || "Eintrag"}
+                  <span className="flex min-w-0 items-center gap-1.5 truncate text-slate-700 dark:text-slate-200">
+                    {e.isCompensation && (
+                      <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        Freizeitausgleich
+                      </span>
+                    )}
+                    <span className="truncate">
+                      {e.tagLabels.join(", ") || e.infoForManagement || "Eintrag"}
+                    </span>
                   </span>
                   <span className="ml-2 shrink-0 font-medium text-slate-700 dark:text-slate-200">
                     {minutesToHhmm(e.durationMinutes)}

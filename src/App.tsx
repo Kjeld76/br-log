@@ -28,6 +28,7 @@ import {
 import Sidebar, { type View } from "./components/Sidebar";
 import QuickEntryView, { clearQuickEntryDraft } from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
+import StatsView from "./views/StatsView";
 import DataView from "./views/DataView";
 import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
@@ -530,6 +531,7 @@ export default function App() {
               onNewEntry={openNew}
             />
           )}
+          {view === "auswertung" && <StatsView reloadKey={reloadKey} />}
           {view === "daten" && (
             <DataView
               reloadKey={reloadKey}

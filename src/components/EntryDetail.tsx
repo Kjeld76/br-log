@@ -1,6 +1,7 @@
 import type { EntryFullItem } from "../types";
 import { minutesToHhmm, formatDurationLong } from "../lib/time";
 import { formatDateDe } from "../lib/calendar";
+import { formatObjectionMeta } from "../lib/objections";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -62,9 +63,21 @@ export default function EntryDetail({
             "—"
           )
         )}
-        {row("Info für GL", entry.infoForManagement || "—")}
-        {row("Geplante Schicht", entry.hadPlannedShift ? "ja" : "nein")}
-        {!entry.hadPlannedShift &&
+        {row(
+          "Freizeitausgleich",
+          entry.isCompensation ? (
+            <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+              genommen (§ 37 Abs. 3 BetrVG)
+            </span>
+          ) : (
+            "nein"
+          )
+        )}
+        {!entry.isCompensation && row("Info für GL", entry.infoForManagement || "—")}
+        {!entry.isCompensation &&
+          row("Geplante Schicht", entry.hadPlannedShift ? "ja" : "nein")}
+        {!entry.isCompensation &&
+          !entry.hadPlannedShift &&
           row("Schichtausgleich", entry.shiftCompensationNote || "—")}
       </div>
 
@@ -86,7 +99,7 @@ export default function EntryDetail({
                   {o.reason}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {[o.byWhom, o.date].filter(Boolean).join(" · ") || "—"}
+                  {formatObjectionMeta(o, " · ") || "—"}
                 </div>
               </li>
             ))}
@@ -94,20 +107,24 @@ export default function EntryDetail({
         )}
       </div>
 
-      {/* Vertraulich – nur hier sichtbar */}
-      <div className="confidential-block rounded-lg p-3">
-        <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential">
-          <Icon name="lock" size={16} />
-          Vertraulich – genaue Tätigkeit (BR-Geheimnis)
-        </h4>
-        <p className="whitespace-pre-wrap text-sm text-confidential">
-          {entry.secretDetails ? (
-            entry.secretDetails
-          ) : (
-            <span className="opacity-60">— nichts erfasst —</span>
-          )}
-        </p>
-      </div>
+      {/* Vertraulich – nur hier sichtbar. Bei Freizeitausgleich-Einträgen ohne
+          erfasste vertrauliche Details ausgeblendet (keine BR-Tätigkeit,
+          das Feld ist im Formular für diesen Fall gesperrt). */}
+      {(!entry.isCompensation || entry.secretDetails) && (
+        <div className="confidential-block rounded-lg p-3">
+          <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential">
+            <Icon name="lock" size={16} />
+            Vertraulich – genaue Tätigkeit (BR-Geheimnis)
+          </h4>
+          <p className="whitespace-pre-wrap text-sm text-confidential">
+            {entry.secretDetails ? (
+              entry.secretDetails
+            ) : (
+              <span className="opacity-60">— nichts erfasst —</span>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="flex justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
         <button

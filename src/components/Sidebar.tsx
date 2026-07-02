@@ -1,11 +1,12 @@
 import logo from "../assets/logo.png";
 import { Icon, type IconName } from "./Icon";
 
-export type View = "erfassen" | "historie" | "daten";
+export type View = "erfassen" | "historie" | "auswertung" | "daten";
 
 const NAV: { key: View; label: string; icon: IconName }[] = [
   { key: "erfassen", label: "Zeit erfassen", icon: "clock" },
   { key: "historie", label: "Kalender & Historie", icon: "calendar" },
+  { key: "auswertung", label: "Auswertung", icon: "bar-chart" },
   { key: "daten", label: "Über / Daten", icon: "folder-open" },
 ];
 

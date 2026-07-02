@@ -51,6 +51,12 @@ export default function ExportPanel({ onImported }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Finding 8: Zeitraumauswahl für die CSV-Exporte (EntryFilter.from/to
+  // existierte im Repository bereits, wurde aus der UI nur nicht durchgereicht
+  // -- ohne Auswahl bleibt es der vollständige Bestand). Gilt bewusst NICHT
+  // für das JSON-Backup (vollständige Datensicherung/Geräteübertragung).
+  const [csvFrom, setCsvFrom] = useState("");
+  const [csvTo, setCsvTo] = useState("");
   const [pending, setPending] = useState<{
     payload: BackupPayload;
     summary: ImportSummary;
@@ -127,17 +133,54 @@ export default function ExportPanel({ onImported }: Props) {
   };
 
   const onClick = (key: string) => {
-    if (key === "gl") return run(exportGlCsv, "GL-CSV");
-    if (key === "full") return run(exportFullCsv, "Voll-CSV");
+    const period = { from: csvFrom || undefined, to: csvTo || undefined };
+    if (key === "gl") return run(() => exportGlCsv(period), "GL-CSV");
+    if (key === "full") return run(() => exportFullCsv(period), "Voll-CSV");
     if (key === "backup") return run(exportJsonBackup, "JSON-Backup");
     if (key === "import") return startImport();
   };
 
   const btn =
     "w-full rounded border border-slate-300 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700";
+  const field =
+    "rounded border border-slate-300 bg-white p-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100";
 
   return (
     <div className="space-y-4">
+      {/* Zeitraumauswahl -- gilt nur für die beiden CSV-Exporte darunter. */}
+      <div className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+        <span>CSV-Zeitraum:</span>
+        <input
+          type="date"
+          className={field}
+          value={csvFrom}
+          onChange={(e) => setCsvFrom(e.target.value)}
+        />
+        <span>–</span>
+        <input
+          type="date"
+          className={field}
+          value={csvTo}
+          onChange={(e) => setCsvTo(e.target.value)}
+        />
+        {(csvFrom || csvTo) && (
+          <button
+            type="button"
+            className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+            onClick={() => {
+              setCsvFrom("");
+              setCsvTo("");
+            }}
+          >
+            Zeitraum löschen
+          </button>
+        )}
+        <span className="w-full text-xs text-slate-400 dark:text-slate-500">
+          Leer = gesamter Bestand. Gilt nur für die CSV-Exporte, nicht für das
+          JSON-Backup (immer vollständig).
+        </span>
+      </div>
+
       <div className="space-y-2">
         {ACTIONS.map((a) => (
           <button

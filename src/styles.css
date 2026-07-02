@@ -74,3 +74,33 @@ body {
   background: #f1f5f9; /* slate-100 */
   padding: 0.4rem 0.6rem;
 }
+
+/* ----------------------------------------------------------------------------
+   Druckbarer Nachweis (Finding 13, PrintReportPanel).
+   Auf dem Bildschirm ausgeblendet; window.print() aktiviert die @media-print-
+   Regel, die den gesamten App-Rahmen ausblendet und AUSSCHLIESSLICH
+   #print-report zeigt -- unabhängig davon, wo im DOM-Baum es liegt (die
+   höhere Spezifität der ID-Selektoren gewinnt gegen "body *").
+---------------------------------------------------------------------------- */
+#print-report {
+  display: none;
+  color: #000;
+  background: #fff;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-report {
+    display: block !important;
+    visibility: visible;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  #print-report * {
+    visibility: visible;
+  }
+}

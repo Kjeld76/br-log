@@ -1010,6 +1010,226 @@ export async function rebuildFts(): Promise<void> {
   await db.batch(statements);
 }
 
+// ---------- Auswertung (reine Lese-Aggregationen -- GROUP BY über die
+// bestehende db_select-Fassade, KEINE Schreibpfad-Änderung; Finding 12/14) ----------
+
+export interface PeriodFilter {
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+}
+
+export interface MonthSum {
+  month: string; // YYYY-MM
+  minutes: number;
+}
+export interface YearSum {
+  year: string; // YYYY
+  minutes: number;
+}
+export interface TagSum {
+  tagId: string;
+  label: string;
+  minutes: number;
+}
+
+export interface StatsSummary {
+  // BR-Arbeitszeit im Zeitraum. Freizeitausgleich-Einträge (is_compensation)
+  // sind KEINE BR-Tätigkeit und daher hier bewusst ausgeschlossen -- sie laufen
+  // separat über getCompensationBalance() (Finding 14: "Ausgleichs-Einträge
+  // werden aus den BR-Zeit-Summen herausgehalten und separat ausgewiesen").
+  totalMinutes: number;
+  monthSums: MonthSum[];
+  yearSums: YearSum[];
+  // Summen je Schlagwort NUR für Einträge mit GENAU einem Schlagwort. Schlag-
+  // wörter sind eine n:m-Beziehung (entry_tags) -- bei Mehrfachauswahl lässt
+  // sich die Dauer eines Eintrags nicht widerspruchsfrei auf mehrere Kate-
+  // gorien aufteilen. Statt die Tag-Summen durch Mehrfachzählung zu verfäl-
+  // schen, landen solche Einträge gesammelt in multiTagMinutes ("nicht
+  // aufteilbar") -- die Gesamtsumme (totalMinutes) bleibt dabei korrekt.
+  tagSums: TagSum[];
+  multiTagMinutes: number; // Sammelposten "Einträge mit mehreren Schlagwörtern"
+  untaggedMinutes: number; // Einträge ganz ohne Schlagwort
+  outsidePlannedShiftMinutes: number; // had_planned_shift = 0
+  objectionEntryCount: number; // Einträge mit mindestens einem Widerspruch
+  objectionCount: number; // Anzahl aller Widersprüche
+}
+
+function num(v: number | null | undefined): number {
+  return v ?? 0;
+}
+
+/** Baut die WHERE-Klausel-Fragmente (ohne "WHERE") für ein optionales Von/Bis. */
+function dateWhereFragments(
+  filter: PeriodFilter,
+  colPrefix: string
+): { clauses: string[]; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filter.from) {
+    clauses.push(`${colPrefix}date >= ?`);
+    params.push(filter.from);
+  }
+  if (filter.to) {
+    clauses.push(`${colPrefix}date <= ?`);
+    params.push(filter.to);
+  }
+  return { clauses, params };
+}
+
+/**
+ * Monats-/Jahres-/Schlagwort-Summen, Anteil außerhalb der geplanten Schicht
+ * und Widerspruchs-Zählung für den optionalen Zeitraum (Finding 12). Reine
+ * Lese-Aggregationen (GROUP BY) über die bestehende db_select-Fassade -- kein
+ * neuer Rust-Command, keine Schreibpfad-Änderung.
+ */
+export async function getStatsSummary(
+  filter: PeriodFilter = {}
+): Promise<StatsSummary> {
+  const db = await getDb();
+  const { clauses: dateClauses, params: dateParams } = dateWhereFragments(
+    filter,
+    ""
+  );
+  const { clauses: eDateClauses } = dateWhereFragments(filter, "e.");
+  const workWhere =
+    "WHERE " + ["is_compensation = 0", ...dateClauses].join(" AND ");
+  const eWorkWhere =
+    "WHERE " + ["e.is_compensation = 0", ...eDateClauses].join(" AND ");
+
+  const [
+    totalRows,
+    monthSums,
+    yearSums,
+    tagSums,
+    multiRows,
+    untaggedRows,
+    outsideRows,
+    objRows,
+  ] = await Promise.all([
+    db.select<{ minutes: number | null }[]>(
+      `SELECT SUM(duration_minutes) as minutes FROM entries ${workWhere}`,
+      dateParams
+    ),
+    db.select<MonthSum[]>(
+      `SELECT substr(date,1,7) as month, SUM(duration_minutes) as minutes
+         FROM entries ${workWhere} GROUP BY month ORDER BY month`,
+      dateParams
+    ),
+    db.select<YearSum[]>(
+      `SELECT substr(date,1,4) as year, SUM(duration_minutes) as minutes
+         FROM entries ${workWhere} GROUP BY year ORDER BY year`,
+      dateParams
+    ),
+    db.select<TagSum[]>(
+      `SELECT t.id as tagId, t.label as label, SUM(e.duration_minutes) as minutes
+         FROM entries e
+         JOIN entry_tags et ON et.entry_id = e.id
+         JOIN task_tags t ON t.id = et.tag_id
+         ${eWorkWhere}
+           AND e.id IN (SELECT entry_id FROM entry_tags GROUP BY entry_id HAVING COUNT(*) = 1)
+        GROUP BY t.id, t.label
+        ORDER BY minutes DESC`,
+      dateParams
+    ),
+    db.select<{ minutes: number | null }[]>(
+      `SELECT SUM(duration_minutes) as minutes FROM entries e ${eWorkWhere}
+         AND e.id IN (SELECT entry_id FROM entry_tags GROUP BY entry_id HAVING COUNT(*) > 1)`,
+      dateParams
+    ),
+    db.select<{ minutes: number | null }[]>(
+      `SELECT SUM(duration_minutes) as minutes FROM entries e ${eWorkWhere}
+         AND e.id NOT IN (SELECT entry_id FROM entry_tags)`,
+      dateParams
+    ),
+    db.select<{ minutes: number | null }[]>(
+      `SELECT SUM(duration_minutes) as minutes FROM entries WHERE ${[
+        "had_planned_shift = 0",
+        "is_compensation = 0",
+        ...dateClauses,
+      ].join(" AND ")}`,
+      dateParams
+    ),
+    db.select<{ entryCount: number | null; objCount: number | null }[]>(
+      `SELECT COUNT(DISTINCT o.entry_id) as entryCount, COUNT(*) as objCount
+         FROM objections o JOIN entries e ON e.id = o.entry_id
+         ${eDateClauses.length ? "WHERE " + eDateClauses.join(" AND ") : ""}`,
+      dateParams
+    ),
+  ]);
+
+  return {
+    totalMinutes: num(totalRows[0]?.minutes),
+    monthSums: monthSums.map((m) => ({ month: m.month, minutes: num(m.minutes) })),
+    yearSums: yearSums.map((y) => ({ year: y.year, minutes: num(y.minutes) })),
+    tagSums: tagSums.map((t) => ({
+      tagId: t.tagId,
+      label: t.label,
+      minutes: num(t.minutes),
+    })),
+    multiTagMinutes: num(multiRows[0]?.minutes),
+    untaggedMinutes: num(untaggedRows[0]?.minutes),
+    outsidePlannedShiftMinutes: num(outsideRows[0]?.minutes),
+    objectionEntryCount: num(objRows[0]?.entryCount),
+    objectionCount: num(objRows[0]?.objCount),
+  };
+}
+
+export interface CompensationMonthBalance {
+  month: string; // YYYY-MM
+  credit: number; // Guthaben-Zuwachs in diesem Monat
+  used: number; // Verbrauch in diesem Monat
+}
+
+export interface CompensationBalance {
+  credit: number; // Guthaben (laufend gesamt): Σ Minuten, hadPlannedShift=false ∧ NICHT isCompensation
+  used: number; // Verbrauch (laufend gesamt): Σ Minuten, isCompensation=true
+  balance: number; // credit - used
+  byMonth: CompensationMonthBalance[];
+}
+
+/**
+ * Freizeitausgleich-Saldo nach § 37 Abs. 3 BetrVG (Finding 14). Läuft IMMER
+ * über den GESAMTEN Datenbestand, unabhängig von einem in der UI gewählten
+ * Zeitraum -- ein Saldo ist per Definition eine laufende Größe, keine
+ * Momentaufnahme eines Ausschnitts. Guthaben: BR-Zeit außerhalb der geplanten
+ * Schicht, die (noch) nicht als Ausgleich verbucht ist. Verbrauch: als
+ * Freizeitausgleich markierte Einträge (is_compensation).
+ */
+export async function getCompensationBalance(): Promise<CompensationBalance> {
+  const db = await getDb();
+  const [creditRows, usedRows, byMonthRows] = await Promise.all([
+    db.select<{ minutes: number | null }[]>(
+      "SELECT SUM(duration_minutes) as minutes FROM entries WHERE had_planned_shift = 0 AND is_compensation = 0"
+    ),
+    db.select<{ minutes: number | null }[]>(
+      "SELECT SUM(duration_minutes) as minutes FROM entries WHERE is_compensation = 1"
+    ),
+    db.select<
+      { month: string; credit: number | null; used: number | null }[]
+    >(
+      `SELECT substr(date,1,7) as month,
+              SUM(CASE WHEN had_planned_shift = 0 AND is_compensation = 0 THEN duration_minutes ELSE 0 END) as credit,
+              SUM(CASE WHEN is_compensation = 1 THEN duration_minutes ELSE 0 END) as used
+         FROM entries
+        WHERE (had_planned_shift = 0 AND is_compensation = 0) OR is_compensation = 1
+        GROUP BY month
+        ORDER BY month`
+    ),
+  ]);
+  const credit = num(creditRows[0]?.minutes);
+  const used = num(usedRows[0]?.minutes);
+  return {
+    credit,
+    used,
+    balance: credit - used,
+    byMonth: byMonthRows.map((r) => ({
+      month: r.month,
+      credit: num(r.credit),
+      used: num(r.used),
+    })),
+  };
+}
+
 /**
  * Gleicht den FTS-Index mit dem Datenbestand ab: fehlende Einträge nachtragen,
  * Geisterzeilen entfernen. Läuft beim Start (initSearch) und deckt Migrationen

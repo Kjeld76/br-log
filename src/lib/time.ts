@@ -75,6 +75,17 @@ export function minutesToDecimalHours(total: number): number {
   return Math.round((total / 60) * 100) / 100;
 }
 
+/**
+ * Minuten -> Dezimalstunden als deutsch formatierter String (Komma statt
+ * Punkt), z. B. "1,50" (Finding 11). toCsv.ts deklariert die CSV-Exporte
+ * explizit als Ziel "deutsches Excel" (Semikolon-Trenner, BOM) -- ein reiner
+ * JS-number-String wie "1.5" wird dort als Text oder sogar als Datum (1. Mai)
+ * fehlinterpretiert statt als Zahl aufsummierbar zu sein.
+ */
+export function formatDecimalHoursDe(total: number): string {
+  return minutesToDecimalHours(total).toFixed(2).replace(".", ",");
+}
+
 /** Eingabe "H:MM" oder reine Minutenzahl -> Minuten. */
 export function durationInputToMinutes(input: string): number | null {
   const v = input.trim();

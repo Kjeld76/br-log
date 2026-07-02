@@ -65,4 +65,35 @@ describe("toCsv", () => {
     });
     expect(csv.split("\r\n")[1]).toBe('"A,B",x');
   });
+
+  describe("Formel-Injection-Schutz (Finding 61)", () => {
+    it("stellt Zellen, die mit =, +, -, @ beginnen, ein schützendes Apostroph voran", () => {
+      const csv = toCsv<Row>(
+        [
+          { name: "=1+1", note: "+49 123" },
+          { name: "-Gespräch mit GL", note: "@mention" },
+        ],
+        columns,
+        { bom: false }
+      );
+      const [, row1, row2] = csv.split("\r\n");
+      expect(row1).toBe("'=1+1;'+49 123");
+      expect(row2).toBe("'-Gespräch mit GL;'@mention");
+    });
+
+    it("kombiniert den Apostroph-Schutz korrekt mit dem Anführungszeichen-Quoting", () => {
+      const csv = toCsv<Row>([{ name: '=cmd|"calc"', note: "ok" }], columns, {
+        bom: false,
+      });
+      const dataLine = csv.split("\r\n")[1];
+      expect(dataLine).toBe('"\'=cmd|""calc"""' + ";" + "ok");
+    });
+
+    it("lässt unauffällige Zellen unverändert", () => {
+      const csv = toCsv<Row>([{ name: "Alice", note: "normal" }], columns, {
+        bom: false,
+      });
+      expect(csv.split("\r\n")[1]).toBe("Alice;normal");
+    });
+  });
 });

@@ -20,7 +20,16 @@ export function toCsv<T>(
   const bom = opts.bom ?? true;
 
   const esc = (v: unknown): string => {
-    const s = v === null || v === undefined ? "" : String(v);
+    let s = v === null || v === undefined ? "" : String(v);
+    // Finding 61: Formel-Injection-Schutz für Excel. Zellen, die mit =, +, -
+    // oder @ beginnen, wertet Excel als Formel aus (bei '=' potenziell mit
+    // DDE/Kommando-Ausführung nach Sicherheitsabfrage). Ein Präfix-Apostroph
+    // erzwingt Text-Interpretation -- reines Quoting reicht NICHT, Excel wertet
+    // ="…" trotzdem als Formel aus. Nebeneffekt: behebt auch den Lesbarkeits-
+    // Bug, dass z. B. "- Gespräch mit ..." als #NAME?-Fehler statt Text erscheint.
+    if (/^[=+\-@]/.test(s)) {
+      s = "'" + s;
+    }
     if (
       s.includes('"') ||
       s.includes(delimiter) ||

@@ -4,6 +4,7 @@ import {
   computeDuration,
   durationFromRange,
   durationInputToMinutes,
+  formatDecimalHoursDe,
   parseTimeToMinutes,
   rangesOverlap,
 } from "./time";
@@ -118,6 +119,22 @@ describe("addMinutesToTime", () => {
 
   it("liefert null bei ungültiger Startzeit", () => {
     expect(addMinutesToTime("abc", 30)).toBeNull();
+  });
+});
+
+describe("formatDecimalHoursDe", () => {
+  it("formatiert Dezimalstunden mit Komma statt Punkt (Finding 11)", () => {
+    expect(formatDecimalHoursDe(90)).toBe("1,50");
+    expect(formatDecimalHoursDe(60)).toBe("1,00");
+    expect(formatDecimalHoursDe(45)).toBe("0,75");
+  });
+
+  it("rundet auf zwei Nachkommastellen", () => {
+    expect(formatDecimalHoursDe(100)).toBe("1,67"); // 100/60 = 1.6666...
+  });
+
+  it("liefert kein Punkt-Zeichen (Excel-DE-Falle)", () => {
+    expect(formatDecimalHoursDe(90)).not.toContain(".");
   });
 });
 

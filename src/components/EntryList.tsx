@@ -62,7 +62,14 @@ export default function EntryList({
     };
   }, [debouncedTerm, tagIds, from, to, reloadKey]);
 
-  const totalMinutes = entries.reduce((s, e) => s + e.durationMinutes, 0);
+  // Finding 14: Freizeitausgleich-Einträge sind keine BR-Tätigkeit -- aus der
+  // BR-Zeit-Summe herausgehalten und separat ausgewiesen statt sie zu vermischen.
+  const totalMinutes = entries
+    .filter((e) => !e.isCompensation)
+    .reduce((s, e) => s + e.durationMinutes, 0);
+  const compensationMinutes = entries
+    .filter((e) => e.isCompensation)
+    .reduce((s, e) => s + e.durationMinutes, 0);
   const searching = debouncedTerm.trim().length > 0;
 
   const toggleTag = (id: string) =>
@@ -141,6 +148,11 @@ export default function EntryList({
         </span>
         <span className="font-medium">
           Summe: {minutesToHhmm(totalMinutes)} Std
+          {compensationMinutes > 0 && (
+            <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">
+              (+ {minutesToHhmm(compensationMinutes)} Std Freizeitausgleich)
+            </span>
+          )}
         </span>
       </div>
 
@@ -177,7 +189,12 @@ export default function EntryList({
                       {e.startTime}–{e.endTime}
                     </span>
                   )}
-                  {!e.hadPlannedShift && (
+                  {e.isCompensation && (
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      Freizeitausgleich
+                    </span>
+                  )}
+                  {!e.isCompensation && !e.hadPlannedShift && (
                     <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                       keine geplante Schicht
                     </span>

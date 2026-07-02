@@ -1,5 +1,6 @@
 import DbInfoPanel from "../components/DbInfoPanel";
 import ExportPanel from "../components/ExportPanel";
+import PrintReportPanel from "../components/PrintReportPanel";
 import TagManager from "../components/TagManager";
 import ThemeToggle from "../components/ThemeToggle";
 import SecurityPanel from "../components/SecurityPanel";
@@ -50,6 +51,11 @@ export default function DataView({
       <section>
         <h3 className={heading}>Export &amp; Backup</h3>
         <ExportPanel onImported={onChanged} />
+      </section>
+
+      <section>
+        <h3 className={heading}>Nachweis drucken</h3>
+        <PrintReportPanel />
       </section>
 
       <section>
