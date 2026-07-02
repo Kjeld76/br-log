@@ -3,6 +3,31 @@ import type { EntryListItem, TaskTag } from "../types";
 import EntryList from "../components/EntryList";
 import CalendarView from "../components/CalendarView";
 
+type SubTab = "liste" | "kalender";
+
+// Finding 29: Der Sub-Tab stand hart auf "liste" (useState ohne Persistenz);
+// da App.tsx HistoryView nur bei view==="historie" rendert, wurde die
+// Komponente bei jedem Sidebar-Wechsel unmountet -- die bevorzugte Wahl
+// (insbesondere der Kalender-Weg, der einzige gute Nacherfassungs-Weg der App)
+// ging so bei jedem View-Wechsel verloren, nicht erst beim Neustart.
+const SUB_TAB_KEY = "brlog.historySubTab";
+
+export function loadHistorySubTab(): SubTab {
+  try {
+    return localStorage.getItem(SUB_TAB_KEY) === "kalender" ? "kalender" : "liste";
+  } catch {
+    return "liste";
+  }
+}
+
+function saveHistorySubTab(v: SubTab): void {
+  try {
+    localStorage.setItem(SUB_TAB_KEY, v);
+  } catch {
+    // Persistenz ist nur Komfort, kein Pflichtpfad.
+  }
+}
+
 interface Props {
   tags: TaskTag[];
   reloadKey: number;
@@ -16,7 +41,11 @@ export default function HistoryView({
   onOpenEntry,
   onNewEntry,
 }: Props) {
-  const [sub, setSub] = useState<"liste" | "kalender">("liste");
+  const [sub, setSub] = useState<SubTab>(() => loadHistorySubTab());
+  const selectSub = (s: SubTab) => {
+    setSub(s);
+    saveHistorySubTab(s);
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
@@ -29,7 +58,7 @@ export default function HistoryView({
             <button
               key={s}
               type="button"
-              onClick={() => setSub(s)}
+              onClick={() => selectSub(s)}
               className={
                 "rounded px-3 py-1 " +
                 (sub === s

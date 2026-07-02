@@ -1,5 +1,6 @@
 import type { EntryFullItem } from "../types";
 import { minutesToHhmm, formatDurationLong } from "../lib/time";
+import { formatDateDe } from "../lib/calendar";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -31,7 +32,7 @@ export default function EntryDetail({
   return (
     <div className="space-y-3">
       <div className="divide-y divide-slate-100 dark:divide-slate-700">
-        {row("Datum", entry.date)}
+        {row("Datum", formatDateDe(entry.date))}
         {row(
           "Zeit",
           entry.startTime && entry.endTime

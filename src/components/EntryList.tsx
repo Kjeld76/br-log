@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { EntryListItem, TaskTag } from "../types";
 import { listEntries } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
+import { formatDateDe } from "../lib/calendar";
+import { toUserMessage } from "../lib/errors";
 import TagFilterChips from "./TagFilterChips";
 import { Icon } from "./Icon";
 
@@ -25,6 +27,10 @@ export default function EntryList({
   const [to, setTo] = useState("");
   const [entries, setEntries] = useState<EntryListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // Finding 22: listEntries hatte weder catch noch Nutzer-Feedback -- bei
+  // einem DB-Fehler blieb die Liste leer/veraltet und zeigte "0 Einträge",
+  // als gäbe es keine Daten. error trennt jetzt "keine Treffer" von "Fehler".
+  const [error, setError] = useState<string | null>(null);
 
   // Suche entprellen (300 ms).
   useEffect(() => {
@@ -35,6 +41,7 @@ export default function EntryList({
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setError(null);
     listEntries({
       term: debouncedTerm.trim() || undefined,
       tagIds: tagIds.length ? tagIds : undefined,
@@ -43,6 +50,9 @@ export default function EntryList({
     })
       .then((res) => {
         if (active) setEntries(res);
+      })
+      .catch((e) => {
+        if (active) setError(toUserMessage(e));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -122,25 +132,45 @@ export default function EntryList({
 
       {/* Summenzeile */}
       <div className="flex items-center justify-between rounded bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800 dark:text-slate-200">
-        <span>{loading ? "Lädt…" : `${entries.length} Einträge`}</span>
+        <span>
+          {loading
+            ? "Lädt…"
+            : error
+            ? "Fehler beim Laden"
+            : `${entries.length} Einträge`}
+        </span>
         <span className="font-medium">
           Summe: {minutesToHhmm(totalMinutes)} Std
         </span>
       </div>
+
+      {error && (
+        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+          {error}
+        </p>
+      )}
 
       {/* Liste */}
       <ul className="space-y-2">
         {entries.map((e) => (
           <li
             key={e.id}
-            className="cursor-pointer rounded border border-slate-200 bg-white p-3 hover:border-sky-300 hover:bg-sky-50/40 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-sky-700 dark:hover:bg-slate-700/60"
+            role="button"
+            tabIndex={0}
+            className="cursor-pointer rounded border border-slate-200 bg-white p-3 hover:border-sky-300 hover:bg-sky-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-sky-700 dark:hover:bg-slate-700/60"
             onClick={() => onOpen(e)}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                onOpen(e);
+              }
+            }}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-slate-800 dark:text-slate-100">
-                    {e.date}
+                    {formatDateDe(e.date)}
                   </span>
                   {e.startTime && e.endTime && (
                     <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -148,12 +178,12 @@ export default function EntryList({
                     </span>
                   )}
                   {!e.hadPlannedShift && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                       keine geplante Schicht
                     </span>
                   )}
                   {e.objections.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                    <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300">
                       <Icon name="alert-triangle" size={11} />
                       {e.objections.length} Widerspruch
                       {e.objections.length > 1 ? "e" : ""}
@@ -189,12 +219,12 @@ export default function EntryList({
                 <div className="font-semibold text-slate-800 dark:text-slate-100">
                   {minutesToHhmm(e.durationMinutes)}
                 </div>
-                <div className="text-[10px] text-slate-400">Std</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Std</div>
               </div>
             </div>
           </li>
         ))}
-        {!loading && entries.length === 0 && (
+        {!loading && !error && entries.length === 0 && (
           <li className="rounded border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
             Keine Einträge gefunden.
           </li>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { addDays, format, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry, listEntries } from "../db/repository";
@@ -87,6 +87,18 @@ export default function EntryForm({
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [objOpen, setObjOpen] = useState(entry.objections.length > 0);
   const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Finding 41: Labels waren nicht per htmlFor/id mit ihren Feldern verknüpft
+  // (Screenreader/Klick-auf-Label funktionierte nicht). useId liefert pro
+  // Formular-Instanz eindeutige IDs, falls das Formular mehrfach im DOM steht.
+  const idPrefix = useId();
+  const dateId = `${idPrefix}-date`;
+  const startId = `${idPrefix}-start`;
+  const endId = `${idPrefix}-end`;
+  const durationId = `${idPrefix}-duration`;
+  const infoId = `${idPrefix}-info`;
+  const secretId = `${idPrefix}-secret`;
+  const shiftNoteId = `${idPrefix}-shift-note`;
 
   // Ausgangszustand für den Dirty-Check (Backdrop-Klick, Abbrechen, Escape,
   // View-Wechsel). Bleibt über die Lebensdauer der Komponente unverändert.
@@ -334,10 +346,11 @@ export default function EntryForm({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
-            <label className={labelCls}>
+            <label htmlFor={dateId} className={labelCls}>
               Datum <span className="text-red-500">*</span>
             </label>
             <input
+              id={dateId}
               ref={dateInputRef}
               type="date"
               className={field}
@@ -349,11 +362,12 @@ export default function EntryForm({
           {mode === "range" ? (
             <>
               <div>
-                <label className={labelCls}>
+                <label htmlFor={startId} className={labelCls}>
                   Von <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-1">
                   <input
+                    id={startId}
                     type="time"
                     className={field}
                     value={draft.startTime ?? ""}
@@ -370,10 +384,11 @@ export default function EntryForm({
                 </div>
               </div>
               <div>
-                <label className={labelCls}>
+                <label htmlFor={endId} className={labelCls}>
                   Bis <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id={endId}
                   type="time"
                   className={field}
                   value={draft.endTime ?? ""}
@@ -383,10 +398,11 @@ export default function EntryForm({
             </>
           ) : (
             <div className="sm:col-span-2">
-              <label className={labelCls}>
+              <label htmlFor={durationId} className={labelCls}>
                 Dauer (Std:Min oder Minuten) <span className="text-red-500">*</span>
               </label>
               <input
+                id={durationId}
                 type="text"
                 inputMode="numeric"
                 placeholder="z. B. 1:30 oder 90"
@@ -510,10 +526,11 @@ export default function EntryForm({
           </label>
           {!draft.hadPlannedShift && (
             <div>
-              <label className={labelCls}>
+              <label htmlFor={shiftNoteId} className={labelCls}>
                 Schichtausgleich (z. B. andere Schicht streichen lassen / getauscht)
               </label>
               <textarea
+                id={shiftNoteId}
                 className={field}
                 rows={2}
                 value={draft.shiftCompensationNote}
@@ -532,12 +549,16 @@ export default function EntryForm({
           Dokumentation
         </h3>
         <div>
-          <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+          <label
+            htmlFor={infoId}
+            className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300"
+          >
             <Icon name="eye" size={16} />
             Tätigkeit (Info für Geschäftsleitung)
             <span className="text-red-500">*</span>
           </label>
           <textarea
+            id={infoId}
             className={field}
             rows={2}
             placeholder="Was die Geschäftsleitung erfahren darf"
@@ -547,11 +568,15 @@ export default function EntryForm({
         </div>
 
         <div className="confidential-block rounded-lg p-3">
-          <label className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential">
+          <label
+            htmlFor={secretId}
+            className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential"
+          >
             <Icon name="lock" size={16} />
             Vertrauliche Tätigkeitsbeschreibung
           </label>
           <textarea
+            id={secretId}
             className="confidential-input"
             rows={3}
             placeholder="Genaue Tätigkeit (optional)"

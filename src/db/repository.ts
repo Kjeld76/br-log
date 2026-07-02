@@ -665,6 +665,19 @@ export async function daySums(
   return out;
 }
 
+/**
+ * Datum des jüngsten Eintrags (YYYY-MM-DD) oder null ohne Einträge. Grundlage
+ * für die lokale Erinnerung bei fehlender Erfassung (Finding 31) -- eine
+ * einfache SELECT MAX(date)-Abfrage, kein Cloud-/Notification-Dienst.
+ */
+export async function getLastEntryDate(): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ maxDate: string | null }[]>(
+    "SELECT MAX(date) as maxDate FROM entries"
+  );
+  return rows[0]?.maxDate ?? null;
+}
+
 // ---------- Backup / Import ----------
 
 function toTimeEntry(e: EntryFullItem): TimeEntry {

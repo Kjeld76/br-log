@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { format } from "date-fns";
-import type { TaskTag, TimeEntry } from "../types";
-import { newEntry } from "../db/repository";
+import { format, subDays } from "date-fns";
+import type { EntryListItem, TaskTag, TimeEntry } from "../types";
+import { daySums, listEntries, newEntry } from "../db/repository";
+import { weekRangeIso, formatDateDe } from "../lib/calendar";
+import { minutesToHhmm } from "../lib/time";
+import { toUserMessage } from "../lib/errors";
 import EntryForm from "../components/EntryForm";
 
 function todayIso(): string {
@@ -45,15 +48,54 @@ interface Props {
   tags: TaskTag[];
   onSaved: () => void; // App: Toast + reloadKey
   onDirtyChange?: (dirty: boolean) => void; // App: sperrt View-Wechsel bei Rückfrage
+  onOpenEntry?: (entry: EntryListItem) => void; // Finding 25: letzte Einträge anklickbar
 }
 
-export default function QuickEntryView({ tags, onSaved, onDirtyChange }: Props) {
+export default function QuickEntryView({
+  tags,
+  onSaved,
+  onDirtyChange,
+  onOpenEntry,
+}: Props) {
   // Nach dem Speichern wird die Maske durch Remount (neuer key) geleert.
   // formKey wird bewusst NICHT im Memo-Body gelesen, sondern dient nur als
   // Trigger für die Neuberechnung -> exhaustive-deps hält ihn für unnötig.
   const [formKey, setFormKey] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const entry = useMemo(() => loadDraft() ?? newEntry(todayIso()), [formKey]);
+
+  // Finding 25: Die Startansicht zeigte ausschließlich das leere Formular --
+  // keine Wochensumme, keine letzten Einträge. Wochensumme + letzte 5
+  // Einträge geben den direkten Überblick, den ein BR-Mitglied beim Öffnen
+  // der App zuerst braucht. Bounded auf die letzten 30 Tage statt eines
+  // ungefilterten listEntries({}): vermeidet, für 5 Zeilen den kompletten
+  // Datenbestand zu laden (bei Jahren an Historie relevant).
+  const [weekMinutes, setWeekMinutes] = useState(0);
+  const [recent, setRecent] = useState<EntryListItem[]>([]);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatsError(null);
+    const { from, to } = weekRangeIso(new Date());
+    Promise.all([
+      daySums(from, to),
+      listEntries({ from: format(subDays(new Date(), 30), "yyyy-MM-dd"), to: todayIso() }),
+    ])
+      .then(([sums, items]) => {
+        if (!active) return;
+        setWeekMinutes(Object.values(sums).reduce((s, m) => s + m, 0));
+        setRecent(items.slice(0, 5));
+      })
+      .catch((e) => {
+        if (active) setStatsError(toUserMessage(e));
+      });
+    return () => {
+      active = false;
+    };
+    // formKey ändert sich nur nach dem Speichern -> genau dann sollen
+    // Wochensumme/letzte Einträge neu geladen werden.
+  }, [formKey]);
 
   const dirtyRef = useRef(false);
   const dateRef = useRef(entry.date);
@@ -89,6 +131,53 @@ export default function QuickEntryView({ tags, onSaved, onDirtyChange }: Props) 
           Neuer Eintrag für deine Betriebsratszeit.
         </p>
       </header>
+
+      {/* Wochensumme + letzte Einträge (Finding 25) */}
+      <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-600 dark:text-slate-300">Diese Woche</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-100">
+            {minutesToHhmm(weekMinutes)} Std
+          </span>
+        </div>
+        {statsError && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{statsError}</p>
+        )}
+        {recent.length > 0 && (
+          <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 dark:border-slate-700">
+            {recent.map((e) => (
+              <li
+                key={e.id}
+                role={onOpenEntry ? "button" : undefined}
+                tabIndex={onOpenEntry ? 0 : undefined}
+                className={
+                  "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs text-slate-600 dark:text-slate-300" +
+                  (onOpenEntry
+                    ? " cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:hover:bg-slate-700"
+                    : "")
+                }
+                onClick={onOpenEntry ? () => onOpenEntry(e) : undefined}
+                onKeyDown={
+                  onOpenEntry
+                    ? (ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          onOpenEntry(e);
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <span className="truncate">
+                  {formatDateDe(e.date)} · {e.infoForManagement || e.tagLabels.join(", ") || "Eintrag"}
+                </span>
+                <span className="shrink-0 font-medium">{minutesToHhmm(e.durationMinutes)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <EntryForm
         key={formKey}
         entry={entry}

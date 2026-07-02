@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { getDbPathInfo, backupNow } from "../db/client";
 import { deletePlaintextBackup } from "../lib/auth";
@@ -14,6 +14,17 @@ export default function DbInfoPanel() {
   const [copied, setCopied] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  // Finding 54 (Nebenbefund): copied-Timeout wurde bei jedem Aufruf neu
+  // gesetzt, ohne einen vorherigen zu clearen -- zwei schnelle Klicks auf
+  // "Pfad kopieren" ließen die Bestätigung vorzeitig verschwinden.
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     (async () => {
@@ -57,7 +68,11 @@ export default function DbInfoPanel() {
     try {
       await navigator.clipboard.writeText(dbPath);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyTimerRef.current = null;
+      }, 1500);
     } catch (e) {
       setError(toUserMessage(e));
     }

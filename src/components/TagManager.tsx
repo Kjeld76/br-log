@@ -6,27 +6,47 @@ import {
   renameTag,
   setTagArchived,
 } from "../db/repository";
+import { toUserMessage } from "../lib/errors";
 
 interface Props {
   onChanged: () => void;
+  // Finding 33: TagManager hielt bisher eine eigene, nur einmal im Mount-Effekt
+  // geladene Tag-Kopie. Nach einem Backup-Import mit neuen Schlagwörtern
+  // (App -> DataView.onChanged -> App bumpt reloadKey) bekam TagManager davon
+  // nichts mit und zeigte die neuen Tags erst nach View-Wechsel. reloadKey wird
+  // jetzt durchgereicht (dieselbe zentrale Quelle wie EntryList/CalendarView).
+  reloadKey: number;
 }
 
-export default function TagManager({ onChanged }: Props) {
+export default function TagManager({ onChanged, reloadKey }: Props) {
   const [tags, setTags] = useState<TaskTag[]>([]);
   const [newLabel, setNewLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = () => listTags(true).then(setTags);
+  // Finding 22: reload/mutate hatten weder catch noch Nutzer-Feedback --
+  // ein fehlgeschlagenes Laden/Anlegen/Umbenennen/Archivieren blieb unsichtbar.
+  const reload = async () => {
+    try {
+      setTags(await listTags(true));
+    } catch (e) {
+      setError(toUserMessage(e));
+    }
+  };
 
   useEffect(() => {
-    reload();
-  }, []);
+    void reload();
+  }, [reloadKey]);
 
   const mutate = async (fn: () => Promise<unknown>) => {
-    await fn();
-    await reload();
-    onChanged();
+    setError(null);
+    try {
+      await fn();
+      await reload();
+      onChanged();
+    } catch (e) {
+      setError(toUserMessage(e));
+    }
   };
 
   // Anlegen mit busy-Guard: verhindert parallele createTag-Aufrufe (Doppel-Klick

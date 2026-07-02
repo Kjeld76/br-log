@@ -8,12 +8,14 @@ interface Props {
   onChanged: () => void; // Tags neu laden + Listen aktualisieren
   onLockNow: () => void;
   onAutoLockChanged: (minutes: number) => void;
+  reloadKey: number; // Finding 33: hält TagManager nach einem Import synchron
 }
 
 export default function DataView({
   onChanged,
   onLockNow,
   onAutoLockChanged,
+  reloadKey,
 }: Props) {
   const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
 
@@ -52,7 +54,7 @@ export default function DataView({
 
       <section>
         <h3 className={heading}>Schlagwörter verwalten</h3>
-        <TagManager onChanged={onChanged} />
+        <TagManager onChanged={onChanged} reloadKey={reloadKey} />
       </section>
     </div>
   );

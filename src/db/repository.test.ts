@@ -535,3 +535,16 @@ describe("parseBackup", () => {
     expect(() => repo.parseBackup(raw)).toThrow("Schlagwort-Zuordnungen");
   });
 });
+
+// Grundlage der lokalen Erinnerung bei fehlender Erfassung (Finding 31).
+describe("getLastEntryDate", () => {
+  it("liefert das Datum des jüngsten Eintrags", async () => {
+    selectMock.mockResolvedValueOnce([{ maxDate: "2026-06-29" }]);
+    await expect(repo.getLastEntryDate()).resolves.toBe("2026-06-29");
+  });
+
+  it("liefert null ohne Einträge (MAX() auf leerer Tabelle -> NULL)", async () => {
+    selectMock.mockResolvedValueOnce([{ maxDate: null }]);
+    await expect(repo.getLastEntryDate()).resolves.toBeNull();
+  });
+});
