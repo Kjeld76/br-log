@@ -145,6 +145,41 @@ mod desktop {
 #[cfg(desktop)]
 use desktop::{pick_open_path, pick_save_path};
 
+// ---------- Android-Platzhalter (A1) ----------
+//
+// TEMPORÄR, NUR damit der Crate für Android überhaupt compiliert: die drei
+// Commands unten rufen pick_save_path/pick_open_path unconditioniert auf, ein
+// echter SAF-basierter Android-Arm (analog zum `desktop`-Modul oben, über
+// tauri-plugin-android-fs) kommt erst in A-Core -- Signatur-Vertrag der drei
+// `#[tauri::command]`-Funktionen bleibt unangetastet, dieses Modul liefert
+// nur einen Kompilierbarkeits-Stub. Dass der eigentliche SAF-Zugriffsweg
+// grundsätzlich funktioniert, zeigt der separate PoC in saf_poc.rs.
+#[cfg(target_os = "android")]
+mod android_stub {
+    use super::PathBuf;
+    use tauri::AppHandle;
+
+    pub(super) async fn pick_save_path(
+        _app: &AppHandle,
+        _default_name: &str,
+        _filter_name: &str,
+        _extension: &str,
+    ) -> Result<Option<PathBuf>, String> {
+        Err("Noch nicht implementiert auf Android (folgt in A-Core)".to_string())
+    }
+
+    pub(super) async fn pick_open_path(
+        _app: &AppHandle,
+        _filter_name: &str,
+        _extension: &str,
+    ) -> Result<Option<PathBuf>, String> {
+        Err("Noch nicht implementiert auf Android (folgt in A-Core)".to_string())
+    }
+}
+
+#[cfg(target_os = "android")]
+use android_stub::{pick_open_path, pick_save_path};
+
 // ---------- Commands (plattformunabhängige Signatur) ----------
 
 /// Zeigt den Speichern-Dialog, schreibt `contents` als Textdatei ATOMAR an den

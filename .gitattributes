@@ -8,3 +8,5 @@
 *.jpeg binary
 *.ico binary
 *.icns binary
+# Gradle-Wrapper (Android, src-tauri/gen/android): JAR nie als Text behandeln.
+*.jar binary

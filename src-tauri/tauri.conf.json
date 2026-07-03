@@ -28,6 +28,9 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "android": {
+      "minSdkVersion": 29
+    },
     "copyright": "© 2026 Mario König. Alle Rechte vorbehalten.",
     "publisher": "Mario König",
     "shortDescription": "Betriebsrats-Zeiterfassung",

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { getDbPathInfo, backupNow } from "../db/client";
 import { rebuildFts } from "../db/repository";
 import { deletePlaintextBackup } from "../lib/auth";
 import { toUserMessage } from "../lib/errors";
+import { isAndroid } from "../lib/platform";
 import { secondaryBtnSmCls } from "../lib/ui";
 import { Icon } from "./Icon";
 
@@ -20,6 +22,10 @@ export default function DbInfoPanel() {
   const [indexBusy, setIndexBusy] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  // TEMPORÄR (A0.2-Gerätetest, fliegt in A-Core wieder raus): Ergebnis des
+  // SAF-Roundtrip-PoC-Buttons, nur auf Android sichtbar.
+  const [safBusy, setSafBusy] = useState(false);
+  const [safStatus, setSafStatus] = useState<string | null>(null);
   // Finding 54 (Nebenbefund): copied-Timeout wurde bei jedem Aufruf neu
   // gesetzt, ohne einen vorherigen zu clearen -- zwei schnelle Klicks auf
   // "Pfad kopieren" ließen die Bestätigung vorzeitig verschwinden.
@@ -132,6 +138,24 @@ export default function DbInfoPanel() {
     }
   };
 
+  // TEMPORÄR (A0.2-Gerätetest): SAF-Roundtrip (Save-Dialog -> schreiben ->
+  // Open-Dialog -> lesen) über den saf_poc_roundtrip-Command anstoßen. Nur
+  // aufrufbar, weil der Button per isAndroid() versteckt ist -- fliegt
+  // zusammen mit saf_poc.rs in A-Core wieder raus.
+  const runSafPoc = async () => {
+    setError(null);
+    setSafStatus(null);
+    setSafBusy(true);
+    try {
+      const result = await invoke<string>("saf_poc_roundtrip");
+      setSafStatus(result);
+    } catch (e) {
+      setError(toUserMessage(e));
+    } finally {
+      setSafBusy(false);
+    }
+  };
+
   const card =
     "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
   const btn = "flex items-center gap-1.5 " + secondaryBtnSmCls + " disabled:opacity-50";
@@ -203,6 +227,18 @@ export default function DbInfoPanel() {
           >
             {indexBusy ? "Baut Index…" : "Suchindex neu aufbauen"}
           </button>
+          {/* TEMPORÄR (A0.2-Gerätetest): fliegt in A-Core wieder raus, siehe saf_poc.rs */}
+          {isAndroid() && (
+            <button
+              type="button"
+              className={btn}
+              onClick={runSafPoc}
+              disabled={safBusy}
+              title="A0.2-PoC: Storage-Access-Framework-Roundtrip (Save-Dialog -> schreiben -> Open-Dialog -> lesen)"
+            >
+              {safBusy ? "SAF-Test läuft…" : "SAF-Test"}
+            </button>
+          )}
         </div>
         {backupStatus && (
           <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
@@ -212,6 +248,11 @@ export default function DbInfoPanel() {
         {indexStatus && (
           <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
             {indexStatus}
+          </p>
+        )}
+        {safStatus && (
+          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+            {safStatus}
           </p>
         )}
         {hasBackup && (
