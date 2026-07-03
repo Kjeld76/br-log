@@ -1,17 +1,24 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listEntries } from "../db/repository";
-import type { EntryListItem } from "../types";
-import { minutesToHhmm } from "../lib/time";
-import { formatDateDe, todayIso } from "../lib/calendar";
 import { toUserMessage } from "../lib/errors";
 import { inputCls, secondaryBtnCls } from "../lib/ui";
+import { isWindows } from "../lib/platform";
+// Nur der Typ wird statisch importiert (wird wegkompiliert) -- das Modul
+// selbst kommt per dynamic import, damit jsPDF (~420 kB) nicht im
+// Haupt-Chunk landet und den App-Start nicht verlangsamt.
+import type { ReportModel } from "../export/reportPdf";
 import { Icon } from "./Icon";
 
-// Finding 13: druckbarer Monats-/Zeitraumnachweis. Bewusst window.print() +
-// Print-CSS (siehe #print-report-Regel in styles.css) statt eines PDF-Plugins
-// -- WebView2 bringt den Systemdruckdialog inkl. "Als PDF speichern" mit,
-// keine neue Dependency nötig. Nutzt listEntries (GL-taugliche Spalten ohne
-// secretDetails), da der Nachweis typischerweise zur Vorlage gedacht ist.
+// Finding 13: druckbarer Monats-/Zeitraumnachweis. Linux-Portierung (L5):
+// window.print() + Print-CSS (styles.css, #print-report-Regel) bleibt NUR
+// unter Windows verfügbar (WebView2 bringt den Systemdruckdialog inkl.
+// "Als PDF speichern" mit) -- unter WebKitGTK/Linux ist der Druckpfad
+// unzuverlässig, unter Android fehlt er ganz. Auf ALLEN Plattformen gibt es
+// jetzt zusätzlich einen echten PDF-Export via jsPDF (export/reportPdf.ts),
+// über denselben export_binary_file-Command wie andere Binärexporte.
+// Nutzt listEntries (GL-taugliche Spalten ohne secretDetails), da der
+// Nachweis typischerweise zur Vorlage gedacht ist.
 
 const NAME_KEY = "brlog.reportName";
 
@@ -30,17 +37,6 @@ function saveName(v: string): void {
   }
 }
 
-interface ReportData {
-  name: string;
-  from: string;
-  to: string;
-  workEntries: EntryListItem[];
-  compensationEntries: EntryListItem[];
-  totalMinutes: number;
-  compensationMinutes: number;
-  createdAt: string;
-}
-
 const cellStyle: React.CSSProperties = {
   border: "1px solid #999",
   padding: "3px 6px",
@@ -53,34 +49,26 @@ export default function PrintReportPanel() {
   const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ReportData | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [model, setModel] = useState<ReportModel | null>(null);
 
   const buildReport = async () => {
     setError(null);
+    setStatus(null);
     setBusy(true);
     try {
+      const { buildReportModel } = await import("../export/reportPdf");
       const entries = await listEntries({
         from: from || undefined,
         to: to || undefined,
       });
-      entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-      // Ausgleichs-Einträge sind keine BR-Tätigkeit (Finding 14) -- eigene
-      // Zeile statt sie in die Arbeitszeit-Zeilen/Summe zu mischen.
-      const workEntries = entries.filter((e) => !e.isCompensation);
-      const compensationEntries = entries.filter((e) => e.isCompensation);
-      setReport({
-        name: name.trim(),
-        from,
-        to,
-        workEntries,
-        compensationEntries,
-        totalMinutes: workEntries.reduce((s, e) => s + e.durationMinutes, 0),
-        compensationMinutes: compensationEntries.reduce(
-          (s, e) => s + e.durationMinutes,
-          0
-        ),
-        createdAt: formatDateDe(todayIso()),
-      });
+      setModel(
+        buildReportModel(entries, (e) => e.tagLabels.join(", "), {
+          name,
+          from,
+          to,
+        })
+      );
     } catch (e) {
       setError(toUserMessage(e));
     } finally {
@@ -93,15 +81,41 @@ export default function PrintReportPanel() {
     window.print();
   };
 
+  const doSavePdf = async () => {
+    if (!model) return;
+    saveName(name);
+    setError(null);
+    setStatus(null);
+    setBusy(true);
+    try {
+      const { renderReportPdf, uint8ToBase64 } = await import(
+        "../export/reportPdf"
+      );
+      const bytes = renderReportPdf(model);
+      const path = await invoke<string | null>("export_binary_file", {
+        defaultName: `${model.fileBaseName}.pdf`,
+        filterName: "PDF-Datei",
+        extension: "pdf",
+        contentsBase64: uint8ToBase64(bytes),
+      });
+      setStatus(path ? `PDF gespeichert: ${path}` : "Abgebrochen.");
+    } catch (e) {
+      setError(toUserMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const field = inputCls + " mt-1 w-full";
 
   return (
     <div className="space-y-3">
       <div className="rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          Druckbarer Nachweis für einen Zeitraum (Berichtskopf, Zeilen, Summe,
-          Freizeitausgleich, Unterschriftsfelder) – öffnet den
-          Systemdruckdialog, dort auch als PDF speicherbar.
+          Nachweis für einen Zeitraum (Berichtskopf, Zeilen, Summe,
+          Freizeitausgleich, Unterschriftsfelder) – als PDF speicherbar auf
+          allen Plattformen, unter Windows zusätzlich über den
+          Systemdruckdialog.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm text-slate-600 dark:text-slate-300">
@@ -143,17 +157,37 @@ export default function PrintReportPanel() {
           >
             {busy ? "Erstellt…" : "Nachweis erstellen"}
           </button>
-          {report && (
+          {model && (
+            <button
+              type="button"
+              className={"flex items-center gap-1.5 " + secondaryBtnCls}
+              onClick={doSavePdf}
+              disabled={busy}
+            >
+              <Icon name="download" size={16} />
+              Als PDF speichern
+            </button>
+          )}
+          {/* WebKitGTK (Linux) druckt unzuverlässig, Android hat gar keinen
+              Druckdialog -- der Systemdruckdialog bleibt deshalb Windows-only.
+              Der PDF-Export oben deckt Linux/Android/Windows gleichermaßen ab. */}
+          {model && isWindows() && (
             <button
               type="button"
               className={"flex items-center gap-1.5 " + secondaryBtnCls}
               onClick={doPrint}
+              disabled={busy}
             >
               <Icon name="printer" size={16} />
-              Drucken / als PDF speichern
+              Drucken
             </button>
           )}
         </div>
+        {status && (
+          <p className="mt-2 break-all text-sm text-green-700 dark:text-green-300">
+            {status}
+          </p>
+        )}
         {error && (
           <p className="mt-2 text-sm text-red-700 dark:text-red-300">
             {error}
@@ -161,40 +195,37 @@ export default function PrintReportPanel() {
         )}
       </div>
 
-      {report && (
+      {model && (
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-          Vorschau erstellt: {report.workEntries.length} Einträge
-          {report.compensationEntries.length > 0
-            ? `, ${report.compensationEntries.length} Freizeitausgleich-Termin(e)`
-            : ""}
-          . Drucken zeigt ausschließlich den Nachweis, nicht die
+          Vorschau: {model.rows.length} Einträge. Zeigt exakt den Inhalt des
+          PDF-Exports (unter Windows auch des Drucks) – nicht die
           App-Oberfläche.
         </div>
       )}
 
-      {/* Druckbereich: auf dem Bildschirm ausgeblendet (styles.css schaltet
-          #print-report beim Drucken frei und blendet den Rest der App aus). */}
-      {report && (
+      {/* Sichtbare Vorschau (Linux-Portierung, L5): war zuvor per CSS auf dem
+          Bildschirm ausgeblendet und nur beim Drucken sichtbar. Jetzt eine
+          reguläre, immer sichtbare Vorschau -- speist sich aus DEMSELBEN
+          Modell wie der PDF-Export, kann also nicht vom PDF abweichen.
+          styles.css schaltet #print-report beim Drucken weiterhin exklusiv
+          frei (Rest der App wird ausgeblendet); das gilt unverändert, auch
+          wenn der Block jetzt schon vorher sichtbar ist. */}
+      {model && (
         <div id="print-report">
-          <h1 style={{ fontSize: "16pt", marginBottom: 4 }}>
-            Nachweis Betriebsratszeiten
-          </h1>
+          <h1 style={{ fontSize: "16pt", marginBottom: 4 }}>{model.title}</h1>
           <table style={{ width: "100%", fontSize: "10pt", marginBottom: 12 }}>
             <tbody>
               <tr>
                 <td style={{ width: "20%" }}>Name</td>
-                <td>{report.name || "—"}</td>
+                <td>{model.name}</td>
               </tr>
               <tr>
                 <td>Zeitraum</td>
-                <td>
-                  {report.from ? formatDateDe(report.from) : "Anfang"} –{" "}
-                  {report.to ? formatDateDe(report.to) : "Ende"}
-                </td>
+                <td>{model.periodLabel}</td>
               </tr>
               <tr>
                 <td>Erstellt am</td>
-                <td>{report.createdAt}</td>
+                <td>{model.createdAtLabel}</td>
               </tr>
             </tbody>
           </table>
@@ -202,28 +233,28 @@ export default function PrintReportPanel() {
           <table style={{ width: "100%", fontSize: "9pt", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={cellStyle}>Datum</th>
-                <th style={cellStyle}>Von</th>
-                <th style={cellStyle}>Bis</th>
-                <th style={cellStyle}>Dauer</th>
-                <th style={cellStyle}>Schlagwörter</th>
-                <th style={cellStyle}>Info für Geschäftsleitung</th>
+                {model.columns.map((c) => (
+                  <th key={c} style={cellStyle}>
+                    {c}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {report.workEntries.map((e) => (
-                <tr key={e.id}>
-                  <td style={cellStyle}>{formatDateDe(e.date)}</td>
-                  <td style={cellStyle}>{e.startTime ?? ""}</td>
-                  <td style={cellStyle}>{e.endTime ?? ""}</td>
-                  <td style={cellStyle}>{minutesToHhmm(e.durationMinutes)}</td>
-                  <td style={cellStyle}>{e.tagLabels.join(", ")}</td>
-                  <td style={cellStyle}>{e.infoForManagement}</td>
+              {model.rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={cellStyle}>{r.date}</td>
+                  <td style={cellStyle}>{r.start}</td>
+                  <td style={cellStyle}>{r.end}</td>
+                  <td style={cellStyle}>{r.duration}</td>
+                  <td style={cellStyle}>{r.tags}</td>
+                  <td style={cellStyle}>{r.info}</td>
+                  <td style={cellStyle}>{r.shift}</td>
                 </tr>
               ))}
-              {report.workEntries.length === 0 && (
+              {model.rows.length === 0 && (
                 <tr>
-                  <td style={cellStyle} colSpan={6}>
+                  <td style={cellStyle} colSpan={model.columns.length}>
                     Keine Einträge in diesem Zeitraum.
                   </td>
                 </tr>
@@ -232,25 +263,19 @@ export default function PrintReportPanel() {
             <tfoot>
               <tr>
                 <td style={cellStyle} colSpan={3}>
-                  <strong>Summe</strong>
+                  <strong>{model.totalLabel}</strong>
                 </td>
                 <td style={cellStyle}>
-                  <strong>{minutesToHhmm(report.totalMinutes)} Std</strong>
+                  <strong>{model.totalValue}</strong>
                 </td>
-                <td style={cellStyle} colSpan={2}></td>
+                <td style={cellStyle} colSpan={3}></td>
               </tr>
             </tfoot>
           </table>
 
           <p style={{ fontSize: "9pt", marginTop: 8 }}>
             <strong>Freizeitausgleich in diesem Zeitraum: </strong>
-            {report.compensationEntries.length > 0
-              ? `${minutesToHhmm(report.compensationMinutes)} Std an ${
-                  report.compensationEntries.length
-                } Tag(en) (${report.compensationEntries
-                  .map((e) => formatDateDe(e.date))
-                  .join(", ")})`
-              : "keiner."}
+            {model.compensationLabel}
           </p>
 
           <div
@@ -262,15 +287,14 @@ export default function PrintReportPanel() {
               gap: 16,
             }}
           >
-            <div style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}>
-              Datum
-            </div>
-            <div style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}>
-              Unterschrift BR-Mitglied
-            </div>
-            <div style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}>
-              Unterschrift Geschäftsleitung
-            </div>
+            {model.signatureLabels.map((label) => (
+              <div
+                key={label}
+                style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}
+              >
+                {label}
+              </div>
+            ))}
           </div>
         </div>
       )}

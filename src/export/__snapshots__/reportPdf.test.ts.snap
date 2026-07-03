@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`toAutoTableInput > liefert Kopf- und Datenzeilen in der von jspdf-autotable erwarteten {head, body}-Struktur 1`] = `
+{
+  "body": [
+    [
+      "Mo., 01.06.2026",
+      "08:00",
+      "10:00",
+      "2:00",
+      "Sitzung",
+      "BR-Sitzung",
+      "ja",
+    ],
+  ],
+  "head": [
+    [
+      "Datum",
+      "Von",
+      "Bis",
+      "Dauer",
+      "Schlagwörter",
+      "Info für Geschäftsleitung",
+      "Geplante Schicht",
+    ],
+  ],
+}
+`;

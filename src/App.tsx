@@ -276,29 +276,27 @@ export default function App() {
     });
   };
 
-  // Auto-Lock bei Inaktivität (Pflicht) + Sperren beim Minimieren.
+  // Auto-Lock bei Inaktivität (Pflicht) + Sperren, sobald die App nicht mehr
+  // sichtbar ist. Linux-Portierung (L3): ersetzt den bisherigen Windows-
+  // spezifischen Weg über @tauri-apps/api/window (onResized + isMinimized,
+  // das unter WebKitGTK/Linux nicht zuverlässig dieselben Ereignisse liefert)
+  // durch die plattformneutrale Page-Visibility-API. document.hidden wird
+  // true bei Minimieren, Tab-/Fenster-Wechsel, Bildschirmsperre -- unter
+  // Windows, Linux und später Android gleichermaßen, ganz ohne
+  // fenster-spezifisches Tauri-Plugin. Bewusst OHNE Gnadenfrist: Sperren
+  // erfolgt sofort beim Verstecken. Eine Grace-Periode von ~5 s wäre Plan B,
+  // falls sich das in der Praxis (z. B. kurzes Alt-Tab) als zu aggressiv
+  // erweist -- bis dahin gilt die strengere, sicherere Variante.
   useEffect(() => {
     if (!ready || locked) return;
     const stopIdle = startIdleTimer(autoLockMin, doLock);
-    let cancelled = false;
-    let unlistenMin: (() => void) | undefined;
-    (async () => {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const win = getCurrentWindow();
-        const u = await win.onResized(async () => {
-          if (await win.isMinimized()) doLock();
-        });
-        if (cancelled) u();
-        else unlistenMin = u;
-      } catch {
-        // außerhalb von Tauri (z. B. reiner Vite-Dev) -> ignorieren
-      }
-    })();
+    const onVisibilityChange = () => {
+      if (document.hidden) doLock();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
-      cancelled = true;
       stopIdle();
-      unlistenMin?.();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [ready, locked, autoLockMin]);
 

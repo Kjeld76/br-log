@@ -76,16 +76,23 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
-   Druckbarer Nachweis (Finding 13, PrintReportPanel).
-   Auf dem Bildschirm ausgeblendet; window.print() aktiviert die @media-print-
-   Regel, die den gesamten App-Rahmen ausblendet und AUSSCHLIESSLICH
-   #print-report zeigt -- unabhängig davon, wo im DOM-Baum es liegt (die
-   höhere Spezifität der ID-Selektoren gewinnt gegen "body *").
+   Nachweis-Vorschau (Finding 13, PrintReportPanel; Linux-Portierung L5).
+   War zuvor auf dem Bildschirm komplett ausgeblendet (window.print() war der
+   einzige Weg, den Inhalt zu sehen). Jetzt eine immer sichtbare Vorschau im
+   "Papier"-Look (schwarz auf weiß), die 1:1 dem PDF-Export entspricht.
+   window.print() (weiterhin Windows-only, siehe PrintReportPanel.tsx) löst
+   zusätzlich die @media-print-Regel aus, die den gesamten App-Rahmen
+   ausblendet und AUSSCHLIESSLICH #print-report zeigt -- unabhängig davon, wo
+   im DOM-Baum es liegt (die höhere Spezifität der ID-Selektoren gewinnt gegen
+   "body *"); das funktioniert unverändert, auch wenn der Block jetzt schon
+   vorher auf dem Bildschirm sichtbar ist.
 ---------------------------------------------------------------------------- */
 #print-report {
-  display: none;
   color: #000;
   background: #fff;
+  padding: 16px;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  border-radius: 0.5rem;
 }
 
 @media print {

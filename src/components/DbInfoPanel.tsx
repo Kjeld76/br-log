@@ -189,7 +189,7 @@ export default function DbInfoPanel() {
           </button>
           <button type="button" className={btn} onClick={reveal} disabled={!dbPath}>
             <Icon name="folder-open" size={16} />
-            Ordner im Explorer öffnen
+            Ordner im Dateimanager öffnen
           </button>
           <button type="button" className={btn} onClick={runBackup} disabled={backupBusy}>
             {backupBusy ? "Sichert…" : "Jetzt sichern"}

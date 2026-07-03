@@ -6,12 +6,24 @@ on:
       - "v*"
 
 jobs:
-  build:
+  # Windows + Linux Desktop-Builds in einer Matrix. Android braucht einen
+  # fundamental anderen Build-Weg (tauri android, NDK/SDK-Setup, Mobile-
+  # Signing) und wird daher NICHT als weiterer Matrix-Eintrag hier ergänzt,
+  # sondern kommt später als eigener Job (z. B. "android") neben diesem.
+  desktop:
     strategy:
       fail-fast: false
       matrix:
-        # Erweiterbar: ubuntu-latest / macos-latest (z. B. für späteren Android-Build).
-        platform: [windows-latest]
+        # ubuntu-22.04 bewusst fest gepinnt statt ubuntu-latest: definiert die
+        # glibc-Baseline (kompatibel zu Ubuntu 22.04+/Debian 12+). ubuntu-latest
+        # würde die Baseline bei jedem GitHub-Runner-Imagewechsel unbemerkt
+        # verschieben.
+        # Falls GitHub das ubuntu-22.04-Runner-Image irgendwann abkündigt:
+        # Fallback ist "runs-on: ubuntu-latest" + "container: ubuntu:22.04",
+        # damit die glibc-Baseline unabhängig vom Runner-Image bleibt.
+        # Erweiterbar um macos-latest für einen späteren Intel/Apple-Silicon-
+        # Desktop-Build.
+        platform: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -28,30 +40,64 @@ jobs:
       - name: Rust-Toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # Tauri-Systemabhängigkeiten für den Linux-Build (WebKitGTK, GTK3,
+      # AppIndicator, librsvg für Icons, libxdo fürs Global-Shortcut-Plugin,
+      # libssl-dev, patchelf für das AppImage-Bundling).
+      - name: Linux-Systemabhängigkeiten installieren
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
       # Vendored OpenSSL (SQLCipher) braucht NASM fuer die Assembly-Optimierung.
       # Strawberry Perl ist auf windows-latest bereits vorhanden. Ohne NASM
       # faellt openssl-src auf einen no-asm-Build zurueck (langsamer, baut aber).
+      # Nur Windows: auf Linux übernimmt der System-Compiler das ohne NASM.
       - name: NASM (vendored OpenSSL)
+        if: matrix.platform == 'windows-latest'
         uses: ilammy/setup-nasm@v1
 
       - name: Frontend-Abhängigkeiten installieren
         run: npm ci
 
-      - name: Build & Release (NSIS-Installer)
+      - name: Frontend-Tests
+        run: npm test
+
+      # Muss vor "Rust-Tests" laufen: tauri::generate_context!() liest/embeddet
+      # frontendDist ("../dist") beim Kompilieren (auch bei "cargo test") und
+      # bricht mit "frontendDist ... but this path doesn't exist" ab, wenn der
+      # Ordner fehlt. dist/ ist gitignored, existiert also auf einem frischen
+      # Checkout nicht von selbst.
+      - name: Frontend bauen
+        run: npm run build
+
+      - name: Rust-Tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # tauri-action läuft auf beiden Plattformen: Windows bündelt NSIS,
+      # Linux bündelt deb + AppImage (Targets aus tauri.linux.conf.json).
+      # v1.0.0 erkennt Tauri v2 automatisch und ist plattformagnostisch (baut
+      # einfach das, was der jeweilige Runner produziert) – kein Versions-
+      # Update nötig, um Linux-Bundles hochzuladen.
+      - name: Build & Release
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "BR-Log ${{ github.ref_name }}"
-          releaseBody: "NSIS-Installer (.exe) und portable ZIP unten unter Assets. Installation ohne Administratorrechte. Portable Version: ZIP auf einen USB-Stick entpacken und BR-Log.exe starten (Details + SmartScreen-Hinweis in der README)."
+          releaseBody: "Windows: NSIS-Installer (.exe) und portable ZIP. Linux: .deb-Paket und AppImage. Alle Varianten unten unter Assets. Installation unter Windows ohne Administratorrechte. Portable Version: ZIP auf einen USB-Stick entpacken und BR-Log.exe starten (Details + SmartScreen-Hinweis in der README)."
           releaseDraft: false
           prerelease: false
 
       # Portable Variante (schlank): rohe EXE + Marker auf einen USB-Stick.
       # Setzt die Edge-WebView2-Runtime auf dem Zielrechner voraus (auf Win11
       # vorhanden). Die DB landet dann neben der EXE in BR-Log-Data.
+      # Nur Windows: das Konzept "portable EXE auf USB-Stick" ist Windows-
+      # spezifisch, für Linux gibt es AppImage bereits als Portable-Äquivalent.
       - name: Portable-ZIP bauen und anhaengen
+        if: matrix.platform == 'windows-latest'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

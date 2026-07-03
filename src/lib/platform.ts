@@ -14,6 +14,16 @@ import { platform } from "@tauri-apps/plugin-os";
  * Tests wird "@tauri-apps/plugin-os" per vi.mock ersetzt (siehe
  * platform.test.ts); der Mock-Rückgabewert läuft dann ganz normal durch diese
  * Funktion durch.
+ *
+ * L-Core-Review-Punkt (offen für den Android-Port): Der "windows"-Fallback
+ * ist nur solange unbedenklich, wie das Plugin ausschließlich auf Desktop-
+ * Plattformen fehlschlagen kann (die einzige bisher beobachtete Ursache: kein
+ * echtes Tauri-Fenster, z. B. reiner Vite-Dev/Vitest). Sobald ein
+ * Android-Arm existiert, muss geprüft werden, ob dort ein echter
+ * Erkennungsfehler (statt einer Nicht-Tauri-Umgebung) denkbar ist -- der
+ * würde mit diesem Fallback fälschlich als "windows"/Desktop durchlaufen
+ * (siehe isDesktop()), obwohl er Android ist. Vor dem Android-Port dieses
+ * Verhalten überdenken, nicht einfach mitschleppen.
  */
 function detectPlatform(): string {
   try {

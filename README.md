@@ -44,8 +44,14 @@ Die Datenbank liegt unter Windows in:
 %APPDATA%\de.betriebsrat.brzeiten\br_zeiten.db
 ```
 
+Unter Linux liegt sie in:
+
+```
+~/.config/de.betriebsrat.brzeiten/br_zeiten.db
+```
+
 Der genaue Pfad wird in der App unter **„Über / Daten"** angezeigt; dort öffnet
-ein Klick den Ordner im Explorer (für manuelle Backups). Die Datenbank ist mit
+ein Klick den Ordner im Dateimanager (für manuelle Backups). Die Datenbank ist mit
 SQLCipher verschlüsselt; der Schlüssel liegt gekapselt in einer zweiten Datei
 `keyfile.json` **im selben Ordner**. Für ein manuelles Backup deshalb **immer
 beide Dateien zusammen** sichern (`br_zeiten.db` **und** `keyfile.json`) – eine
@@ -86,7 +92,49 @@ Dies ist nur einmalig erforderlich. (Optional kann der Installer künftig mit
 einem Code-Signing-Zertifikat signiert werden, dann entfällt die Warnung –
 siehe Abschnitt *Entwicklung → Code-Signing*.)
 
+## Installation (Linux)
+
+BR-Log steht für Linux als **.deb-Paket** (Debian/Ubuntu und Ableitungen) und
+als distributionsunabhängiges **AppImage** zur Verfügung – siehe die
+**GitHub-Releases-Seite**.
+
+### .deb-Paket (Debian/Ubuntu)
+
+```bash
+sudo apt install ./BR-Log_x.y.z_amd64.deb
+```
+
+`apt install ./Datei.deb` löst dabei automatisch fehlende Abhängigkeiten mit
+auf – anders als das reine `dpkg -i`, das dafür einen zusätzlichen
+`apt --fix-broken install`-Schritt bräuchte.
+
+### AppImage (distributionsunabhängig)
+
+1. `BR-Log_x.y.z_amd64.AppImage` von der Releases-Seite herunterladen.
+2. Ausführbar machen und starten:
+
+```bash
+chmod +x BR-Log_x.y.z_amd64.AppImage
+./BR-Log_x.y.z_amd64.AppImage
+```
+
+Unter **Ubuntu 22.04 und neuer** fehlt `libfuse2` standardmäßig (AppImages
+brauchen FUSE 2 zum Einhängen); ohne das Paket startet die AppImage nicht:
+
+```bash
+sudo apt install libfuse2
+```
+
+Der Datenspeicherort unter Linux ist in beiden Fällen identisch, siehe
+Abschnitt *Datenspeicherort*.
+
 ## Portable Version (USB-Stick)
+
+> **Hinweis:** Der portable USB-Modus (Daten neben der Programmdatei, per
+> `portable.txt`-Marker erkannt) ist aktuell **Windows-only**. Unter Linux
+> gibt es dafür regulär die .deb-Installation oder das AppImage (siehe
+> Abschnitt *Installation (Linux)*) – beide legen die Datenbank unter
+> `~/.config/de.betriebsrat.brzeiten/` ab, nicht neben der Programmdatei.
 
 Neben dem Installer gibt es eine **portable Version**, die ohne Installation
 direkt vom USB-Stick läuft – die Daten reisen mit:
