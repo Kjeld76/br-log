@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import { secondaryBtnSmCls } from "../lib/ui";
 
 interface Props {
@@ -35,18 +34,19 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
   const saveTxt = async () => {
     setError(null);
     try {
-      const path = await save({
-        defaultPath: "BR-Log-Wiederherstellungs-Code.txt",
-        filters: [{ name: "Textdatei", extensions: ["txt"] }],
-      });
-      if (!path) return;
       const content =
         "BR-Log – Wiederherstellungs-Code\r\n\r\n" +
         code +
         "\r\n\r\nSicher aufbewahren (nicht zusammen mit der Datenbank). Mit diesem " +
         "Code laesst sich die Datenbank auch ohne Passwort entsperren. Gehen " +
         "Passwort UND Code verloren, sind die Daten unwiderruflich verloren.\r\n";
-      await invoke("write_text_file", { path, contents: content });
+      const path = await invoke<string | null>("export_text_file", {
+        defaultName: "BR-Log-Wiederherstellungs-Code.txt",
+        filterName: "Textdatei",
+        extension: "txt",
+        contents: content,
+      });
+      if (!path) return;
       setSaved(true);
     } catch (e) {
       setError(String(e));

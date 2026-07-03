@@ -9,6 +9,7 @@ use zeroize::Zeroizing;
 
 mod crypto;
 mod db_location;
+mod file_io;
 use db_location::DbLocation;
 
 /// Entsperrter DB-Zustand: offene (verschlüsselte) Connection + die DEK im
@@ -48,48 +49,13 @@ fn db_err(m: impl Into<String>) -> CryptoCmdError {
 }
 
 // ---------- Datei-IO (Export/Import, Recovery-Code-TXT) ----------
-
-/// Prüft einen Ziel-/Quellpfad der Datei-Commands. Die Pfade stammen aus dem
-/// nativen Speichern-/Öffnen-Dialog (vom Nutzer bewusst gewählt), deshalb ist ein
-/// strikter Ordner-Allowlist hier bewusst NICHT sinnvoll – er würde legitime
-/// Exporte/Backups an frei gewählte Orte verhindern. Gehärtet wird gegen leere
-/// und relative Pfade (kein CWD-relatives Lesen/Schreiben).
-fn check_user_path(path: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(path);
-    if path.trim().is_empty() || !p.is_absolute() {
-        return Err("Ungültiger Dateipfad".to_string());
-    }
-    Ok(p)
-}
-
-/// Schreibt eine Textdatei ATOMAR: zuerst in eine Nachbardatei (.brtmp), dann per
-/// Rename über das Ziel. Verhindert eine halb geschriebene Export-/Backup-/
-/// Recovery-Datei bei Absturz/Stromausfall mitten im Schreiben.
-#[tauri::command]
-fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    let target = check_user_path(&path)?;
-    let parent = target
-        .parent()
-        .ok_or_else(|| "Kein Zielverzeichnis".to_string())?;
-    let mut tmp_name = target
-        .file_name()
-        .ok_or_else(|| "Kein Dateiname".to_string())?
-        .to_os_string();
-    tmp_name.push(".brtmp");
-    let tmp = parent.join(tmp_name);
-    std::fs::write(&tmp, contents.as_bytes()).map_err(|e| e.to_string())?;
-    if let Err(e) = std::fs::rename(&tmp, &target) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.to_string());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn read_text_file(path: String) -> Result<String, String> {
-    let target = check_user_path(&path)?;
-    std::fs::read_to_string(&target).map_err(|e| e.to_string())
-}
+//
+// Die Commands `export_text_file` / `export_binary_file` / `import_text_file`
+// leben in file_io.rs (Linux-Portierung: Dialog-Aufruf + atomares
+// Schreiben/Lesen dort gekapselt, Struktur bereit für einen späteren
+// Android-Arm). Die früheren Commands `write_text_file` / `read_text_file`
+// (Pfad kam als String vom Frontend, das den Dialog selbst geöffnet hatte)
+// sind damit entfallen.
 
 // ---------- DB-Layer (rusqlite/SQLCipher) ----------
 
@@ -822,6 +788,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init())
         .setup(|app| {
             // DB wird NICHT mehr beim Start geöffnet (Schlüssel liegt erst nach
             // dem Entsperren vor). Nur Pfad/Modus ermitteln und State anlegen.
@@ -838,8 +805,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            write_text_file,
-            read_text_file,
+            file_io::export_text_file,
+            file_io::export_binary_file,
+            file_io::import_text_file,
             db_execute,
             db_select,
             db_batch,

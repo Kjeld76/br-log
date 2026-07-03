@@ -22,6 +22,11 @@ tauri = { version = "2", features = [] }
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Plattform-Erkennung (Linux-Portierung): Frontend fragt darüber synchron
+# ab, ob Windows/Linux/Android läuft (src/lib/platform.ts). Rust selbst
+# braucht die Plattform aktuell nicht, das Plugin muss aber registriert sein
+# (tauri_plugin_os::init()), damit die JS-Seite die Werte lesen kann.
+tauri-plugin-os = "2"
 # Verhindert eine zweite Instanz auf derselben (verschlüsselten) SQLite-DB:
 # Zweitstart fokussiert stattdessen das bestehende Fenster (Desktop-only).
 tauri-plugin-single-instance = "2"
@@ -35,3 +40,6 @@ chacha20poly1305 = "0.10"        # XChaCha20-Poly1305 (AEAD) zum Kapseln der DEK
 zeroize = { version = "1", features = ["zeroize_derive"] }
 hex = "0.4"                       # DEK/Salts/Nonces als Hex in keyfile.json + PRAGMA key
 rand_core = { version = "0.6", features = ["getrandom"] }  # OsRng fuer DEK/Recovery/Salt
+# Datei-I/O-Abstraktion (file_io.rs): export_binary_file bekommt Binärinhalte
+# (künftig PDF) Base64-kodiert vom Frontend, da Tauri-IPC-Argumente JSON sind.
+base64 = "0.22"

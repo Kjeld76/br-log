@@ -1,4 +1,3 @@
-import { save, open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toCsv, type CsvColumn } from "./toCsv";
 import {
@@ -90,13 +89,12 @@ async function saveText(
   ext: string,
   filterName: string
 ): Promise<string | null> {
-  const path = await save({
-    defaultPath: defaultName,
-    filters: [{ name: filterName, extensions: [ext] }],
+  return invoke<string | null>("export_text_file", {
+    defaultName,
+    filterName,
+    extension: ext,
+    contents: content,
   });
-  if (!path) return null;
-  await invoke("write_text_file", { path, contents: content });
-  return path;
 }
 
 /** Dateiname inkl. Zeitraum, falls eine Von-/Bis-Auswahl (Finding 8) getroffen wurde. */
@@ -142,12 +140,10 @@ export async function exportJsonBackup(): Promise<string | null> {
  * (repository.analyzeImport / applyImport).
  */
 export async function pickAndReadBackup(): Promise<BackupPayload | null> {
-  const path = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  if (!path || typeof path !== "string") return null;
-  const raw = await invoke<string>("read_text_file", { path });
-  return parseBackup(raw);
+  const picked = await invoke<{ name: string; contents: string } | null>(
+    "import_text_file",
+    { filterName: "JSON", extension: "json" }
+  );
+  if (!picked) return null;
+  return parseBackup(picked.contents);
 }
