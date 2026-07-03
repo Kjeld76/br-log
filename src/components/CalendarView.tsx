@@ -90,7 +90,12 @@ export default function CalendarView({
     }
   };
 
-  const navBtn = secondaryBtnSmCls;
+  // Portrait-Feinschliff (Android): secondaryBtnSmCls bleibt als geteilte
+  // Konstante unangetastet (wird app-weit in Toolbars verwendet) -- die
+  // Tap-Größe wird NUR lokal für diese beiden Monats-Buttons angehoben.
+  // sm:min-h-0 hebt die Anhebung ab 640px wieder auf, ein normal breites
+  // Desktop-Fenster sieht also unverändert aus.
+  const navBtn = secondaryBtnSmCls + " min-h-[44px] sm:min-h-0";
 
   return (
     <div className="space-y-3">
@@ -128,11 +133,16 @@ export default function CalendarView({
         </p>
       )}
 
-      <div className="grid grid-cols-7 gap-1">
+      {/* Portrait-Feinschliff (Android): 7 Spalten wirken auf 360-430px
+          Bildbreite eng -- gap/Zellenpadding/-höhe fallen unter der
+          sm-Grenze (640px) etwas kompakter aus, ab sm: exakt wie zuvor
+          (harmlos-responsiv, dasselbe Muster wie EntryForms
+          grid-cols-1 sm:grid-cols-4). */}
+      <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
         {WEEKDAYS.map((w) => (
           <div
             key={w}
-            className="py-1 text-center text-xs font-medium text-slate-500 dark:text-slate-400"
+            className="py-0.5 text-center text-xs font-medium text-slate-500 dark:text-slate-400 sm:py-1"
           >
             {w}
           </div>
@@ -146,7 +156,7 @@ export default function CalendarView({
               type="button"
               onClick={() => handleDayClick(c.iso)}
               className={
-                "flex min-h-[3.5rem] flex-col items-start rounded border p-1 text-left transition " +
+                "flex min-h-[3rem] flex-col items-start rounded border p-0.5 text-left transition sm:min-h-[3.5rem] sm:p-1 " +
                 (c.inMonth
                   ? "border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-sky-700 dark:hover:bg-slate-700"
                   : "border-transparent bg-slate-50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-600") +

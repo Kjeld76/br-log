@@ -426,7 +426,10 @@ export default function EntryForm({
           )}
         </div>
 
-        {/* Schnellwahl */}
+        {/* Schnellwahl. Portrait-Feinschliff (Android): min-h-[44px] hebt die
+            Tap-Größe der häufig genutzten Minuten-Chips unter der sm-Grenze
+            an (inline-flex+items-center zentriert den Text dabei weiterhin
+            wie im Standard-Button-Rendering); ab sm: exakt wie zuvor. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-slate-500 dark:text-slate-400">
             Schnellwahl:
@@ -435,7 +438,7 @@ export default function EntryForm({
             <button
               key={m}
               type="button"
-              className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-3 py-0.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 sm:min-h-0 sm:px-2.5"
               onClick={() => applyQuickMinutes(m)}
             >
               {m} Min
@@ -489,7 +492,7 @@ export default function EntryForm({
             ))}
             <button
               type="button"
-              className="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 sm:min-h-0"
               onClick={() => setTagPickerOpen((v) => !v)}
               disabled={draft.isCompensation}
             >

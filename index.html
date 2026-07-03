@@ -2,7 +2,10 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: Layout darf hinter Kamera-Ausschnitt/Gesten-Leiste
+         reichen, env(safe-area-inset-*) wird dadurch nutzbar (TopBar/BottomNav
+         auf Android). Auf Desktop-WebViews ohne Notch/Insets wirkungslos. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>BR-Log</title>
     <!-- Theme VOR dem ersten Paint setzen -> kein Flackern (FOUC). -->
     <script>

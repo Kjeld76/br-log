@@ -3,11 +3,16 @@ import { Icon, type IconName } from "./Icon";
 
 export type View = "erfassen" | "historie" | "auswertung" | "daten";
 
-const NAV: { key: View; label: string; icon: IconName }[] = [
-  { key: "erfassen", label: "Zeit erfassen", icon: "clock" },
-  { key: "historie", label: "Kalender & Historie", icon: "calendar" },
-  { key: "auswertung", label: "Auswertung", icon: "bar-chart" },
-  { key: "daten", label: "Über / Daten", icon: "folder-open" },
+// Gemeinsame Navigations-Definition für Sidebar (Desktop) UND BottomNav
+// (Android) -- EINE Quelle für Reihenfolge/Icon/Label, keine Duplikation
+// zwischen den beiden Komponenten (siehe BottomNav.tsx). `label` ist der
+// volle Sidebar-Text, `shortLabel` das kompakte Pendant für die schmalen
+// Tabs der BottomNav.
+export const NAV: { key: View; label: string; shortLabel: string; icon: IconName }[] = [
+  { key: "erfassen", label: "Zeit erfassen", shortLabel: "Erfassen", icon: "clock" },
+  { key: "historie", label: "Kalender & Historie", shortLabel: "Historie", icon: "calendar" },
+  { key: "auswertung", label: "Auswertung", shortLabel: "Auswertung", icon: "bar-chart" },
+  { key: "daten", label: "Über / Daten", shortLabel: "Daten", icon: "folder-open" },
 ];
 
 interface Props {

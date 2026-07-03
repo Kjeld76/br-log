@@ -19,6 +19,7 @@ import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
+import { isAndroid } from "./lib/platform";
 import {
   type StartMode,
   getStartStatus,
@@ -27,6 +28,8 @@ import {
   lock,
 } from "./lib/auth";
 import Sidebar, { type View } from "./components/Sidebar";
+import BottomNav from "./components/BottomNav";
+import TopBar from "./components/TopBar";
 import QuickEntryView, { clearQuickEntryDraft } from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
 import StatsView from "./views/StatsView";
@@ -92,6 +95,13 @@ function useModalFocusTrap(
 }
 
 export default function App() {
+  // Einzige Stelle, an der isAndroid() für das Layout abgefragt wird
+  // (Konvention, siehe platform.ts/CLAUDE): lazy useState statt eines
+  // Aufrufs bei jedem Render, Ergebnis ändert sich zur Laufzeit ohnehin nie.
+  // Steuert NUR das App-Gerüst (Sidebar vs. TopBar+BottomNav) -- bewusst
+  // NICHT über Tailwind-Breakpoints, damit ein schmales Desktop-Fenster
+  // weiter die Sidebar zeigt.
+  const [mobile] = useState(() => isAndroid());
   const [startMode, setStartMode] = useState<"loading" | StartMode>("loading");
   const [startMessage, setStartMessage] = useState<string | undefined>();
   const [locked, setLocked] = useState(true); // gesperrt bis Setup/Migration/Unlock
@@ -520,10 +530,20 @@ export default function App() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar view={view} onNavigate={requestNavigate} onLockNow={doLock} />
+      {mobile && <TopBar onLockNow={doLock} />}
 
-        <main className="flex-1 overflow-y-auto">
+      <div className="flex flex-1 overflow-hidden">
+        {!mobile && (
+          <Sidebar view={view} onNavigate={requestNavigate} onLockNow={doLock} />
+        )}
+
+        <main
+          className={
+            mobile
+              ? "flex-1 overflow-y-auto pb-[calc(4.5rem+env(safe-area-inset-bottom))]"
+              : "flex-1 overflow-y-auto"
+          }
+        >
           {view === "erfassen" && (
             <QuickEntryView
               tags={allTags}
@@ -559,10 +579,20 @@ export default function App() {
         </main>
       </div>
 
-      {/* Modal: Detailansicht / Bearbeiten / Schnell-Anlegen aus Kalender/Liste */}
+      {mobile && <BottomNav view={view} onNavigate={requestNavigate} />}
+
+      {/* Modal: Detailansicht / Bearbeiten / Schnell-Anlegen aus Kalender/Liste.
+          Auf Android nahezu fullscreen (kein abgerundeter Rahmen, kein
+          Außenabstand, volle Höhe mit eigenem Scroll) -- ein zentriertes
+          max-w-2xl-Modal mit p-4-Rand verschenkt auf einem 360-430px breiten
+          Portrait-Bildschirm zu viel Platz für ein Formular mit drei Blöcken. */}
       {modal && (
         <div
-          className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+          className={
+            mobile
+              ? "fixed inset-0 z-20 flex items-stretch justify-center overflow-y-auto bg-black/50"
+              : "fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+          }
           onClick={requestCloseModal}
         >
           <div
@@ -571,7 +601,11 @@ export default function App() {
             aria-modal="true"
             aria-labelledby="entry-modal-heading"
             tabIndex={-1}
-            className="my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+            className={
+              mobile
+                ? "min-h-full w-full rounded-none bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl outline-none dark:bg-slate-800"
+                : "my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+            }
             onClick={(e) => e.stopPropagation()}
           >
             {modal.type === "form" && (
@@ -654,12 +688,17 @@ export default function App() {
       )}
 
       {/* Toast -- aria-live meldet die Bestätigung auch Screenreader-Nutzern
-          (Finding 41), ohne dass der Fokus verschoben wird. */}
+          (Finding 41), ohne dass der Fokus verschoben wird. Auf Android weiter
+          oben verankert, sonst läge er hinter/unter der BottomNav. */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
+          className={
+            mobile
+              ? "fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
+              : "fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
+          }
         >
           {toast}
         </div>
