@@ -574,6 +574,7 @@ export default function App() {
               }}
               onLockNow={doLock}
               onAutoLockChanged={setAutoLockMin}
+              mobile={mobile}
             />
           )}
         </main>

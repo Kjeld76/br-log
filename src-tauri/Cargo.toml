@@ -44,10 +44,9 @@ rand_core = { version = "0.6", features = ["getrandom"] }  # OsRng fuer DEK/Reco
 # (künftig PDF) Base64-kodiert vom Frontend, da Tauri-IPC-Argumente JSON sind.
 base64 = "0.22"
 
-# Android-Portierung (A1): Storage-Access-Framework-Zugriff (Save-/Open-Dialog,
-# content://-URIs) für den späteren Android-Arm von file_io.rs. Nur für Android
-# gezogen -- auf Windows/Linux bleibt file_io.rs bei den bestehenden Desktop-
-# Dialogen (tauri-plugin-dialog). Heute nur für den SAF-PoC-Command genutzt
-# (saf_poc.rs); der echte Android-Arm der drei file_io-Commands folgt in A-Core.
+# Android-Portierung (A-Core): Storage-Access-Framework-Zugriff (Save-/Open-
+# Dialog, content://-URIs) für den Android-Arm von file_io.rs (mod android).
+# Nur für Android gezogen -- auf Windows/Linux bleibt file_io.rs bei den
+# bestehenden Desktop-Dialogen (tauri-plugin-dialog).
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-fs = "28.2"

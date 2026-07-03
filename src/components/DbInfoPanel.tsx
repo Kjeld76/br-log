@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { getDbPathInfo, backupNow } from "../db/client";
 import { rebuildFts } from "../db/repository";
 import { deletePlaintextBackup } from "../lib/auth";
 import { toUserMessage } from "../lib/errors";
-import { isAndroid } from "../lib/platform";
 import { secondaryBtnSmCls } from "../lib/ui";
 import { Icon } from "./Icon";
 
-export default function DbInfoPanel() {
+interface Props {
+  // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
+  // ermittelt und als Prop durchgereicht -- diese Komponente fragt es nicht
+  // selbst ab.
+  mobile: boolean;
+}
+
+export default function DbInfoPanel({ mobile }: Props) {
   const [dir, setDir] = useState("");
   const [dbPath, setDbPath] = useState("");
   const [portable, setPortable] = useState(false);
@@ -22,10 +27,6 @@ export default function DbInfoPanel() {
   const [indexBusy, setIndexBusy] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
-  // TEMPORÄR (A0.2-Gerätetest, fliegt in A-Core wieder raus): Ergebnis des
-  // SAF-Roundtrip-PoC-Buttons, nur auf Android sichtbar.
-  const [safBusy, setSafBusy] = useState(false);
-  const [safStatus, setSafStatus] = useState<string | null>(null);
   // Finding 54 (Nebenbefund): copied-Timeout wurde bei jedem Aufruf neu
   // gesetzt, ohne einen vorherigen zu clearen -- zwei schnelle Klicks auf
   // "Pfad kopieren" ließen die Bestätigung vorzeitig verschwinden.
@@ -138,24 +139,6 @@ export default function DbInfoPanel() {
     }
   };
 
-  // TEMPORÄR (A0.2-Gerätetest): SAF-Roundtrip (Save-Dialog -> schreiben ->
-  // Open-Dialog -> lesen) über den saf_poc_roundtrip-Command anstoßen. Nur
-  // aufrufbar, weil der Button per isAndroid() versteckt ist -- fliegt
-  // zusammen mit saf_poc.rs in A-Core wieder raus.
-  const runSafPoc = async () => {
-    setError(null);
-    setSafStatus(null);
-    setSafBusy(true);
-    try {
-      const result = await invoke<string>("saf_poc_roundtrip");
-      setSafStatus(result);
-    } catch (e) {
-      setError(toUserMessage(e));
-    } finally {
-      setSafBusy(false);
-    }
-  };
-
   const card =
     "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
   const btn = "flex items-center gap-1.5 " + secondaryBtnSmCls + " disabled:opacity-50";
@@ -187,9 +170,11 @@ export default function DbInfoPanel() {
           <strong>nur der Datenbank</strong> ist ohne diese Schlüsseldatei
           nicht entschlüsselbar – auch nicht mit dem Wiederherstellungs-Code,
           der ebenfalls auf die Schlüsseldaten in keyfile.json angewiesen ist.
-          {portable
-            ? " Diese Version läuft portabel: Datenbank UND keyfile.json liegen zusammen im Ordner BR-Log-Data neben der EXE und wandern mit dem USB-Stick mit."
-            : " Für ein manuelles Backup deshalb immer br_zeiten.db UND keyfile.json zusammen sichern (liegen im selben Ordner)."}{" "}
+          {mobile
+            ? " Auf Android liegen beide Dateien in der App-eigenen Sandbox – ohne Root-Zugriff für Nutzer weder erreichbar noch manuell kopierbar (siehe Warnhinweis unten)."
+            : portable
+              ? " Diese Version läuft portabel: Datenbank UND keyfile.json liegen zusammen im Ordner BR-Log-Data neben der EXE und wandern mit dem USB-Stick mit."
+              : " Für ein manuelles Backup deshalb immer br_zeiten.db UND keyfile.json zusammen sichern (liegen im selben Ordner)."}{" "}
           Schlüsselunabhängig ist der JSON-Export unter „Daten → Sicherung &amp;
           Übertragung" – er braucht weder keyfile.json noch Passwort.
         </p>
@@ -199,11 +184,22 @@ export default function DbInfoPanel() {
           <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">
             backups/
           </code>{" "}
-          neben der Hauptdatenbank an – rotierend, die letzten 5 Stände
-          bleiben erhalten. Zum Wiederherstellen bei geschlossener App die
-          gewünschten Dateien aus <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">backups/</code> zurück
-          auf br_zeiten.db bzw. keyfile.json kopieren.
+          {mobile ? "an" : "neben der Hauptdatenbank an"} – rotierend, die
+          letzten 5 Stände bleiben erhalten.{" "}
+          {mobile
+            ? "Auf Android liegt dieser Ordner in der App-Sandbox: für Nutzer nicht erreichbar und beim Deinstallieren der App unwiederbringlich mitgelöscht – kein Ersatz für ein externes Backup."
+            : <>Zum Wiederherstellen bei geschlossener App die gewünschten
+                Dateien aus <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">backups/</code> zurück
+                auf br_zeiten.db bzw. keyfile.json kopieren.</>}
         </p>
+        {mobile && (
+          <div className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+            <strong>Achtung:</strong> Beim Deinstallieren der App werden
+            Datenbank, Schlüsseldatei und automatische Backups
+            unwiederbringlich gelöscht – regelmäßig ein JSON-Backup
+            exportieren und außerhalb des Geräts sichern.
+          </div>
+        )}
         <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
           {dbPath || "Pfad wird ermittelt…"}
         </div>
@@ -211,10 +207,12 @@ export default function DbInfoPanel() {
           <button type="button" className={btn} onClick={copyPath} disabled={!dbPath}>
             {copied ? "Pfad kopiert ✓" : "Pfad kopieren"}
           </button>
-          <button type="button" className={btn} onClick={reveal} disabled={!dbPath}>
-            <Icon name="folder-open" size={16} />
-            Ordner im Dateimanager öffnen
-          </button>
+          {!mobile && (
+            <button type="button" className={btn} onClick={reveal} disabled={!dbPath}>
+              <Icon name="folder-open" size={16} />
+              Ordner im Dateimanager öffnen
+            </button>
+          )}
           <button type="button" className={btn} onClick={runBackup} disabled={backupBusy}>
             {backupBusy ? "Sichert…" : "Jetzt sichern"}
           </button>
@@ -227,18 +225,6 @@ export default function DbInfoPanel() {
           >
             {indexBusy ? "Baut Index…" : "Suchindex neu aufbauen"}
           </button>
-          {/* TEMPORÄR (A0.2-Gerätetest): fliegt in A-Core wieder raus, siehe saf_poc.rs */}
-          {isAndroid() && (
-            <button
-              type="button"
-              className={btn}
-              onClick={runSafPoc}
-              disabled={safBusy}
-              title="A0.2-PoC: Storage-Access-Framework-Roundtrip (Save-Dialog -> schreiben -> Open-Dialog -> lesen)"
-            >
-              {safBusy ? "SAF-Test läuft…" : "SAF-Test"}
-            </button>
-          )}
         </div>
         {backupStatus && (
           <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
@@ -248,11 +234,6 @@ export default function DbInfoPanel() {
         {indexStatus && (
           <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
             {indexStatus}
-          </p>
-        )}
-        {safStatus && (
-          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
-            {safStatus}
           </p>
         )}
         {hasBackup && (

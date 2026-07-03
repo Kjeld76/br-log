@@ -7,16 +7,25 @@
 // Dialog öffnet jetzt die Rust-Seite (tauri_plugin_dialog::DialogExt), das
 // Frontend bekommt nur noch das Ergebnis (Anzeige-Pfad bzw. Name+Inhalt).
 //
-// Struktur bewusst so gehalten, dass ein späterer Android-Arm ergänzt werden
-// kann, ohne die Command-Signaturen zu ändern: `desktop` ist das einzige
-// `#[cfg(desktop)]`-gated Implementierungsmodul; ein künftiges
-// `#[cfg(target_os = "android")] mod android;` würde dieselben drei
-// `pick_*`-Helferfunktionen (vermutlich über ein Storage-Access-Framework /
-// content://-URIs statt eines Datei-Dialogs) bereitstellen, ohne dass sich an
-// den `#[tauri::command]`-Funktionen unten oder am Frontend-Aufruf etwas
-// ändern müsste.
+// Zwei komplett getrennte Implementierungen pro Plattform, gleiche
+// `#[tauri::command]`-Signaturen (A-Core):
+// - `desktop` (Windows/Linux/macOS): echter absoluter Dateipfad aus
+//   tauri-plugin-dialog, Schreiben/Lesen über std::fs (atomar via
+//   write_atomic).
+// - `android`: Storage Access Framework über tauri-plugin-android-fs
+//   (content://-URIs statt Pfaden -- std::fs kann darauf nicht zugreifen,
+//   deshalb sind die drei Commands hier vollständig eigene Bodies, keine
+//   gemeinsame PathBuf-basierte Helferfunktion). API-Muster stammt vom
+//   A0.2-Gerätetest (saf_poc.rs, dort verifiziert inkl. Umlaute/UTF-8).
+//   Rückgabe ist dort statt eines Pfads der Anzeigename (SAF-URIs sind
+//   kryptisch und für Nutzer wertlos).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+// Nur Desktop: `Path` (Borrow-Form) wird ausschließlich von den unten
+// `#[cfg(desktop)]`-gated Funktionen check_user_path/write_atomic gebraucht --
+// auf Android sonst "unused import".
+#[cfg(desktop)]
+use std::path::Path;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -25,6 +34,10 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 /// strikter Ordner-Allowlist hier bewusst NICHT sinnvoll – er würde legitime
 /// Exporte/Backups an frei gewählte Orte verhindern. Gehärtet wird gegen leere
 /// und relative Pfade (kein CWD-relatives Lesen/Schreiben).
+///
+/// Nur Desktop: Android hat keine absoluten Dateipfade, sondern content://-URIs
+/// (siehe `mod android`) -- dieser Guard ist für dieses Pfad-Konzept sinnlos.
+#[cfg(desktop)]
 fn check_user_path(path: &Path) -> Result<PathBuf, String> {
     let raw = path.to_string_lossy();
     if raw.trim().is_empty() || !path.is_absolute() {
@@ -37,6 +50,10 @@ fn check_user_path(path: &Path) -> Result<PathBuf, String> {
 /// Datei-Endung hat. Nicht alle Dialog-Backends fügen die Filter-Endung
 /// automatisch an, wenn der Nutzer keine eingetippt hat -- vor allem auf Linux
 /// (GTK-/Portal-Dialoge) ist das inkonsistent, auf Windows i. d. R. kein Thema.
+///
+/// Plattformübergreifend (Desktop UND Android): der Android-Arm (`mod
+/// android`) wendet dieselbe Absicherung auf den an den SAF-Save-Dialog
+/// übergebenen `default_name` an, bevor der Picker ihn als Vorschlag anzeigt.
 fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     match path.extension() {
         Some(_) => path,
@@ -47,6 +64,12 @@ fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
 /// Schreibt Daten ATOMAR: zuerst in eine Nachbardatei (.brtmp), dann per
 /// Rename über das Ziel. Verhindert eine halb geschriebene Export-/Backup-/
 /// Recovery-Datei bei Absturz/Stromausfall mitten im Schreiben.
+///
+/// Nur Desktop: setzt einen echten Dateisystem-Ordner voraus (Nachbardatei +
+/// Rename). Android schreibt stattdessen direkt über die vom SAF-Dialog
+/// gelieferte content://-URI (siehe `mod android`) -- dort gibt es keine
+/// Nachbardatei, in die atomar geschrieben werden könnte.
+#[cfg(desktop)]
 fn write_atomic(target: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = target
         .parent()
@@ -145,45 +168,133 @@ mod desktop {
 #[cfg(desktop)]
 use desktop::{pick_open_path, pick_save_path};
 
-// ---------- Android-Platzhalter (A1) ----------
+// ---------- Android-Implementierung (A-Core) ----------
 //
-// TEMPORÄR, NUR damit der Crate für Android überhaupt compiliert: die drei
-// Commands unten rufen pick_save_path/pick_open_path unconditioniert auf, ein
-// echter SAF-basierter Android-Arm (analog zum `desktop`-Modul oben, über
-// tauri-plugin-android-fs) kommt erst in A-Core -- Signatur-Vertrag der drei
-// `#[tauri::command]`-Funktionen bleibt unangetastet, dieses Modul liefert
-// nur einen Kompilierbarkeits-Stub. Dass der eigentliche SAF-Zugriffsweg
-// grundsätzlich funktioniert, zeigt der separate PoC in saf_poc.rs.
+// Storage Access Framework über tauri-plugin-android-fs (Android-only
+// Dependency, Plugin-Init in lib.rs). API-Muster geprüft im A0.2-Gerätetest
+// (saf_poc.rs, dort gelöscht -- der volle Roundtrip Save-Dialog -> schreiben
+// -> Open-Dialog -> lesen inkl. Umlaute/UTF-8 war dort erfolgreich).
+//
+// Bewusst KEIN spawn_blocking (anders als `desktop` oben): die
+// android-fs-Async-API (`app.android_fs_async()`) ruft über Tauris
+// Mobile-Plugin-Kanal in den Kotlin-Teil des Plugins -- das ist ein
+// Await auf eine Antwort über den Channel, kein synchron blockierender aufruf
+// wie `blocking_save_file()` auf Desktop. Der PoC hat exakt diesen Weg (nur
+// `.await`, kein spawn_blocking) auf echter Hardware verifiziert.
 #[cfg(target_os = "android")]
-mod android_stub {
-    use super::PathBuf;
+mod android {
+    use super::{ensure_extension, ImportedFile, PathBuf};
+    use std::io::{Read, Write};
     use tauri::AppHandle;
+    use tauri_plugin_android_fs::AndroidFsExt;
 
-    pub(super) async fn pick_save_path(
-        _app: &AppHandle,
-        _default_name: &str,
-        _filter_name: &str,
-        _extension: &str,
-    ) -> Result<Option<PathBuf>, String> {
-        Err("Noch nicht implementiert auf Android (folgt in A-Core)".to_string())
+    /// MIME-Typ aus der Datei-Endung. SAF kennt -- anders als der
+    /// Desktop-Dialog (`add_filter` mit Endungsliste) -- keinen reinen
+    /// Endungs-Filter; Save- wie Open-Dialog brauchen einen MIME-String.
+    fn mime_for_extension(extension: &str) -> &'static str {
+        match extension.to_ascii_lowercase().as_str() {
+            "csv" => "text/csv",
+            "json" => "application/json",
+            "txt" => "text/plain",
+            "pdf" => "application/pdf",
+            _ => "application/octet-stream",
+        }
     }
 
-    pub(super) async fn pick_open_path(
-        _app: &AppHandle,
-        _filter_name: &str,
-        _extension: &str,
-    ) -> Result<Option<PathBuf>, String> {
-        Err("Noch nicht implementiert auf Android (folgt in A-Core)".to_string())
+    /// Speichert `bytes` über den SAF-Save-Dialog. Rückgabe ist der
+    /// Anzeigename (nicht die content://-URI -- die ist kryptisch und für
+    /// Nutzer wertlos): der vom Provider gelieferte Name, wenn abrufbar,
+    /// sonst der (endungsgesicherte) `default_name`. `None` bei Abbruch.
+    pub(super) async fn save(
+        app: &AppHandle,
+        default_name: &str,
+        extension: &str,
+        bytes: &[u8],
+    ) -> Result<Option<String>, String> {
+        let suggested_name = ensure_extension(PathBuf::from(default_name), extension)
+            .to_string_lossy()
+            .into_owned();
+
+        let api = app.android_fs_async();
+        let saved = api
+            .file_picker()
+            .save_file(
+                None,
+                &suggested_name,
+                Some(mime_for_extension(extension)),
+                false,
+            )
+            .await
+            .map_err(|e| format!("Speichern-Dialog fehlgeschlagen: {e}"))?;
+        let Some(uri) = saved else {
+            return Ok(None);
+        };
+
+        {
+            let mut file = api
+                .open_file_writable(&uri)
+                .await
+                .map_err(|e| format!("Datei zum Schreiben öffnen fehlgeschlagen: {e}"))?;
+            file.write_all(bytes)
+                .map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
+        }
+
+        let name = api
+            .get_name(&uri)
+            .await
+            .unwrap_or(suggested_name);
+        Ok(Some(name))
+    }
+
+    /// Zeigt den SAF-Open-Dialog mit MIME-Filter, liest die gewählte Datei als
+    /// Text. `None` bei Abbruch.
+    pub(super) async fn open_text(
+        app: &AppHandle,
+        extension: &str,
+    ) -> Result<Option<ImportedFile>, String> {
+        let api = app.android_fs_async();
+        let picked = api
+            .file_picker()
+            .pick_files(None, &[mime_for_extension(extension)], false)
+            .await
+            .map_err(|e| format!("Öffnen-Dialog fehlgeschlagen: {e}"))?;
+        let Some(uri) = picked.into_iter().next() else {
+            return Ok(None);
+        };
+
+        let mut contents = String::new();
+        {
+            let mut file = api
+                .open_file_readable(&uri)
+                .await
+                .map_err(|e| format!("Datei zum Lesen öffnen fehlgeschlagen: {e}"))?;
+            file.read_to_string(&mut contents)
+                .map_err(|e| format!("Lesen fehlgeschlagen: {e}"))?;
+        }
+
+        // Fällt bei Bedarf auf den letzten URI-Pfadabschnitt zurück (statt
+        // einen erfolgreichen Import an einer reinen Namensanzeige scheitern
+        // zu lassen) -- anders als beim Speichern gibt es hier keinen
+        // `default_name`, auf den ausgewichen werden könnte.
+        let name = api.get_name_or_last_path_segment(&uri).await;
+        Ok(Some(ImportedFile { name, contents }))
     }
 }
 
-#[cfg(target_os = "android")]
-use android_stub::{pick_open_path, pick_save_path};
+/// Dekodiert Base64-Binärinhalte (Tauri-IPC-Argumente sind JSON, daher Base64
+/// statt roher Bytes) -- gemeinsam für den Desktop- und den Android-Arm von
+/// `export_binary_file`.
+fn decode_base64(contents_base64: String) -> Result<Vec<u8>, String> {
+    STANDARD
+        .decode(contents_base64)
+        .map_err(|e| format!("Ungültige Base64-Daten: {e}"))
+}
 
 // ---------- Commands (plattformunabhängige Signatur) ----------
 
 /// Zeigt den Speichern-Dialog, schreibt `contents` als Textdatei ATOMAR an den
 /// gewählten Ort. Gibt den Anzeige-Pfad zurück, `None` bei Nutzer-Abbruch.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn export_text_file(
     app: tauri::AppHandle,
@@ -200,9 +311,28 @@ pub async fn export_text_file(
     Ok(Some(target.to_string_lossy().into_owned()))
 }
 
+/// Android-Arm: SAF-Save-Dialog statt Desktop-Dateidialog (siehe `mod
+/// android`). Gibt den Anzeigenamen zurück, `None` bei Nutzer-Abbruch.
+/// `filter_name` bleibt Teil der Signatur (Frontend ruft plattformagnostisch
+/// auf), wird hier aber nicht gebraucht: SAF kennt keinen Endungs-Filter wie
+/// der Desktop-Dialog, die MIME-Zuordnung übernimmt `mime_for_extension`.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn export_text_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    filter_name: String,
+    extension: String,
+    contents: String,
+) -> Result<Option<String>, String> {
+    let _ = filter_name;
+    android::save(&app, &default_name, &extension, contents.as_bytes()).await
+}
+
 /// Wie `export_text_file`, aber für Binärinhalte (künftig PDF): `contents_base64`
 /// wird vor dem Schreiben dekodiert (Tauri-IPC-Argumente sind JSON, daher
 /// Base64 statt roher Bytes).
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn export_binary_file(
     app: tauri::AppHandle,
@@ -215,15 +345,30 @@ pub async fn export_binary_file(
         return Ok(None);
     };
     let target = check_user_path(&picked)?;
-    let bytes = STANDARD
-        .decode(contents_base64)
-        .map_err(|e| format!("Ungültige Base64-Daten: {e}"))?;
+    let bytes = decode_base64(contents_base64)?;
     write_atomic(&target, &bytes)?;
     Ok(Some(target.to_string_lossy().into_owned()))
 }
 
+/// Android-Arm von `export_binary_file`, siehe `export_text_file` (Android)
+/// für die Begründung von `filter_name`.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn export_binary_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    filter_name: String,
+    extension: String,
+    contents_base64: String,
+) -> Result<Option<String>, String> {
+    let _ = filter_name;
+    let bytes = decode_base64(contents_base64)?;
+    android::save(&app, &default_name, &extension, &bytes).await
+}
+
 /// Zeigt den Öffnen-Dialog, liest die gewählte Textdatei. Gibt Anzeigename +
 /// Inhalt zurück, `None` bei Nutzer-Abbruch.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn import_text_file(
     app: tauri::AppHandle,
@@ -242,9 +387,24 @@ pub async fn import_text_file(
     Ok(Some(ImportedFile { name, contents }))
 }
 
-// ---------- Tests: reine Dateisystemlogik (kein echter Dialog, kein Tauri-Setup) ----------
+/// Android-Arm: SAF-Open-Dialog statt Desktop-Dateidialog (siehe `mod
+/// android`). `filter_name` s. Begründung bei `export_text_file` (Android).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn import_text_file(
+    app: tauri::AppHandle,
+    filter_name: String,
+    extension: String,
+) -> Result<Option<ImportedFile>, String> {
+    let _ = filter_name;
+    android::open_text(&app, &extension).await
+}
 
-#[cfg(test)]
+// ---------- Tests: reine Dateisystemlogik (kein echter Dialog, kein Tauri-Setup) ----------
+//
+// Nur Desktop: prüft check_user_path/write_atomic, die es auf Android nicht
+// gibt (dort gibt es keine absoluten Dateipfade, siehe `mod android`).
+#[cfg(all(test, desktop))]
 mod tests {
     use super::{check_user_path, ensure_extension, write_atomic};
     use std::fs;

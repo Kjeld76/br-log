@@ -5,10 +5,18 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- Kein Google-Auto-Backup/D2D-Transfer: DB, keyfile.json und der
+         localStorage-Entwurf dürfen das Gerät nicht Richtung Cloud
+         verlassen (Randbedingung: alles lokal). allowBackup=false deckt
+         alle API-Level; dataExtractionRules ist das explizite Opt-out
+         für API 31+ (defense in depth). -->
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.br_log"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

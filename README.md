@@ -72,6 +72,18 @@ lässt sich zusätzlich jederzeit manuell ein Backup anstoßen.
 Läuft die App **portabel vom USB-Stick**, liegt die Datenbank stattdessen neben
 der EXE in `BR-Log-Data\br_zeiten.db` (siehe Abschnitt *Portable Version*).
 
+### Android
+
+Auf Android liegen Datenbank, `keyfile.json` und der automatische
+`backups/`-Ordner in der **App-eigenen Sandbox** – ohne Root-Zugriff für
+Nutzer weder einsehbar noch manuell kopierbar. **Beim Deinstallieren der App
+werden alle drei unwiederbringlich gelöscht.** Der einzige Rettungsweg ist
+der **JSON-Export** (App → Daten → „Sicherung & Übertragung" →
+JSON-Backup speichern): schlüsselunabhängig, funktioniert ohne `keyfile.json`
+und ohne Passwort – regelmäßig exportieren und außerhalb des Geräts sichern
+(z. B. Cloud-Speicher, PC). Installations-/Sideload-Hinweise für Android
+folgen in einem späteren Abschnitt.
+
 ## Installation (für BR-Kolleginnen und -Kollegen)
 
 1. Auf der **GitHub-Releases-Seite** den neuesten Release öffnen.

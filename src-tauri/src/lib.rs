@@ -10,8 +10,6 @@ use zeroize::Zeroizing;
 mod crypto;
 mod db_location;
 mod file_io;
-// SAF-PoC für den A0.2-Android-Gerätetest -- TEMPORÄR, siehe saf_poc.rs.
-mod saf_poc;
 use db_location::DbLocation;
 
 /// Entsperrter DB-Zustand: offene (verschlüsselte) Connection + die DEK im
@@ -787,9 +785,10 @@ pub fn run() {
             }
         }));
     }
-    // Android-Portierung (A1): Storage-Access-Framework-Plugin nur auf Android
-    // registrieren -- der SAF-PoC-Command (saf_poc.rs) braucht es, der echte
-    // Android-Arm der file_io.rs-Commands folgt in A-Core.
+    // Android-Portierung (A-Core): Storage-Access-Framework-Plugin nur auf
+    // Android registrieren -- braucht der echte Android-Arm der drei
+    // file_io.rs-Commands (export_text_file/export_binary_file/
+    // import_text_file, siehe file_io.rs `mod android`).
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
@@ -831,8 +830,7 @@ pub fn run() {
             crypto_set_autolock,
             crypto_migrate,
             delete_plaintext_backup,
-            db_backup,
-            saf_poc::saf_poc_roundtrip
+            db_backup
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

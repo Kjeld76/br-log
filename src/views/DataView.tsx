@@ -10,6 +10,10 @@ interface Props {
   onLockNow: () => void;
   onAutoLockChanged: (minutes: number) => void;
   reloadKey: number; // Finding 33: hält TagManager nach einem Import synchron
+  // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
+  // ermittelt und als Prop durchgereicht -- Komponenten fragen es nicht
+  // selbst ab. Hier nur zum Durchreichen an DbInfoPanel gebraucht.
+  mobile: boolean;
 }
 
 export default function DataView({
@@ -17,6 +21,7 @@ export default function DataView({
   onLockNow,
   onAutoLockChanged,
   reloadKey,
+  mobile,
 }: Props) {
   const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
 
@@ -46,7 +51,7 @@ export default function DataView({
         />
       </section>
 
-      <DbInfoPanel />
+      <DbInfoPanel mobile={mobile} />
 
       <section>
         <h3 className={heading}>Export &amp; Backup</h3>
