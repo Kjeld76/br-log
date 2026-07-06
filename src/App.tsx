@@ -453,6 +453,7 @@ export default function App() {
         startMode={startMode}
         startMessage={startMessage}
         onUnlocked={handleUnlocked}
+        mobile={mobile}
       />
     );
   }
@@ -530,7 +531,7 @@ export default function App() {
         </div>
       )}
 
-      {mobile && <TopBar onLockNow={doLock} />}
+      {mobile && <TopBar view={view} onLockNow={doLock} />}
 
       <div className="flex flex-1 overflow-hidden">
         {!mobile && (
@@ -540,7 +541,7 @@ export default function App() {
         <main
           className={
             mobile
-              ? "flex-1 overflow-y-auto pb-[calc(4.5rem+env(safe-area-inset-bottom))]"
+              ? "flex-1 overflow-y-auto pb-[4.5rem]"
               : "flex-1 overflow-y-auto"
           }
         >
@@ -604,7 +605,7 @@ export default function App() {
             tabIndex={-1}
             className={
               mobile
-                ? "min-h-full w-full rounded-none bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl outline-none dark:bg-slate-800"
+                ? "min-h-full w-full rounded-none bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
                 : "my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
             }
             onClick={(e) => e.stopPropagation()}
@@ -697,7 +698,7 @@ export default function App() {
           aria-live="polite"
           className={
             mobile
-              ? "fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
+              ? "fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
               : "fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
           }
         >

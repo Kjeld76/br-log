@@ -2,10 +2,12 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover: Layout darf hinter Kamera-Ausschnitt/Gesten-Leiste
-         reichen, env(safe-area-inset-*) wird dadurch nutzbar (TopBar/BottomNav
-         auf Android). Auf Desktop-WebViews ohne Notch/Insets wirkungslos. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Bewusst OHNE viewport-fit=cover: Die System-Insets (Status-/Gesten-
+         leiste, Tastatur) verwaltet auf Android die native Seite (MainActivity
+         paddet den WebView-Inhalt per Insets-Listener) -- env(safe-area-inset-*)
+         liefert in der Android-WebView ohnehin konstant 0px und wird im
+         Frontend nirgends verwendet. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BR-Log</title>
     <!-- Theme VOR dem ersten Paint setzen -> kein Flackern (FOUC). -->
     <script>

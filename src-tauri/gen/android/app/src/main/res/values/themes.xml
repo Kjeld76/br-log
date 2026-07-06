@@ -1,6 +1,12 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.br_log" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <!-- Fläche hinter Status-/Gestenleiste: MainActivity paddet den
+             WebView-Inhalt per Insets-Listener dazwischen, sichtbar bleibt
+             dort windowBackground. Hell: App-Hintergrund slate-50, dunkle
+             Statusleisten-Symbole (windowLightStatusBar=true). -->
+        <item name="android:windowBackground">@color/brlog_window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

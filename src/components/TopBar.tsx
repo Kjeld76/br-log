@@ -1,23 +1,28 @@
-import logo from "../assets/logo.png";
+import { NAV, type View } from "./Sidebar";
 import { Icon } from "./Icon";
 
 // Schmale Kopfzeile für Android (Portrait), Ersatz für den oberen Teil der
-// Sidebar (Desktop). Übernimmt von der Sidebar NUR das Marken-Logo und den
-// "Jetzt sperren"-Button; die 4 Views wandern in BottomNav, die dauerhafte
-// Datenschutz-Zusicherung ("Daten liegen lokal auf diesem Gerät") entfällt
-// hier ersatzlos -- derselbe Hinweis (ausführlicher) steht bereits in
-// DbInfoPanel unter "Über / Daten", ein Tab, der von der BottomNav aus immer
-// einen Tipp entfernt ist.
+// Sidebar (Desktop). Zeigt nach dem Android-Top-App-Bar-Muster den Titel der
+// aktiven Ansicht (aus der geteilten NAV-Definition, shortLabel) links und
+// den "Jetzt sperren"-Button rechts. Das Marken-Logo ist nach Marios
+// Gerätetest bewusst raus ("würde auch beim Login reichen") -- es hängt jetzt
+// mobil-gated im LockScreen. Die dauerhafte Datenschutz-Zusicherung der
+// Sidebar ("Daten liegen lokal auf diesem Gerät") entfällt mobil ersatzlos --
+// derselbe Hinweis (ausführlicher) steht bereits in DbInfoPanel unter
+// "Über / Daten", ein Tab, der von der BottomNav aus immer einen Tipp
+// entfernt ist.
 interface Props {
+  view: View;
   onLockNow: () => void;
 }
 
-export default function TopBar({ onLockNow }: Props) {
+export default function TopBar({ view, onLockNow }: Props) {
+  const title = NAV.find((n) => n.key === view)?.shortLabel ?? "BR-Log";
   return (
-    <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800">
-      <span className="brand-logo-wrap">
-        <img src={logo} alt="BR-Log" className="h-8 w-auto" />
-      </span>
+    <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white py-1.5 pl-4 pr-2 dark:border-slate-700 dark:bg-slate-800">
+      <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+        {title}
+      </h1>
       <button
         type="button"
         onClick={onLockNow}

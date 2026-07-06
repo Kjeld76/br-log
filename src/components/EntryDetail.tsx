@@ -118,25 +118,29 @@ export default function EntryDetail({
         </div>
       )}
 
-      <div className="flex justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+      {/* Portrait-Feinschliff (Android): 4 Buttons in einer Zeile laufen bei
+          360px Bildbreite über -- flex-wrap lässt die Aktionsgruppe sauber
+          umbrechen (auf Desktop-Breiten reicht der Platz, es bricht dort nie
+          um), min-h-[48px] hebt die Tap-Höhe unter der sm-Grenze an. */}
+      <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
         <button
           type="button"
-          className="rounded px-3 py-2 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+          className="min-h-[48px] rounded px-3 py-2 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 sm:min-h-0"
           onClick={onDelete}
         >
           Löschen
         </button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className={secondaryBtnCls}
+            className={secondaryBtnCls + " min-h-[48px] sm:min-h-0"}
             onClick={onClose}
           >
             Schließen
           </button>
           <button
             type="button"
-            className={secondaryBtnCls}
+            className={secondaryBtnCls + " min-h-[48px] sm:min-h-0"}
             onClick={onDuplicate}
             title="Als Vorlage für heute übernehmen"
           >
@@ -144,7 +148,7 @@ export default function EntryDetail({
           </button>
           <button
             type="button"
-            className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+            className="min-h-[48px] rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 sm:min-h-0"
             onClick={onEdit}
           >
             Bearbeiten

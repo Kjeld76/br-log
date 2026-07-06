@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import logo from "../assets/logo.png";
 import {
   type StartMode,
   setupEncryption,
@@ -15,6 +16,11 @@ interface Props {
   startMessage?: string;
   /** Wird aufgerufen, sobald die DB entsperrt/eingerichtet ist → App freigeben. */
   onUnlocked: () => void;
+  // Android (Marios Gerätetest): das Marken-Logo ist aus der mobilen TopBar
+  // raus ("würde auch beim Login reichen") und hängt stattdessen hier über
+  // der Karte -- NUR mobil, der Desktop-LockScreen bleibt unverändert
+  // (dort zeigt weiterhin die Sidebar das Logo nach dem Entsperren).
+  mobile?: boolean;
 }
 
 /** Ansteigende Sperre: ab dem 3. Fehlversuch 2s,4s,8s … max 30s. */
@@ -23,7 +29,12 @@ function backoffSeconds(failCount: number): number {
   return Math.min(30, 2 ** (failCount - 2));
 }
 
-export default function LockScreen({ startMode, startMessage, onUnlocked }: Props) {
+export default function LockScreen({
+  startMode,
+  startMessage,
+  onUnlocked,
+  mobile = false,
+}: Props) {
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -58,8 +69,23 @@ export default function LockScreen({ startMode, startMessage, onUnlocked }: Prop
   const primaryBtn =
     "w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
 
+  // Logo dekorativ (alt=""), der Produktname steht als h1 "BR-Log" im
+  // jeweiligen Karteninhalt -- Screenreader lesen ihn also weiterhin genau
+  // einmal. brand-logo-wrap hält es im Dunkelmodus auf hellem Badge lesbar
+  // (dasselbe Muster wie in der Desktop-Sidebar).
   const shell = (children: React.ReactNode) => (
-    <div className="flex h-full items-center justify-center bg-slate-50 p-4 dark:bg-slate-900">
+    <div
+      className={
+        mobile
+          ? "flex h-full flex-col items-center justify-center bg-slate-50 p-4 dark:bg-slate-900"
+          : "flex h-full items-center justify-center bg-slate-50 p-4 dark:bg-slate-900"
+      }
+    >
+      {mobile && (
+        <span className="brand-logo-wrap mb-4">
+          <img src={logo} alt="" aria-hidden="true" className="h-10 w-auto" />
+        </span>
+      )}
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         {children}
       </div>

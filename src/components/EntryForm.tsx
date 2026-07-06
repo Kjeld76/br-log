@@ -675,17 +675,25 @@ export default function EntryForm({
         </div>
       )}
 
-      {/* Aktionsleiste */}
+      {/* Aktionsleiste. Portrait-Feinschliff (Android): unter der sm-Grenze
+          füllen die Buttons die volle Breite (flex-1) mit 48px Tap-Höhe --
+          "Speichern" liegt damit groß in der Daumenzone am Formular-Ende
+          (Material-Muster: primäre Aktion unten in voller Breite). Ab sm:
+          exakt wie zuvor rechtsbündig kompakt (sm:flex-none/sm:min-h-0). */}
       <div className="flex justify-end gap-2">
         {onCancel && (
-          <button type="button" className={secondaryBtnCls} onClick={onCancel}>
+          <button
+            type="button"
+            className={secondaryBtnCls + " min-h-[48px] flex-1 sm:min-h-0 sm:flex-none"}
+            onClick={onCancel}
+          >
             Abbrechen
           </button>
         )}
         <button
           type="button"
           disabled={saving}
-          className="rounded bg-sky-600 px-6 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+          className="min-h-[48px] flex-1 rounded bg-sky-600 px-6 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 sm:min-h-0 sm:flex-none"
           onClick={() => handleSave()}
           title="Strg/Cmd+Enter"
         >
