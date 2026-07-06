@@ -185,6 +185,22 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> "$GITHUB_ENV"
           echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> "$GITHUB_ENV"
 
+      # NDK r23+ liefert keine triple-praefigierten binutils mehr
+      # (aarch64-linux-android-ranlib/-ar/-strip); openssl-src ruft sie beim
+      # "make install_dev" aber auf -> Error 127 (command not found).
+      # cargo-ndk wuerde das shimen, "tauri android build" ruft cargo jedoch
+      # direkt auf. Daher Symlink-Shims auf die llvm-Werkzeuge in den PATH --
+      # exakt die Loesung, die den lokalen WSL-Build zum Laufen brachte.
+      - name: NDK-Binutils-Shims fuer openssl-src (ranlib/ar/strip)
+        run: |
+          set -e
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p "$HOME/ndk-shims"
+          for t in ranlib ar strip; do
+            ln -sf "$TOOLCHAIN/llvm-$t" "$HOME/ndk-shims/aarch64-linux-android-$t"
+          done
+          echo "$HOME/ndk-shims" >> "$GITHUB_PATH"
+
       - name: Rust-Toolchain (aarch64-linux-android)
         uses: dtolnay/rust-toolchain@stable
         with:
