@@ -81,8 +81,8 @@ werden alle drei unwiederbringlich gelöscht.** Der einzige Rettungsweg ist
 der **JSON-Export** (App → Daten → „Sicherung & Übertragung" →
 JSON-Backup speichern): schlüsselunabhängig, funktioniert ohne `keyfile.json`
 und ohne Passwort – regelmäßig exportieren und außerhalb des Geräts sichern
-(z. B. Cloud-Speicher, PC). Installations-/Sideload-Hinweise für Android
-folgen in einem späteren Abschnitt.
+(z. B. Cloud-Speicher, PC). Sideload-Hinweise für Android siehe Abschnitt
+*Installation (Android)* unten.
 
 ## Installation (für BR-Kolleginnen und -Kollegen)
 
@@ -139,6 +139,44 @@ sudo apt install libfuse2
 
 Der Datenspeicherort unter Linux ist in beiden Fällen identisch, siehe
 Abschnitt *Datenspeicherort*.
+
+## Installation (Android)
+
+BR-Log steht für Android als **APK zum Sideload** zur Verfügung – siehe die
+**GitHub-Releases-Seite**. Kein Play-Store-Eintrag, die App ist nur für den
+internen BR-Kreis gedacht.
+
+1. Auf der **GitHub-Releases-Seite** den neuesten Release öffnen und die
+   Datei `BR-Log_x.y.z_android-arm64.apk` herunterladen (arm64 deckt alle
+   gängigen Android-Smartphones der letzten Jahre ab).
+2. Beim ersten Installationsversuch fragt Android automatisch nach der
+   Erlaubnis **„Unbekannte Apps installieren"** für die App, mit der die
+   APK geöffnet wurde (Browser oder Dateimanager) – zustimmen. Alternativ
+   vorab manuell unter **Einstellungen → Apps → [Browser/Dateimanager] →
+   Unbekannte Apps installieren**.
+3. Die heruntergeladene APK antippen und installieren.
+
+### Hinweis zu Google Play Protect
+
+Da die APK nicht über den Play Store verteilt wird, warnt **Play Protect**
+beim Installieren möglicherweise vor einer App aus „unbekannter Quelle".
+Das ist bei jeder Sideload-Installation außerhalb des Play Store normal und
+kein Hinweis auf ein Sicherheitsproblem – über **„Trotzdem installieren"**
+fortfahren.
+
+### Updates
+
+Ein Update läuft genauso: die neue APK-Version von der Releases-Seite laden
+und **über die bestehende Installation drüberinstallieren**, nicht vorher
+deinstallieren. Das funktioniert nur, weil alle BR-Log-Versionen mit
+**demselben Signing-Key** signiert sind – Android verweigert die
+Drüberinstallation, sobald sich die Signatur unterscheidet. Die App-Daten
+(Datenbank, `keyfile.json`, `backups/`) bleiben dabei erhalten.
+
+> **⚠️ Vor einer Deinstallation:** Anders als bei Windows/Linux liegen die
+> Daten auf Android in der App-Sandbox und werden bei einer Deinstallation
+> **unwiederbringlich gelöscht** (siehe Abschnitt *Datenspeicherort →
+> Android* oben). Vorher immer den **JSON-Export** sichern.
 
 ## Portable Version (USB-Stick)
 

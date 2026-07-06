@@ -15,6 +15,10 @@ build
 local.properties
 key.properties
 keystore.properties
+# Der eigentliche Signing-Key darf nie ins Repo -- egal wo er landet
+# (CI legt ihn hier direkt ab, siehe .github/workflows/release.yml).
+*.jks
+*.keystore
 
 /.tauri
 /tauri.settings.gradle

@@ -1,3 +1,4 @@
+import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -13,6 +14,22 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release-Signing (Tauri-2-Doku "Android Code Signing"): liest optionale
+// keystore.properties aus dem gen/android-Wurzelverzeichnis (rootProject,
+// NICHT app/ -- analog zur bestehenden .gitignore-Regel dort). Die Datei
+// enthaelt keyAlias/keyPassword/storeFile/storePassword und wird NIE
+// eingecheckt (siehe gen/android/.gitignore). Fehlt sie -- lokale Dev-Builds,
+// WSL, jeder Checkout ohne CI-Secrets --, bleibt der Release-Build wie bisher
+// UNSIGNIERT: es wird dann gar kein "release"-SigningConfig angelegt und der
+// buildType referenziert keinen. Nichts darf brechen, wenn die Datei fehlt.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        FileInputStream(keystorePropertiesFile).use { load(it) }
+    }
+}
+val hasReleaseSigning = keystorePropertiesFile.exists()
+
 android {
     compileSdk = 36
     namespace = "de.betriebsrat.brzeiten"
@@ -23,6 +40,24 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    // Nur angelegt, wenn keystore.properties existiert (siehe hasReleaseSigning
+    // oben) -- sonst bleibt buildTypes.release ohne signingConfig und Gradle
+    // erzeugt eine unsignierte Release-APK wie bisher.
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                // rootProject.file(), NICHT file(): relative storeFile-Pfade
+                // sollen sich auf gen/android/ beziehen (dort liegen
+                // keystore.properties UND der von der CI abgelegte
+                // keystore.jks), nicht auf app/. Absolute Pfade reicht
+                // rootProject.file() unveraendert durch, die bleiben moeglich.
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -43,6 +78,9 @@ android {
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     kotlinOptions {

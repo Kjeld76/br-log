@@ -124,3 +124,134 @@ jobs:
           $zip = "BR-Log-portable-v$ver.zip"
           Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
+
+  # Eigener Job statt Matrix-Eintrag (siehe Kommentar oben bei "desktop"):
+  # Android braucht SDK/NDK/Rust-Cross-Target statt tauri-action und läuft
+  # nur, wenn "desktop" bereits durchgelaufen ist -- der GitHub-Release
+  # existiert dann schon und dieser Job haengt nur die APK als weiteres
+  # Asset an.
+  android:
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Secrets koennen in "if:"-Bedingungen nicht direkt ausgewertet werden
+    # (GitHub-Doku "Using secrets in GitHub Actions" -- Grund: eine fehlende
+    # Secret-Referenz in if: wuerde nicht zuverlaessig als leer erkannt).
+    # Offizielles Muster: Secrets als Job-Env setzen und ueber die Env-Variable
+    # in steps.*.if abfragen. Fehlen die Secrets (z. B. Testlauf ohne
+    # eingerichtete Repo-Secrets), ueberspringen die betroffenen Steps sauber
+    # statt mit einem kryptischen Gradle-/gh-Fehler abzubrechen.
+    #
+    # Benoetigte Repository-Secrets (Settings -> Secrets and variables ->
+    # Actions), siehe README/Projektnotiz fuer die Einrichtung:
+    #   ANDROID_KEYSTORE_B64      -- Keystore-Datei (.jks), base64-kodiert
+    #                                (erzeugt mit `base64 -i keystore.jks`)
+    #   ANDROID_KEY_ALIAS         -- Alias des Signing-Keys im Keystore
+    #   ANDROID_KEY_PASSWORD      -- Passwort des Keys (keyAlias-Passwort)
+    #   ANDROID_KEYSTORE_PASSWORD -- Passwort des Keystores selbst
+    # WICHTIG: Der Keystore ist der einzige Weg, signierte Updates fuer
+    # bereits installierte APKs auszuliefern -- Verlust bedeutet, dass alle
+    # Nutzer die App neu installieren muessen. Keystore + alle vier Werte
+    # zusaetzlich ausserhalb von GitHub sichern (z. B. Passwort-Manager/
+    # Offline-Backup), nicht nur als Secrets hinterlegen.
+    env:
+      HAS_ANDROID_SIGNING: ${{ secrets.ANDROID_KEYSTORE_B64 != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java einrichten (Android-Gradle-Build braucht JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ubuntu-latest bringt bereits ein Android SDK samt cmdline-tools
+      # mit (ANDROID_HOME/ANDROID_SDK_ROOT sind vorgegeben) -- ein
+      # zusaetzliches SDK-Setup-Marketplace-Action ist dafuer nicht noetig
+      # und wuerde nur eine weitere Wartungsabhaengigkeit einziehen. Die NDK
+      # wird trotzdem explizit UND fest gepinnt installiert: GitHub aendert
+      # die auf den Runner-Images vorinstallierte Standard-NDK-Version von
+      # Zeit zu Zeit (z. B. Ankuendigung, dass NDK 26 entfernt und NDK 27
+      # Default wird) -- ohne expliziten Pin wuerde ein Runner-Image-Update
+      # unbemerkt eine andere NDK-Version fuer den Rust-Cross-Build ziehen.
+      - name: Android NDK 25.2.9519653 (gepinnt) installieren
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "ndk;25.2.9519653"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> "$GITHUB_ENV"
+
+      - name: Rust-Toolchain (aarch64-linux-android)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Frontend-Abhängigkeiten installieren
+        run: npm ci
+
+      # Analog zum Kommentar im "desktop"-Job: generate_context!() braucht
+      # den dist/-Ordner beim Kompilieren. "tauri android build" stoesst
+      # beforeBuildCommand zwar selbst an, der explizite Schritt macht die
+      # Abhaengigkeit hier aber unabhaengig davon sichtbar und robust.
+      - name: Frontend bauen
+        run: npm run build
+
+      # Nur wenn ALLE vier Secrets gesetzt sind: Keystore aus Base64 zurueck
+      # in eine Datei dekodieren und keystore.properties generieren, die
+      # app/build.gradle.kts konditional einliest (siehe dortiger
+      # Kommentar). Ablageort bewusst src-tauri/gen/android/ (rootProject),
+      # nicht app/ -- passend zur bestehenden .gitignore-Regel dort. Beide
+      # Dateien sind Build-Artefakte des Runners und verlassen ihn nie.
+      - name: Android-Signing einrichten
+        if: env.HAS_ANDROID_SIGNING == 'true'
+        run: |
+          set -e
+          cd src-tauri/gen/android
+          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_B64 }}" > keystore.jks
+          cat > keystore.properties <<EOF
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          storeFile=keystore.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          EOF
+
+      # Laeuft immer, auch ohne Signing-Secrets: baut dann (dank der
+      # konditionalen Gradle-Logik) eine unsignierte Release-APK. Das haelt
+      # den Job als Baubarkeits-Check nuetzlich, selbst wenn nachher nichts
+      # hochgeladen wird.
+      - name: Android-APK bauen (Release, arm64)
+        run: npx tauri android build --apk --target aarch64
+
+      # Nur mit vorhandenen Secrets hochladen: eine unsignierte APK als
+      # offizielles Release-Asset zu verteilen waere fuer Sideload-Nutzer
+      # eine Falle (spaetere signierte Updates liessen sich dann nicht mehr
+      # ueber die unsignierte Version installieren, siehe README).
+      - name: APK umbenennen und ans Release anhaengen
+        if: env.HAS_ANDROID_SIGNING == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VER="${GITHUB_REF_NAME#v}"
+          # Pfad/Dateiname der arm64-Release-APK bewusst per Glob statt fest
+          # verdrahtet: Name/Unterordner haengen vom AGP-Flavor ("arm64",
+          # aus buildSrc/RustPlugin.kt) ab und sind nicht Teil der stabilen
+          # Tauri-CLI-Oberflaeche.
+          SRC_APK=$(find src-tauri/gen/android/app/build/outputs/apk -iname "*.apk" | head -n1)
+          if [ -z "$SRC_APK" ]; then
+            echo "Keine APK unter app/build/outputs/apk gefunden" >&2
+            exit 1
+          fi
+          DEST_APK="BR-Log_${VER}_android-arm64.apk"
+          cp "$SRC_APK" "$DEST_APK"
+          gh release upload "$GITHUB_REF_NAME" "$DEST_APK" --clobber
