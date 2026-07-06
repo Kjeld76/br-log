@@ -227,7 +227,7 @@ export default function LockScreen({
       {!isUnlock && (
         <p className="rounded bg-sky-50 p-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">
           {isMigrate
-            ? "Die vorhandenen Daten werden jetzt mit SQLCipher (AES-256) verschlüsselt. Eine unverschlüsselte Sicherungskopie wird angelegt; sie kann anschließend unter Über / Daten gelöscht werden."
+            ? "Die vorhandenen Daten werden jetzt mit SQLCipher (AES-256) verschlüsselt. Eine unverschlüsselte Sicherungskopie wird angelegt; sie kann anschließend über das Menü unter Einstellungen → Datenbank gelöscht werden."
             : "Die Datenbank wird mit SQLCipher (AES-256) verschlüsselt. Ohne Passwort bzw. Wiederherstellungs-Code sind die Daten nicht lesbar."}
         </p>
       )}

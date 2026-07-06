@@ -1,57 +1,25 @@
-import DbInfoPanel from "../components/DbInfoPanel";
 import ExportPanel from "../components/ExportPanel";
 import PrintReportPanel from "../components/PrintReportPanel";
 import TagManager from "../components/TagManager";
-import ThemeToggle from "../components/ThemeToggle";
-import SecurityPanel from "../components/SecurityPanel";
 
 interface Props {
   onChanged: () => void; // Tags neu laden + Listen aktualisieren
-  onLockNow: () => void;
-  onAutoLockChanged: (minutes: number) => void;
   reloadKey: number; // Finding 33: hält TagManager nach einem Import synchron
-  // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
-  // ermittelt und als Prop durchgereicht -- Komponenten fragen es nicht
-  // selbst ab. Hier nur zum Durchreichen an DbInfoPanel gebraucht.
-  mobile: boolean;
 }
 
-export default function DataView({
-  onChanged,
-  onLockNow,
-  onAutoLockChanged,
-  reloadKey,
-  mobile,
-}: Props) {
+// Daten-Ansicht: NUR noch Datenfunktionen (Export/Backup, Nachweis-Druck,
+// Schlagwörter). Darstellung/Sicherheit/Datenbank sind ausgezogen ins neue
+// Einstellungen-Modal (AppMenu -> "Einstellungen", siehe SettingsPanel) --
+// diese Ansicht mischte bisher App-Einstellungen mit Datenfunktionen, ohne
+// klare Trennung.
+export default function DataView({ onChanged, reloadKey }: Props) {
   const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-4">
       <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-        Über / Daten
+        Daten
       </h2>
-
-      <section>
-        <h3 className={heading}>Darstellung</h3>
-        <div className="rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm text-slate-600 dark:text-slate-300">
-              Erscheinungsbild
-            </span>
-            <ThemeToggle />
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h3 className={heading}>Sicherheit</h3>
-        <SecurityPanel
-          onLockNow={onLockNow}
-          onAutoLockChanged={onAutoLockChanged}
-        />
-      </section>
-
-      <DbInfoPanel mobile={mobile} />
 
       <section>
         <h3 className={heading}>Export &amp; Backup</h3>

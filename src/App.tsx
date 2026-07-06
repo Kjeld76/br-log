@@ -37,10 +37,18 @@ import DataView from "./views/DataView";
 import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
+import SettingsPanel from "./components/SettingsPanel";
+import AboutPanel from "./components/AboutPanel";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
   | { type: "detail"; entry: EntryFullItem }
+  // Einstellungen/Über BR-Log (aus dem neuen AppMenu, siehe Sidebar/TopBar):
+  // laufen bewusst über denselben Modal-Mechanismus wie Bearbeiten/Detail
+  // (gleiche Fokusfalle, gleiches mobil-/Desktop-Layout) statt einer
+  // Parallelstruktur.
+  | { type: "settings" }
+  | { type: "about" }
   | null;
 
 /**
@@ -314,6 +322,11 @@ export default function App() {
     setFormDirty(false);
     setModal({ type: "form", entry: newEntry(iso ?? todayIso()) });
   };
+  // Einstellungen/Über BR-Log aus dem neuen AppMenu (Sidebar-Fuß/Android-
+  // TopBar) -- beide ohne Dirty-Zustand, requestCloseModal (unten) verwirft
+  // sie deshalb immer direkt, ohne Rückfrage.
+  const openSettings = () => setModal({ type: "settings" });
+  const openAbout = () => setModal({ type: "about" });
   // Detailansicht öffnet den Eintrag VOLLSTÄNDIG (Refetch inkl. secretDetails);
   // Listen-Items tragen das vertrauliche Feld bewusst nicht mehr.
   const openDetail = async (entry: EntryListItem) => {
@@ -531,11 +544,24 @@ export default function App() {
         </div>
       )}
 
-      {mobile && <TopBar view={view} onLockNow={doLock} />}
+      {mobile && (
+        <TopBar
+          view={view}
+          onOpenSettings={openSettings}
+          onOpenAbout={openAbout}
+          onLockNow={doLock}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {!mobile && (
-          <Sidebar view={view} onNavigate={requestNavigate} onLockNow={doLock} />
+          <Sidebar
+            view={view}
+            onNavigate={requestNavigate}
+            onOpenSettings={openSettings}
+            onOpenAbout={openAbout}
+            onLockNow={doLock}
+          />
         )}
 
         <main
@@ -573,9 +599,6 @@ export default function App() {
                 loadAllTags();
                 bump();
               }}
-              onLockNow={doLock}
-              onAutoLockChanged={setAutoLockMin}
-              mobile={mobile}
             />
           )}
         </main>
@@ -606,7 +629,12 @@ export default function App() {
             className={
               mobile
                 ? "min-h-full w-full rounded-none bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
-                : "my-4 w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+                : // "Über BR-Log" ist bewusst ein kleines Modal (siehe Auftrag),
+                  // alle anderen (Formular/Detail/Einstellungen) bleiben beim
+                  // gewohnten max-w-2xl -- selber Container/Mechanismus, nur die
+                  // Breite variiert mit dem Modal-Typ.
+                  "my-4 w-full rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800 " +
+                  (modal.type === "about" ? "max-w-sm" : "max-w-2xl")
             }
             onClick={(e) => e.stopPropagation()}
           >
@@ -643,6 +671,29 @@ export default function App() {
                   onDuplicate={() => handleDuplicate(modal.entry)}
                   onClose={() => setModal(null)}
                 />
+              </>
+            )}
+            {modal.type === "settings" && (
+              <>
+                <h2
+                  id="entry-modal-heading"
+                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  Einstellungen
+                </h2>
+                <SettingsPanel
+                  onLockNow={doLock}
+                  onAutoLockChanged={setAutoLockMin}
+                  mobile={mobile}
+                />
+              </>
+            )}
+            {modal.type === "about" && (
+              <>
+                <h2 id="entry-modal-heading" className="sr-only">
+                  Über BR-Log
+                </h2>
+                <AboutPanel />
               </>
             )}
           </div>

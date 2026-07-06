@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import { getDbPathInfo, backupNow } from "../db/client";
 import { rebuildFts } from "../db/repository";
@@ -26,7 +25,6 @@ export default function DbInfoPanel({ mobile }: Props) {
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [indexBusy, setIndexBusy] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
-  const [version, setVersion] = useState<string | null>(null);
   // Finding 54 (Nebenbefund): copied-Timeout wurde bei jedem Aufruf neu
   // gesetzt, ohne einen vorherigen zu clearen -- zwei schnelle Klicks auf
   // "Pfad kopieren" ließen die Bestätigung vorzeitig verschwinden.
@@ -51,19 +49,6 @@ export default function DbInfoPanel({ mobile }: Props) {
         setError(toUserMessage(e));
       }
     })();
-  }, []);
-
-  // Finding 62: Version stand bisher hart im UI-Text ("BR-Log – Version
-  // 1.2.0") und musste bei jedem Release manuell synchron zu package.json/
-  // Cargo.toml/tauri.conf.json nachgezogen werden. getVersion() liest die in
-  // tauri.conf.json gepflegte Version zur Laufzeit -- kein manueller
-  // Gleichlauf mehr nötig, kein Risiko einer veralteten Anzeige.
-  useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {
-        /* Versionsanzeige ist nur Komfort -- kein Fehlerfall im UI. */
-      });
   }, []);
 
   const removeBackup = async () => {
@@ -175,8 +160,8 @@ export default function DbInfoPanel({ mobile }: Props) {
             : portable
               ? " Diese Version läuft portabel: Datenbank UND keyfile.json liegen zusammen im Ordner BR-Log-Data neben der EXE und wandern mit dem USB-Stick mit."
               : " Für ein manuelles Backup deshalb immer br_zeiten.db UND keyfile.json zusammen sichern (liegen im selben Ordner)."}{" "}
-          Schlüsselunabhängig ist der JSON-Export unter „Daten → Sicherung &amp;
-          Übertragung" – er braucht weder keyfile.json noch Passwort.
+          Schlüsselunabhängig ist der JSON-Export unter „Daten → Export &amp;
+          Backup" – er braucht weder keyfile.json noch Passwort.
         </p>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
           Zusätzlich legt die App bei jedem Entsperren automatisch eine
@@ -256,20 +241,6 @@ export default function DbInfoPanel({ mobile }: Props) {
             {error}
           </p>
         )}
-      </section>
-
-      <section className={card}>
-        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Über
-        </h3>
-        <p className="text-sm text-slate-700 dark:text-slate-200">
-          BR-Log – Version {version ?? "…"}
-        </p>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          © 2026 Mario König. Alle Rechte vorbehalten.
-          <br />
-          Ersteller und Rechteinhaber: Mario König.
-        </p>
       </section>
     </div>
   );

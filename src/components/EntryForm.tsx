@@ -503,7 +503,7 @@ export default function EntryForm({
             <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900/50">
               {pickableTags.length === 0 && (
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Keine Schlagwörter – unter „Über / Daten" anlegen.
+                  Keine Schlagwörter – unter „Daten" anlegen.
                 </span>
               )}
               {pickableTags.map((t) => (

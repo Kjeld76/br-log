@@ -5,8 +5,11 @@ import clock from "../assets/icons/clock.svg";
 import download from "../assets/icons/download.svg";
 import eye from "../assets/icons/eye.svg";
 import folderOpen from "../assets/icons/folder-open.svg";
+import info from "../assets/icons/info.svg";
 import lock from "../assets/icons/lock.svg";
+import moreVertical from "../assets/icons/more-vertical.svg";
 import printer from "../assets/icons/printer.svg";
+import settings from "../assets/icons/settings.svg";
 import upload from "../assets/icons/upload.svg";
 
 // Marken-SVGs (eigener Blau→Grün-Verlauf). Als <img> eingebunden, damit die
@@ -19,8 +22,11 @@ const ICONS = {
   download,
   eye,
   "folder-open": folderOpen,
+  info,
   lock,
+  "more-vertical": moreVertical,
   printer,
+  settings,
   upload,
 } as const;
 
