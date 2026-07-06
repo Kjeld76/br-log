@@ -338,6 +338,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-android-fs",
+ "tauri-plugin-biometric-unlock",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-plugin-os",
@@ -3789,6 +3790,16 @@ dependencies = [
  "tauri-plugin",
  "tauri-plugin-fs",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tauri-plugin-biometric-unlock"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

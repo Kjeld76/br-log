@@ -67,6 +67,19 @@ pub struct Wrap {
     pub wrapped: String, // hex, 48 B (32 B Ciphertext + 16 B Tag)
 }
 
+/// Dritter DEK-Wrap ("bio", Issue #2): die DEK, gekapselt mit einem
+/// AES-256-GCM-Schlüssel aus dem Android-Keystore. ANDERS als pw/rc entsteht
+/// dieser Wrap NICHT in Rust – Ver-/Entschlüsselung passiert ausschließlich im
+/// Kotlin-Plugin nach erfolgreichem BiometricPrompt (CryptoObject-Bindung). Rust
+/// speichert hier nur das undurchsichtige Ergebnis: Ciphertext (inkl. 128-bit-GCM-
+/// Tag) und IV, beide Base64 (Standard-Alphabet, wie vom Kotlin-Teil geliefert –
+/// bewusst KEIN Hex wie bei pw/rc, um ein unnötiges Umkodieren zu vermeiden).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct BioWrap {
+    pub ciphertext: String, // Base64: AES-256-GCM-Ciphertext der DEK (inkl. Tag)
+    pub iv: String,         // Base64: GCM-IV (12 B), vom Keystore beim Enroll erzeugt
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyfileV2 {
@@ -76,6 +89,12 @@ pub struct KeyfileV2 {
     pub wrap_algo: String, // "xchacha20poly1305"
     pub pw: Wrap,
     pub rc: Wrap,
+    // Optionaler bio-Wrap (Issue #2). ABWÄRTSKOMPATIBEL: `default` -> alte
+    // Keyfiles ohne dieses Feld laden als `None`; `skip_serializing_if` -> ohne
+    // aktivierte Biometrie erscheint gar kein `bio`-Schlüssel (kein `bio: null`),
+    // die Datei bleibt byte-identisch zum bisherigen Format. KEIN Versionsbruch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio: Option<BioWrap>,
 }
 
 /// Zustand der keyfile.json, für die Startentscheidung (db_status).
@@ -244,6 +263,9 @@ pub fn build_keyfile(
         wrap_algo: "xchacha20poly1305".into(),
         pw,
         rc,
+        // Frische Keyfiles haben noch keinen bio-Wrap; Biometrie wird erst
+        // nachträglich über bio_enable aktiviert.
+        bio: None,
     })
 }
 
@@ -274,6 +296,41 @@ pub fn rewrap_recovery(
 ) -> Result<(), String> {
     kf.rc = wrap_dek(dek, new_recovery_canonical.as_bytes(), DOMAIN_RC, &kf.kdf)?;
     Ok(())
+}
+
+// ---------- bio-Wrap (Issue #2) ----------
+//
+// WICHTIG zur Erhaltung über pw-/rc-Änderungen: Sowohl crypto_change_password als
+// auch crypto_regenerate_recovery laden das VOLLE KeyfileV2 (inkl. bio-Feld via
+// serde), mutieren nur pw bzw. rc und schreiben es zurück. Der bio-Wrap bleibt
+// dadurch strukturell erhalten. Das ist auch inhaltlich korrekt: Weder eine
+// Passwort-Änderung noch eine Recovery-Neuerzeugung ändern die DEK – der
+// keystore-gebundene bio-Wrap entkapselt danach unverändert dieselbe gültige DEK.
+// Es gibt daher KEINEN Grund, bio in diesen Pfaden zu invalidieren. Ungültig wird
+// der bio-Wrap ausschließlich (a) durch neue Biometrie-Registrierung (Android
+// invalidiert den Keystore-Key -> KEY_INVALIDATED, bio_unlock entfernt den Wrap)
+// oder (b) durch explizites bio_disable.
+
+/// Setzt/ersetzt den bio-Wrap (Ciphertext + IV, beide Base64 vom Kotlin-Plugin).
+// Konsumenten (bio_enable) sind android-gegated -> auf Desktop ungenutzt.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn set_bio_wrap(kf: &mut KeyfileV2, ciphertext_b64: String, iv_b64: String) {
+    kf.bio = Some(BioWrap {
+        ciphertext: ciphertext_b64,
+        iv: iv_b64,
+    });
+}
+
+/// Entfernt den bio-Wrap vollständig (Deaktivierung oder ungültig gewordener Key).
+// Konsumenten (bio_unlock/bio_disable) sind android-gegated -> auf Desktop ungenutzt.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn clear_bio_wrap(kf: &mut KeyfileV2) {
+    kf.bio = None;
+}
+
+/// Ob ein bio-Wrap hinterlegt ist (für bio_status / UI-Anzeige).
+pub fn has_bio_wrap(kf: &KeyfileV2) -> bool {
+    kf.bio.is_some()
 }
 
 /// DEK als SQLCipher-Rohschlüssel-Literal: x'<64 hex>'.
@@ -535,5 +592,110 @@ mod tests {
             _ => panic!("erwartet KeyfileState::V2 nach write_keyfile_atomic"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------- bio-Wrap (Issue #2) ----------
+
+    /// Beispielhafter bio-Wrap (die Werte sind für Rust opak – es speichert nur).
+    fn sample_bio() -> (String, String) {
+        ("Y2lwaGVydGV4dC1iZWlzcGllbA==".to_string(), "aXYtYmVpc3BpZWw=".to_string())
+    }
+
+    #[test]
+    fn bio_wrap_schreiben_laden_und_erhalten_ueber_das_keyfile() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw123456", &recovery, 5).expect("build_keyfile");
+        // Frisch: noch kein bio-Wrap.
+        assert!(!has_bio_wrap(&kf));
+
+        let (ct, iv) = sample_bio();
+        set_bio_wrap(&mut kf, ct.clone(), iv.clone());
+        assert!(has_bio_wrap(&kf));
+
+        let dir = temp_test_dir("bio-roundtrip");
+        write_keyfile_atomic(&dir, &kf).expect("write_keyfile_atomic");
+
+        match classify_keyfile(&dir) {
+            KeyfileState::V2(loaded) => {
+                let bio = loaded.bio.as_ref().expect("bio-Wrap muss nach Reload vorhanden sein");
+                assert_eq!(bio.ciphertext, ct);
+                assert_eq!(bio.iv, iv);
+                // pw/rc bleiben unabhängig vom bio-Feld gültig.
+                let dek2 = unwrap_with_password(&loaded, "pw123456").expect("pw unwrap");
+                assert_eq!(&*dek2, &*dek);
+            }
+            _ => panic!("erwartet KeyfileState::V2"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn altes_keyfile_ohne_bio_feld_laedt_abwaertskompatibel() {
+        // Ein v2-Keyfile ganz OHNE "bio"-Schlüssel (Stand vor Issue #2) muss
+        // unverändert laden und dabei bio == None ergeben.
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let kf = build_keyfile(&dek, "pw123456", &recovery, 5).expect("build_keyfile");
+        let json = serde_json::to_string(&kf).expect("serialize");
+        // Ohne aktivierte Biometrie darf gar kein bio-Feld geschrieben werden.
+        assert!(!json.contains("\"bio\""));
+
+        // Explizit ein „altes" JSON ohne bio-Feld deserialisieren.
+        let reparsed: KeyfileV2 = serde_json::from_str(&json).expect("deserialize");
+        assert!(reparsed.bio.is_none());
+        let dek2 = unwrap_with_password(&reparsed, "pw123456").expect("pw unwrap");
+        assert_eq!(&*dek2, &*dek);
+    }
+
+    #[test]
+    fn passwort_wechsel_erhaelt_bio_wrap() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "altes-passwort", &recovery, 5).expect("build_keyfile");
+        let (ct, iv) = sample_bio();
+        set_bio_wrap(&mut kf, ct.clone(), iv.clone());
+
+        // Passwort-Änderung ändert die DEK nicht -> bio-Wrap bleibt unverändert gültig.
+        rewrap_password(&mut kf, &dek, "neues-passwort").expect("rewrap_password");
+
+        let bio = kf.bio.clone().expect("bio-Wrap muss erhalten bleiben");
+        assert_eq!(bio.ciphertext, ct);
+        assert_eq!(bio.iv, iv);
+        // Neues Passwort entkapselt weiterhin dieselbe DEK.
+        let dek2 = unwrap_with_password(&kf, "neues-passwort").expect("pw unwrap");
+        assert_eq!(&*dek2, &*dek);
+    }
+
+    #[test]
+    fn recovery_neuerzeugung_erhaelt_bio_wrap() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw123456", &recovery, 5).expect("build_keyfile");
+        let (ct, iv) = sample_bio();
+        set_bio_wrap(&mut kf, ct.clone(), iv.clone());
+
+        let new_recovery = gen_recovery_canonical();
+        rewrap_recovery(&mut kf, &dek, &new_recovery).expect("rewrap_recovery");
+
+        let bio = kf.bio.clone().expect("bio-Wrap muss erhalten bleiben");
+        assert_eq!(bio.ciphertext, ct);
+        assert_eq!(bio.iv, iv);
+    }
+
+    #[test]
+    fn clear_bio_wrap_entfernt_feld_und_serialisierung() {
+        let dek = gen_dek();
+        let recovery = gen_recovery_canonical();
+        let mut kf = build_keyfile(&dek, "pw123456", &recovery, 5).expect("build_keyfile");
+        let (ct, iv) = sample_bio();
+        set_bio_wrap(&mut kf, ct, iv);
+        assert!(has_bio_wrap(&kf));
+
+        clear_bio_wrap(&mut kf);
+        assert!(!has_bio_wrap(&kf));
+        // Nach dem Entfernen darf das serialisierte Keyfile kein bio-Feld enthalten.
+        let json = serde_json::to_string(&kf).expect("serialize");
+        assert!(!json.contains("\"bio\""));
     }
 }

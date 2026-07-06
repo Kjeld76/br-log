@@ -4,6 +4,7 @@ import calendar from "../assets/icons/calendar.svg";
 import clock from "../assets/icons/clock.svg";
 import download from "../assets/icons/download.svg";
 import eye from "../assets/icons/eye.svg";
+import fingerprint from "../assets/icons/fingerprint.svg";
 import folderOpen from "../assets/icons/folder-open.svg";
 import info from "../assets/icons/info.svg";
 import lock from "../assets/icons/lock.svg";
@@ -22,6 +23,7 @@ const ICONS = {
   clock,
   download,
   eye,
+  fingerprint,
   "folder-open": folderOpen,
   info,
   lock,

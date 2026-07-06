@@ -50,3 +50,8 @@ base64 = "0.22"
 # bestehenden Desktop-Dialogen (tauri-plugin-dialog).
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-fs = "28.2"
+# Biometrie-Entsperren (Issue #2, B-Core): projektinternes Mobile-Plugin mit
+# Kotlin-Teil (Android-Keystore + BiometricPrompt/CryptoObject). Nur Android --
+# auf Desktop existiert weder das Plugin noch die bio_*-Android-Arme (siehe lib.rs
+# und die desktop-Stubs der bio-Commands).
+tauri-plugin-biometric-unlock = { path = "plugins/biometric-unlock" }

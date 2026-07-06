@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wird per Manifest-Merger in das App-Manifest uebernommen. USE_BIOMETRIC
+     (API 28+) ist die Berechtigung fuer BiometricPrompt; minSdk der App ist 29. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+</manifest>

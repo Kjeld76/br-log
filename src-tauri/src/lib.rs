@@ -768,6 +768,253 @@ fn crypto_migrate(
     Ok(json!({ "recoveryCode": crypto::format_recovery(&recovery) }))
 }
 
+// ---------- Biometrie-Entsperren (Issue #2, B-Core) ----------
+//
+// Dritter DEK-Wrap ("bio") neben pw/rc: die DEK wird von einem AES-256-GCM-
+// Schlüssel im Android-Keystore gekapselt (auth-required, CryptoObject-gebunden).
+// KEIN gespeichertes Passwort, KEIN Klartext-Schlüssel auf Platte. Die eigentliche
+// Krypto passiert im Kotlin-Plugin nach erfolgreichem BiometricPrompt; Rust
+// verifiziert das Passwort (Enroll), transportiert Base64 und pflegt den bio-Wrap
+// im keyfile.
+//
+// Alle Commands sind für ALLE Plattformen registriert (das Frontend ruft
+// plattformagnostisch), aber android-gegated: auf Desktop liefern die Arme einen
+// klaren deutschen Fehler bzw. "nicht verfügbar".
+
+/// Strukturierter bio_unlock-Fehler für die UI-Welle. `kind` erlaubt gezielte
+/// Reaktion: KEY_INVALIDATED -> auf Passwort zurückfallen und Re-Aktivierung
+/// anbieten; Canceled -> stiller Abbruch; Lockout/Unavailable -> Hinweis.
+#[allow(dead_code)] // Desktop-Arm konstruiert nur `Unavailable`; Rest ist Android.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+enum BioCmdError {
+    /// bio-Wrap wurde entfernt (Key ungültig, z. B. neuer Finger registriert).
+    KeyInvalidated { message: String },
+    /// Nutzer hat den BiometricPrompt abgebrochen.
+    Canceled { message: String },
+    /// Zu viele Fehlversuche (Android-Lockout).
+    Lockout { message: String },
+    /// Biometrie nicht verfügbar / nicht aktiviert.
+    Unavailable { message: String },
+    /// Sonstiges (DB-/Keyfile-/unerwarteter Fehler).
+    Other { message: String },
+}
+
+/// bio_status: liest, ob im keyfile ein bio-Wrap hinterlegt ist. Plattform-
+/// unabhängig (reine Dateilogik) – die UI zeigt darüber "aktiviert/deaktiviert".
+#[tauri::command]
+fn bio_status(loc: State<'_, AppDbLocation>) -> JsonValue {
+    let enrolled = match crypto::classify_keyfile(&loc.0.data_dir) {
+        crypto::KeyfileState::V2(kf) => crypto::has_bio_wrap(&kf),
+        _ => false,
+    };
+    json!({ "enrolled": enrolled })
+}
+
+// --- Android-Arme ---
+
+/// Übersetzt einen Plugin-Fehlercode in eine deutsche Meldung (Enroll/Disable).
+#[cfg(target_os = "android")]
+fn bio_plugin_message(e: &tauri_plugin_biometric_unlock::Error) -> String {
+    use tauri_plugin_biometric_unlock::code;
+    match e.code() {
+        Some(code::USER_CANCELED) => "Vorgang abgebrochen.".to_string(),
+        Some(code::LOCKOUT) => {
+            "Zu viele Fehlversuche. Bitte später erneut versuchen oder das Passwort verwenden."
+                .to_string()
+        }
+        Some(code::NO_BIOMETRICS) => "Keine Biometrie verfügbar oder registriert.".to_string(),
+        Some(code::KEY_INVALIDATED) => "Der Fingerabdruck-Schlüssel ist ungültig.".to_string(),
+        _ => e.message(),
+    }
+}
+
+/// bio_available: fragt den Android-Keystore/BiometricManager (BIOMETRIC_STRONG).
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn bio_available(app: tauri::AppHandle) -> JsonValue {
+    use tauri_plugin_biometric_unlock::BiometricUnlockExt;
+    match app.biometric_unlock().is_available() {
+        Ok(r) => json!({ "available": r.available, "reason": r.reason }),
+        Err(e) => json!({ "available": false, "reason": e.message() }),
+    }
+}
+
+/// bio_enable: verifiziert das Passwort (entkapselt die DEK wie crypto_unlock),
+/// lässt den Keystore die DEK kapseln und speichert den bio-Wrap ins keyfile.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn bio_enable(
+    app: tauri::AppHandle,
+    loc: State<'_, AppDbLocation>,
+    password: String,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use tauri_plugin_biometric_unlock::BiometricUnlockExt;
+
+    let password = Zeroizing::new(password);
+    let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
+        crypto::KeyfileState::V2(kf) => kf,
+        crypto::KeyfileState::Corrupt(m) => return Err(format!("Schlüsseldatei beschädigt: {m}")),
+        _ => return Err("Keine verschlüsselte Datenbank vorhanden.".to_string()),
+    };
+    // Passwort verifizieren = DEK entkapseln.
+    let dek = crypto::unwrap_with_password(&kf, &password).map_err(|e| match e {
+        crypto::UnwrapError::WrongSecret => "Falsches Passwort.".to_string(),
+        crypto::UnwrapError::Corrupt(m) => format!("Schlüsseldatei beschädigt: {m}"),
+    })?;
+    // DEK Base64-kodiert an den Keystore übergeben. Unsere Kopie liegt in
+    // Zeroizing; die serde/JNI-Serialisierung erzeugt eine weitere, nicht
+    // kontrollierbare (kurzlebige) Kopie -- best effort, hier dokumentiert.
+    let dek_b64 = Zeroizing::new(STANDARD.encode(&dek[..]));
+    let resp = app
+        .biometric_unlock()
+        .enroll((*dek_b64).clone())
+        .map_err(|e| bio_plugin_message(&e))?;
+    crypto::set_bio_wrap(&mut kf, resp.ciphertext_b64, resp.iv_b64);
+    crypto::write_keyfile_atomic(&loc.0.data_dir, &kf)?;
+    Ok(())
+}
+
+/// bio_unlock: liest den bio-Wrap, lässt den Keystore die DEK per BiometricPrompt
+/// entschlüsseln und öffnet die DB über denselben Pfad wie crypto_unlock. Bei
+/// KEY_INVALIDATED wird der bio-Wrap aus dem keyfile entfernt.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn bio_unlock(
+    app: tauri::AppHandle,
+    state: State<'_, DbState>,
+    loc: State<'_, AppDbLocation>,
+) -> Result<(), BioCmdError> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use tauri_plugin_biometric_unlock::{code, BiometricUnlockExt};
+
+    let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
+        crypto::KeyfileState::V2(kf) => kf,
+        crypto::KeyfileState::Corrupt(m) => {
+            return Err(BioCmdError::Other { message: format!("Schlüsseldatei beschädigt: {m}") })
+        }
+        _ => {
+            return Err(BioCmdError::Other {
+                message: "Keine verschlüsselte Datenbank vorhanden.".to_string(),
+            })
+        }
+    };
+    let bio = match &kf.bio {
+        Some(b) => b.clone(),
+        None => {
+            return Err(BioCmdError::Unavailable {
+                message: "Fingerabdruck-Entsperren ist nicht aktiviert.".to_string(),
+            })
+        }
+    };
+
+    let resp = match app.biometric_unlock().authenticate(bio.ciphertext, bio.iv) {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(match e.code() {
+                Some(code::KEY_INVALIDATED) => {
+                    // bio-Wrap ist wertlos -> aus dem keyfile entfernen. App fällt
+                    // auf Passwort zurück; Re-Aktivierung ist Sache der UI.
+                    crypto::clear_bio_wrap(&mut kf);
+                    let _ = crypto::write_keyfile_atomic(&loc.0.data_dir, &kf);
+                    BioCmdError::KeyInvalidated {
+                        message: "Fingerabdruck-Anmeldung ungültig – bitte Passwort verwenden und neu aktivieren.".to_string(),
+                    }
+                }
+                Some(code::USER_CANCELED) => {
+                    BioCmdError::Canceled { message: "Vorgang abgebrochen.".to_string() }
+                }
+                Some(code::LOCKOUT) => BioCmdError::Lockout {
+                    message: "Zu viele Fehlversuche. Bitte Passwort verwenden.".to_string(),
+                },
+                Some(code::NO_BIOMETRICS) => BioCmdError::Unavailable {
+                    message: "Keine Biometrie verfügbar oder registriert.".to_string(),
+                },
+                _ => BioCmdError::Other { message: e.message() },
+            });
+        }
+    };
+
+    // DEK aus Base64 dekodieren, durchgängig in Zeroizing halten.
+    let dek_b64 = Zeroizing::new(resp.dek_b64);
+    let dek_bytes = Zeroizing::new(STANDARD.decode(dek_b64.as_bytes()).map_err(|e| {
+        BioCmdError::Other { message: format!("Ungültige Schlüsseldaten vom Keystore: {e}") }
+    })?);
+    if dek_bytes.len() != 32 {
+        return Err(BioCmdError::Other {
+            message: "Unerwartete Schlüssellänge vom Keystore.".to_string(),
+        });
+    }
+    let mut dek = Zeroizing::new([0u8; 32]);
+    dek.copy_from_slice(&dek_bytes);
+
+    // Ab hier identisch zu crypto_unlock: DB öffnen + AppState setzen.
+    let conn = open_keyed(&loc.0.db_file, &dek).map_err(|e| BioCmdError::Other {
+        message: match e {
+            CryptoCmdError::WrongSecret => {
+                "Der Fingerabdruck-Schlüssel passt nicht zur Datenbank.".to_string()
+            }
+            CryptoCmdError::Corrupt { message } => format!("Beschädigt: {message}"),
+            CryptoCmdError::DbError { message } => message,
+        },
+    })?;
+    *state
+        .lock()
+        .map_err(|e| BioCmdError::Other { message: e.to_string() })? =
+        Some(KeyedConn { conn, dek });
+    Ok(())
+}
+
+/// bio_disable: löscht den Keystore-Key UND entfernt den bio-Wrap aus dem keyfile.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn bio_disable(app: tauri::AppHandle, loc: State<'_, AppDbLocation>) -> Result<(), String> {
+    use tauri_plugin_biometric_unlock::BiometricUnlockExt;
+
+    app.biometric_unlock()
+        .remove_key()
+        .map_err(|e| bio_plugin_message(&e))?;
+    if let crypto::KeyfileState::V2(mut kf) = crypto::classify_keyfile(&loc.0.data_dir) {
+        if crypto::has_bio_wrap(&kf) {
+            crypto::clear_bio_wrap(&mut kf);
+            crypto::write_keyfile_atomic(&loc.0.data_dir, &kf)?;
+        }
+    }
+    Ok(())
+}
+
+// --- Desktop-Stubs (identische Command-Namen, klarer Fehler) ---
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn bio_available() -> JsonValue {
+    json!({
+        "available": false,
+        "reason": "Fingerabdruck-Entsperren ist nur unter Android verfügbar."
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn bio_enable(_password: String) -> Result<(), String> {
+    Err("Fingerabdruck-Entsperren ist nur unter Android verfügbar.".to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn bio_unlock() -> Result<(), BioCmdError> {
+    Err(BioCmdError::Unavailable {
+        message: "Fingerabdruck-Entsperren ist nur unter Android verfügbar.".to_string(),
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn bio_disable() -> Result<(), String> {
+    Err("Fingerabdruck-Entsperren ist nur unter Android verfügbar.".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Schema idempotent im Frontend (schema.ts). KEINE prüfsummen-Migrationen.
@@ -792,6 +1039,10 @@ pub fn run() {
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
+        // Biometrie-Entsperren (Issue #2, B-Core): projektinternes Plugin mit
+        // Kotlin-Teil (Android-Keystore + BiometricPrompt). Bridge für die
+        // bio_*-Commands unten; die eigentliche Krypto liegt im Keystore.
+        builder = builder.plugin(tauri_plugin_biometric_unlock::init());
     }
     builder
         .plugin(tauri_plugin_opener::init())
@@ -830,7 +1081,12 @@ pub fn run() {
             crypto_set_autolock,
             crypto_migrate,
             delete_plaintext_backup,
-            db_backup
+            db_backup,
+            bio_status,
+            bio_available,
+            bio_enable,
+            bio_unlock,
+            bio_disable
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

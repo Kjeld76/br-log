@@ -186,3 +186,107 @@ export function startIdleTimer(minutes: number, onLock: () => void): () => void 
     for (const ev of events) window.removeEventListener(ev, reset);
   };
 }
+
+// --- Biometrie-Entsperren (Issue #2, B-UI) ---
+//
+// Dünne Wrapper um die drei bio_*-Commands (siehe B-Core, lib.rs): bio_status/
+// bio_available sind infallibel (liefern nie ein Err), bio_enable/bio_disable
+// liefern bei Fehlschlag bereits einen fertigen deutschen Text (Result<(),
+// String>) -- der wird unverändert in eine AppError verpackt (gleiches Muster
+// wie validatePasswordPolicy oben), damit toUserMessage ihn durchreicht statt
+// generisch zu wrappen. unlockWithBiometric liefert bei Fehlschlag einen
+// strukturierten BioError (kind), analog zu UnlockError -- die UI (LockScreen)
+// reagiert je nach kind unterschiedlich (still bei Abbruch, Hinweis bei
+// Lockout/Ungültigkeit, Rückfall auf Passwort bei keyInvalidated).
+
+export interface BioStatus {
+  enrolled: boolean;
+}
+
+export interface BioAvailability {
+  available: boolean;
+  reason?: string | null;
+}
+
+export type BioErrorKind =
+  | "keyInvalidated"
+  | "canceled"
+  | "lockout"
+  | "unavailable"
+  | "other";
+
+/** Strukturierter bio_unlock-Fehler: nur `kind` entscheidet, wie die UI reagiert. */
+export class BioError extends Error {
+  kind: BioErrorKind;
+  constructor(kind: BioErrorKind, message: string) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+function toBioError(e: unknown): BioError {
+  const obj = e as { kind?: string; message?: string } | null;
+  const kind: BioErrorKind =
+    obj?.kind === "keyInvalidated" ||
+    obj?.kind === "canceled" ||
+    obj?.kind === "lockout" ||
+    obj?.kind === "unavailable" ||
+    obj?.kind === "other"
+      ? obj.kind
+      : "other";
+  const message =
+    obj?.message ||
+    (typeof e === "string" ? e : "Fingerabdruck-Entsperren fehlgeschlagen.");
+  return new BioError(kind, message);
+}
+
+function toBioAppError(e: unknown): AppError {
+  return new AppError(
+    typeof e === "string" ? e : e instanceof Error ? e.message : String(e)
+  );
+}
+
+/** Liest, ob im keyfile ein bio-Wrap hinterlegt ist (plattformunabhängig). */
+export function bioStatus(): Promise<BioStatus> {
+  return invoke<BioStatus>("bio_status");
+}
+
+/** Fragt Keystore/BiometricManager ab (Desktop liefert immer available:false). */
+export function bioAvailable(): Promise<BioAvailability> {
+  return invoke<BioAvailability>("bio_available");
+}
+
+/**
+ * Aktiviert Fingerabdruck-Entsperren: das Passwort wird verifiziert (entkapselt
+ * die DEK wie crypto_unlock), der native BiometricPrompt kapselt sie danach neu
+ * im Android-Keystore.
+ */
+export async function bioEnable(password: string): Promise<void> {
+  try {
+    await invoke("bio_enable", { password });
+  } catch (e) {
+    throw toBioAppError(e);
+  }
+}
+
+/**
+ * Entsperrt mit Fingerabdruck (zeigt den nativen BiometricPrompt). Bei Erfolg
+ * ist die DB entsperrt -- exakt derselbe Zustand wie nach unlockWithPassword/
+ * unlockWithRecovery.
+ */
+export async function unlockWithBiometric(): Promise<void> {
+  try {
+    await invoke("bio_unlock");
+  } catch (e) {
+    throw toBioError(e);
+  }
+}
+
+/** Deaktiviert Fingerabdruck-Entsperren: Keystore-Key UND bio-Wrap im keyfile weg. */
+export async function bioDisable(): Promise<void> {
+  try {
+    await invoke("bio_disable");
+  } catch (e) {
+    throw toBioAppError(e);
+  }
+}

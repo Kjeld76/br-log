@@ -1,0 +1,34 @@
+# Projektinternes Tauri-2-Mobile-Plugin (Issue #2, Android-Fingerabdruck-Entsperren).
+#
+# WARUM ein eigenes Plugin statt tauri-plugin-biometric: Das offizielle Plugin
+# zeigt zwar einen BiometricPrompt, kann ihn aber NICHT an einen Keystore-Cipher
+# binden (CryptoObject). Genau diese Bindung ist hier der Sicherheitskern -- die
+# im Android-Keystore liegende AES-256-GCM-Schluessel-Instanz entschluesselt die
+# DEK ausschliesslich nach erfolgreicher Biometrie-Authentifizierung. Deshalb ein
+# eigenes Plugin mit Kotlin-Teil.
+#
+# Der Crate-Name darf KEINE Unterstriche enthalten (tauri-plugin-Build-Konvention)
+# und `links` MUSS gesetzt sein und mit dem Namen uebereinstimmen -- daraus leitet
+# tauri-build den Gradle-Modulnamen (:tauri-plugin-biometric-unlock) und die
+# Einbindung in gen/android/tauri.settings.gradle ab.
+[package]
+name = "tauri-plugin-biometric-unlock"
+version = "0.1.0"
+description = "BR-Log: Android-Entsperren per Fingerabdruck ueber einen Keystore-gebundenen DEK-Wrap"
+authors = ["Mario König <kontakt@koenig-mario.de>"]
+license = "UNLICENSED"
+edition = "2021"
+links = "tauri-plugin-biometric-unlock"
+
+# Eigener (leerer) Workspace-Root: verhindert, dass dieses Path-Crate versehentlich
+# in einen uebergeordneten Cargo-Workspace gezogen wird (src-tauri ist selbst kein
+# Workspace, aber defensiv abgesichert).
+[workspace]
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

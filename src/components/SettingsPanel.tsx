@@ -7,7 +7,7 @@ interface Props {
   onAutoLockChanged: (minutes: number) => void;
   // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
   // ermittelt und als Prop durchgereicht -- hier nur zum Durchreichen an
-  // DbInfoPanel gebraucht.
+  // DbInfoPanel und SecurityPanel (Fingerabdruck-Abschnitt) gebraucht.
   mobile: boolean;
 }
 
@@ -35,7 +35,11 @@ export default function SettingsPanel({ onLockNow, onAutoLockChanged, mobile }: 
 
       <section>
         <h3 className={heading}>Sicherheit</h3>
-        <SecurityPanel onLockNow={onLockNow} onAutoLockChanged={onAutoLockChanged} />
+        <SecurityPanel
+          onLockNow={onLockNow}
+          onAutoLockChanged={onAutoLockChanged}
+          mobile={mobile}
+        />
       </section>
 
       <section>

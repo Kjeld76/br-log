@@ -1,0 +1,14 @@
+"$schema" = "schemas/schema.json"
+
+# Hinweis: Diese Permissions sind vestigial. Das Plugin wird ausschliesslich
+# Rust-seitig ueber run_mobile_plugin aufgerufen (die Webview ruft nie direkt ins
+# Plugin), die App-Capability referenziert dieses Set nicht. Trotzdem vorhanden,
+# weil der tauri-plugin-Build eine gueltige Permission-Struktur erwartet.
+[default]
+description = "Erlaubt die Biometrie-Entsperr-Commands (nur Rust-intern genutzt)."
+permissions = [
+  "allow-is-available",
+  "allow-enroll",
+  "allow-authenticate",
+  "allow-remove-key",
+]
