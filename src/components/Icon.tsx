@@ -11,6 +11,7 @@ import moreVertical from "../assets/icons/more-vertical.svg";
 import printer from "../assets/icons/printer.svg";
 import settings from "../assets/icons/settings.svg";
 import upload from "../assets/icons/upload.svg";
+import x from "../assets/icons/x.svg";
 
 // Marken-SVGs (eigener Blau→Grün-Verlauf). Als <img> eingebunden, damit die
 // gleichlautende Gradient-ID nicht zwischen mehreren Inline-SVGs kollidiert.
@@ -28,6 +29,7 @@ const ICONS = {
   printer,
   settings,
   upload,
+  x,
 } as const;
 
 export type IconName = keyof typeof ICONS;

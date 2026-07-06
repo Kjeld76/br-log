@@ -20,6 +20,7 @@ import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
+import { useBackClose } from "./lib/backClose";
 import {
   type StartMode,
   getStartStatus,
@@ -39,6 +40,7 @@ import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
 import SettingsPanel from "./components/SettingsPanel";
 import AboutPanel from "./components/AboutPanel";
+import { Icon } from "./components/Icon";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
@@ -452,6 +454,22 @@ export default function App() {
     setView(v);
   };
 
+  // Android-Zurück-Taste (mobile-gated): schließt offene Overlays statt die
+  // App zu beenden (Mechanik siehe lib/backClose.ts). Zwei getrennte
+  // Registrierungen -- der Bestätigungsdialog liegt ÜBER dem Modal und
+  // registriert sich später, ist also oben auf dem Handler-Stapel: Zurück
+  // schließt erst die Rückfrage (= Abbrechen), dann das Modal. Der Modal-Weg
+  // läuft bewusst durch requestCloseModal: beim Formular greift der
+  // Dirty-Check und öffnet ggf. die Rückfrage, statt still zu verwerfen.
+  // Das AppMenu-Popover registriert sich selbst (AppMenu.tsx) -- als
+  // zuletzt geöffnetes Element automatisch zuoberst ("Menü vor Modal").
+  // Bei `locked` deregistriert alles: Zurück auf dem LockScreen verlässt
+  // die App wie gewohnt (visibilitychange-Lock bleibt unberührt).
+  useBackClose(mobile && !locked && modal !== null, requestCloseModal);
+  useBackClose(mobile && !locked && confirmDiscard !== null, () =>
+    setConfirmDiscard(null)
+  );
+
   if (startMode === "loading") {
     return (
       <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
@@ -673,14 +691,35 @@ export default function App() {
                 />
               </>
             )}
+            {/* Schließen-Muster der beiden AppMenu-Modals: X-Button im
+                Modal-Kopf (statt Footer-Button wie im Detail-Modal). Grund:
+                Einstellungen ist lang und scrollt -- ein Footer-Button wäre
+                beim Öffnen unsichtbar (unterhalb des Folds), das X oben ist
+                sofort als Ausweg erkennbar. Auf Android (fullscreen-nah, kein
+                sichtbarer Backdrop) ist es der einzige sichtbare Ausweg neben
+                der System-Zurück-Taste. Form/Detail behalten ihre Footer-
+                Aktionsleisten (dort ist Schließen Teil echter Aktionen). Das
+                X ist zudem das erste fokussierbare Element -> die Fokusfalle
+                (useModalFocusTrap) fokussiert es beim Öffnen. */}
             {modal.type === "settings" && (
               <>
-                <h2
-                  id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
-                >
-                  Einstellungen
-                </h2>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2
+                    id="entry-modal-heading"
+                    className="text-base font-semibold text-slate-800 dark:text-slate-100"
+                  >
+                    Einstellungen
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Schließen"
+                    title="Schließen"
+                    onClick={requestCloseModal}
+                    className="-my-2 -mr-2 flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <Icon name="x" size={20} />
+                  </button>
+                </div>
                 <SettingsPanel
                   onLockNow={doLock}
                   onAutoLockChanged={setAutoLockMin}
@@ -690,9 +729,20 @@ export default function App() {
             )}
             {modal.type === "about" && (
               <>
-                <h2 id="entry-modal-heading" className="sr-only">
-                  Über BR-Log
-                </h2>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <h2 id="entry-modal-heading" className="sr-only">
+                    Über BR-Log
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Schließen"
+                    title="Schließen"
+                    onClick={requestCloseModal}
+                    className="-my-2 -mr-2 ml-auto flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <Icon name="x" size={20} />
+                  </button>
+                </div>
                 <AboutPanel />
               </>
             )}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useBackClose } from "../lib/backClose";
 import { Icon } from "./Icon";
 
 type MenuVariant = "sidebar" | "topbar";
@@ -48,6 +49,15 @@ export default function AppMenu({
   useEffect(() => {
     if (open) itemRefs.current[0]?.focus();
   }, [open]);
+
+  // Android-Zurück-Taste schließt das offene Popover statt die App zu
+  // beenden (Mechanik: lib/backClose.ts). Gating über die Variante statt
+  // isAndroid(): die topbar-Variante existiert nur in der Android-TopBar
+  // (App.tsx rendert TopBar ausschließlich bei mobile), die sidebar-Variante
+  // nur auf dem Desktop -- ein eigener mobile-Prop wäre redundant. Kein
+  // Fokus-Rücksprung zum Trigger: die Zurück-Geste ist eine Touch-
+  // Interaktion, Tastaturfokus spielt dabei keine Rolle.
+  useBackClose(variant === "topbar" && open, () => setOpen(false));
 
   const closeAndRefocus = () => {
     setOpen(false);
