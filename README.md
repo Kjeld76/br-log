@@ -262,5 +262,9 @@ Der Build ist bewusst **unsigniert**. Für eine Signatur künftig:
 
 ## Lizenz
 
-Proprietär – alle Rechte vorbehalten. Siehe [LICENSE](LICENSE).
-© 2026 Mario König.
+BR-Log steht unter der **GNU General Public License v3.0 (GPLv3)**.
+© 2026 Mario König. Das heißt: Jeder darf die Software frei nutzen, verändern
+und weitergeben – wer eine veränderte Fassung weitergibt, muss den
+zugehörigen Quellcode ebenfalls unter der GPLv3 offenlegen. Der vollständige
+Lizenztext steht in [LICENSE](LICENSE), Hinweise zu den verwendeten
+Drittanbieter-Komponenten in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

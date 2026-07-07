@@ -34,6 +34,9 @@ export default function AboutPanel() {
       <p className="text-sm text-slate-600 dark:text-slate-300">
         Entwickler: Mario König
       </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Lizenz: GPLv3
+      </p>
       <p className="rounded bg-slate-50 p-2 text-xs text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">
         Alle Daten bleiben ausschließlich lokal auf diesem Gerät – keine
         Cloud, kein Tracking.

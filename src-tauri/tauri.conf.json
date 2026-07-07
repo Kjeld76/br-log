@@ -31,7 +31,7 @@
     "android": {
       "minSdkVersion": 29
     },
-    "copyright": "© 2026 Mario König. Alle Rechte vorbehalten.",
+    "copyright": "© 2026 Mario König",
     "publisher": "Mario König",
     "shortDescription": "Betriebsrats-Zeiterfassung",
     "longDescription": "Lokale Zeiterfassung für Betriebsratsmitglieder mit strikter Trennung von Geschäftsleitungs-Informationen und vertraulichen Tätigkeitsdetails (BR-Geheimnis).",

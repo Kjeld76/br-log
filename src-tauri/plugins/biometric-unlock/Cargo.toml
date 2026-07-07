@@ -16,7 +16,7 @@ name = "tauri-plugin-biometric-unlock"
 version = "0.1.0"
 description = "BR-Log: Android-Entsperren per Fingerabdruck ueber einen Keystore-gebundenen DEK-Wrap"
 authors = ["Mario König <kontakt@koenig-mario.de>"]
-license = "UNLICENSED"
+license = "GPL-3.0-only"
 edition = "2021"
 links = "tauri-plugin-biometric-unlock"
 
