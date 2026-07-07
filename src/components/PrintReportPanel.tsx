@@ -246,6 +246,7 @@ export default function PrintReportPanel() {
                   <td style={cellStyle}>{r.date}</td>
                   <td style={cellStyle}>{r.start}</td>
                   <td style={cellStyle}>{r.end}</td>
+                  <td style={cellStyle}>{r.pause}</td>
                   <td style={cellStyle}>{r.duration}</td>
                   <td style={cellStyle}>{r.tags}</td>
                   <td style={cellStyle}>{r.info}</td>
@@ -262,7 +263,7 @@ export default function PrintReportPanel() {
             </tbody>
             <tfoot>
               <tr>
-                <td style={cellStyle} colSpan={3}>
+                <td style={cellStyle} colSpan={4}>
                   <strong>{model.totalLabel}</strong>
                 </td>
                 <td style={cellStyle}>

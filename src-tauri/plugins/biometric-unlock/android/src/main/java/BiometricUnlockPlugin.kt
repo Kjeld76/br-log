@@ -13,15 +13,20 @@ package de.betriebsrat.brzeiten.biometric
 
 import android.app.Activity
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
+import android.util.Log
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -59,6 +64,20 @@ class BiometricUnlockPlugin(private val activity: Activity) : Plugin(activity) {
         // Deutsche Prompt-Texte laut Sicherheitsdesign.
         private const val PROMPT_TITLE = "BR-Log entsperren"
         private const val PROMPT_NEGATIVE = "Passwort verwenden"
+
+        private const val TAG = "BiometricUnlockPlugin"
+        // B-Fix (Gerätetest, Hypothese "Auto-Prompt-Race"): LockScreen.tsx löst
+        // den BiometricPrompt automatisch aus, sobald document.visibilitychange
+        // die App als sichtbar meldet -- das kann auf Android VOR dem
+        // vollständigen onResume() der Activity feuern (bekanntes Timing-Problem:
+        // BiometricPrompt hängt intern an einer FragmentTransaction, die in einem
+        // nicht-RESUMED Zustand entweder verworfen wird oder das System-Overlay
+        // über einer noch nicht wieder gezeichneten WebView "einfriert" -- passt zu
+        // Marios Symptom aus dem Gerätetest). Statt zu hängen: kurz (max. ~750ms in
+        // 150ms-Schritten) auf RESUMED warten, danach sauber abbrechen (wie ein
+        // stiller Nutzer-Abbruch) statt unbegrenzt zu blockieren.
+        private const val RESUME_WAIT_RETRIES = 5
+        private const val RESUME_WAIT_DELAY_MS = 150L
     }
 
     // ---------- Command: isAvailable ----------
@@ -196,7 +215,40 @@ class BiometricUnlockPlugin(private val activity: Activity) : Plugin(activity) {
         onAbort: (() -> Unit)? = null,
         onSuccess: (Cipher) -> Unit,
     ) {
+        showPromptWhenResumed(cipher, subtitle, invoke, onAbort, onSuccess, RESUME_WAIT_RETRIES)
+    }
+
+    // Siehe Kommentar bei RESUME_WAIT_RETRIES: wartet auf RESUMED, bevor der
+    // eigentliche BiometricPrompt gezeigt wird. attemptsLeft zaehlt zusaetzliche
+    // Versuche NACH dem ersten Check herunter.
+    private fun showPromptWhenResumed(
+        cipher: Cipher,
+        subtitle: String,
+        invoke: Invoke,
+        onAbort: (() -> Unit)?,
+        onSuccess: (Cipher) -> Unit,
+        attemptsLeft: Int,
+    ) {
         activity.runOnUiThread {
+            val lifecycleOwner = activity as? LifecycleOwner
+            val resumed = lifecycleOwner == null ||
+                lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (!resumed) {
+                if (attemptsLeft > 0) {
+                    Log.d(TAG, "Activity noch nicht RESUMED -- BiometricPrompt wartet ($attemptsLeft Versuche übrig).")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        showPromptWhenResumed(cipher, subtitle, invoke, onAbort, onSuccess, attemptsLeft - 1)
+                    }, RESUME_WAIT_DELAY_MS)
+                } else {
+                    Log.w(TAG, "Activity nach mehreren Versuchen weiter nicht RESUMED -- Auto-Prompt wird still abgebrochen.")
+                    onAbort?.invoke()
+                    // USER_CANCELED statt eines neuen Codes: verhaelt sich in der
+                    // UI (LockScreen.tsx) wie ein stiller Abbruch -- kein
+                    // Fehlertext beim Nutzer, der manuelle Button bleibt nutzbar.
+                    invoke.reject("Activity war nicht im Vordergrund (Auto-Prompt-Race).", "USER_CANCELED")
+                }
+                return@runOnUiThread
+            }
             try {
                 val fragmentActivity = activity as FragmentActivity
                 val executor = ContextCompat.getMainExecutor(activity)

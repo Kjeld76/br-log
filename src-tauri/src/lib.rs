@@ -160,7 +160,7 @@ fn db_batch(state: State<'_, DbState>, statements: Vec<BatchStatement>) -> Resul
 // ---------- Schema-Migrationen (PRAGMA user_version) ----------
 
 /// Höchste vom Code unterstützte Schema-Version.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// Migration 1: Schema-Härtung eines v0-Bestands (Tabellen-Neubau nach dem
 /// SQLite-Standardverfahren, da SQLite kein ADD CONSTRAINT kennt):
@@ -254,6 +254,19 @@ ALTER TABLE objections_new RENAME TO objections;
 CREATE INDEX idx_objections_entry ON objections(entry_id);
 "#;
 
+/// Migration 2 (Pause bei Von/Bis-Erfassung): neue Spalte `pause_minutes` an
+/// `entries`. Reines additives ALTER TABLE ADD COLUMN statt Tabellen-Neubau
+/// (anders als Migration 1) -- SQLite erlaubt seit 3.25.0 auch eine CHECK-
+/// Klausel in ADD COLUMN, solange sie sich nur auf die neue Spalte selbst
+/// bezieht (kein Spaltenvergleich, keine Fremdspalten). Bestandszeilen
+/// erhalten automatisch den DEFAULT 0 (erfüllt die CHECK trivial), künftige
+/// INSERT/UPDATE-Versuche mit negativer Pause werden von der DB abgelehnt --
+/// zusätzlich zur TS-seitigen Validierung in time.ts/EntryForm.tsx (Rust/TS
+/// als zwei unabhängige Verteidigungslinien, wie schon bei duration_minutes
+/// in Migration 1).
+const MIGRATE_V2_SQL: &str =
+    "ALTER TABLE entries ADD COLUMN pause_minutes INTEGER NOT NULL DEFAULT 0 CHECK (pause_minutes >= 0);";
+
 fn user_version(conn: &Connection) -> Result<i64, String> {
     conn.query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())
@@ -300,6 +313,15 @@ fn run_migrations(conn: &mut Connection) -> Result<i64, String> {
         // Fremdschlüssel wieder aktivieren – unabhängig von Erfolg/Fehler.
         let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
         res?;
+    }
+    if version < 2 {
+        // Reines ADD COLUMN -- kein Tabellen-Neubau, kein FK-Aus/An nötig.
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATE_V2_SQL)
+            .map_err(|e| format!("Migration 2 fehlgeschlagen: {e}"))?;
+        tx.execute_batch("PRAGMA user_version=2;")
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
     Ok(SCHEMA_VERSION)
 }
@@ -1096,7 +1118,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod migration_tests {
-    use super::{run_migrations, SCHEMA_VERSION};
+    use super::{run_migrations, MIGRATE_V1_SQL, SCHEMA_VERSION};
     use rusqlite::Connection;
 
     /// v0-Basisschema (Stand v1.2.0), wie es das Frontend via schema.ts anlegt.
@@ -1147,7 +1169,11 @@ mod migration_tests {
 
         let v = run_migrations(&mut conn).unwrap();
         assert_eq!(v, SCHEMA_VERSION);
-        assert_eq!(count(&conn, "PRAGMA user_version"), 1);
+        // run_migrations läuft von v0 immer bis zur höchsten bekannten Version
+        // durch (aktuell 2, inkl. Migration 2/pause_minutes) -- SCHEMA_VERSION
+        // statt eines hartkodierten Literals hält diese Zeile wartungsfrei,
+        // falls künftig weitere Migrationen dazukommen.
+        assert_eq!(count(&conn, "PRAGMA user_version"), SCHEMA_VERSION);
 
         // NULL-id-Zeile verworfen.
         assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
@@ -1213,8 +1239,81 @@ mod migration_tests {
     fn downgrade_wird_abgelehnt() {
         let mut conn = Connection::open_in_memory().unwrap();
         seed_v0(&conn);
-        conn.execute_batch("PRAGMA user_version=2;").unwrap();
+        // Ein user_version-Stand JENSEITS der vom Code unterstützten Version
+        // (SCHEMA_VERSION + 1) simuliert eine mit einer neueren App-Version
+        // erzeugte DB -- unabhängig davon, auf welchem Stand SCHEMA_VERSION
+        // gerade steht.
+        conn.execute_batch(&format!("PRAGMA user_version={};", SCHEMA_VERSION + 1))
+            .unwrap();
         assert!(run_migrations(&mut conn).is_err());
+    }
+
+    // ---------- Migration 2: pause_minutes (additives ALTER TABLE ADD COLUMN) ----------
+
+    #[test]
+    fn migriert_v1_auf_v2_pause_minutes_additiv_mit_default_0() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        // Simuliert eine reale Bestands-DB, die bereits auf v1 migriert wurde,
+        // BEVOR es Migration 2 (pause_minutes) gab -- nicht über run_migrations
+        // (das würde in einem Rutsch bis zur aktuellen SCHEMA_VERSION laufen),
+        // sondern durch direktes Anwenden von genau MIGRATE_V1_SQL + Stempeln
+        // auf user_version=1.
+        conn.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
+        conn.execute_batch(MIGRATE_V1_SQL).unwrap();
+        conn.execute_batch("PRAGMA user_version=1; PRAGMA foreign_keys=ON;")
+            .unwrap();
+        assert_eq!(count(&conn, "PRAGMA user_version"), 1);
+
+        let v = run_migrations(&mut conn).unwrap();
+
+        assert_eq!(v, SCHEMA_VERSION);
+        assert_eq!(count(&conn, "PRAGMA user_version"), 2);
+        // Bestandsdaten (aus seed_v0/Migration 1) bleiben unangetastet.
+        assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
+        assert_eq!(
+            count(&conn, "SELECT duration_minutes FROM entries WHERE id='e1'"),
+            60
+        );
+        // Neue Spalte pause_minutes: Default 0 für alle Bestandszeilen.
+        assert_eq!(
+            count(&conn, "SELECT pause_minutes FROM entries WHERE id='e1'"),
+            0
+        );
+        assert_eq!(
+            count(&conn, "SELECT pause_minutes FROM entries WHERE id='e2'"),
+            0
+        );
+    }
+
+    #[test]
+    fn check_pause_minutes_lehnt_negativwerte_ab_bei_insert_und_update() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+
+        // CHECK(pause_minutes >= 0) lehnt einen negativen Wert beim INSERT ab.
+        assert!(conn
+            .execute(
+                "INSERT INTO entries (id,date,duration_minutes,pause_minutes,created_at,updated_at) VALUES ('x','2026-01-01',60,-1,'t','t')",
+                [],
+            )
+            .is_err());
+
+        // ... und ebenso beim UPDATE einer Bestandszeile (Default 0 aus der
+        // Migration ist selbst kein Verstoß, ein nachträglicher negativer
+        // Wert wird trotzdem abgelehnt).
+        assert!(conn
+            .execute("UPDATE entries SET pause_minutes = -5 WHERE id='e1'", [])
+            .is_err());
+
+        // Positive Werte bleiben uneingeschränkt erlaubt.
+        conn.execute("UPDATE entries SET pause_minutes = 15 WHERE id='e1'", [])
+            .unwrap();
+        assert_eq!(
+            count(&conn, "SELECT pause_minutes FROM entries WHERE id='e1'"),
+            15
+        );
     }
 }
 

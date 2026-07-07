@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  addMinutesToTime,
   computeDuration,
   durationFromRange,
   durationInputToMinutes,
@@ -85,6 +84,53 @@ describe("computeDuration", () => {
       overnight: false,
     });
   });
+
+  describe("mit Pause (pauseMinutes)", () => {
+    it("zieht die Pause von der Brutto-Spanne ab (Netto-Dauer)", () => {
+      expect(computeDuration("08:00", "16:00", 30)).toEqual({
+        minutes: 450, // 480 - 30
+        error: null,
+        overnight: false,
+      });
+    });
+
+    it("verhält sich ohne Pause-Argument wie zuvor (Default 0, Rückwärtskompatibilität)", () => {
+      expect(computeDuration("08:00", "16:00")).toEqual({
+        minutes: 480,
+        error: null,
+        overnight: false,
+      });
+    });
+
+    it("zieht die Pause auch bei einer Über-Mitternacht-Schicht ab", () => {
+      expect(computeDuration("22:00", "06:00", 60)).toEqual({
+        minutes: 420, // 480 - 60
+        error: null,
+        overnight: true,
+      });
+    });
+
+    it("liefert einen Fehler, wenn die Pause mindestens so lang ist wie die Schicht", () => {
+      expect(computeDuration("08:00", "09:00", 60)).toEqual({
+        minutes: null,
+        error: "Die Pause ist länger als die Schicht.",
+        overnight: false,
+      });
+      expect(computeDuration("08:00", "09:00", 90)).toEqual({
+        minutes: null,
+        error: "Die Pause ist länger als die Schicht.",
+        overnight: false,
+      });
+    });
+
+    it("klemmt eine negative Pause defensiv auf 0, statt einen Fehler zu werfen", () => {
+      expect(computeDuration("08:00", "16:00", -30)).toEqual({
+        minutes: 480,
+        error: null,
+        overnight: false,
+      });
+    });
+  });
 });
 
 describe("durationInputToMinutes", () => {
@@ -104,21 +150,6 @@ describe("durationInputToMinutes", () => {
     expect(durationInputToMinutes("1:60")).toBeNull(); // Minute > 59
     expect(durationInputToMinutes("abc")).toBeNull();
     expect(durationInputToMinutes("1:2:3")).toBeNull();
-  });
-});
-
-describe("addMinutesToTime", () => {
-  it("addiert Minuten innerhalb eines Tages", () => {
-    expect(addMinutesToTime("08:00", 30)).toBe("08:30");
-    expect(addMinutesToTime("08:45", 30)).toBe("09:15");
-  });
-
-  it("rollt über Mitternacht", () => {
-    expect(addMinutesToTime("23:30", 45)).toBe("00:15");
-  });
-
-  it("liefert null bei ungültiger Startzeit", () => {
-    expect(addMinutesToTime("abc", 30)).toBeNull();
   });
 });
 

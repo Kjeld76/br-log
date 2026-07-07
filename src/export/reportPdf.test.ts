@@ -18,6 +18,7 @@ function entry(overrides: Partial<EntryListItem> = {}): EntryListItem {
     startTime: "08:00",
     endTime: "10:00",
     durationMinutes: 120,
+    pauseMinutes: 0,
     infoForManagement: "BR-Sitzung",
     hadPlannedShift: false,
     shiftCompensationNote: "",
@@ -144,6 +145,21 @@ describe("buildReportModel", () => {
     });
 
     expect(model.name).toBe("—");
+  });
+
+  it("übernimmt pauseMinutes je Zeile als String-Spalte (Konsistenz mit CSV-Export)", () => {
+    const entries = [
+      entry({ id: "a", date: "2026-06-01", pauseMinutes: 30 }),
+      entry({ id: "b", date: "2026-06-02", pauseMinutes: 0 }),
+    ];
+
+    const model = buildReportModel(entries, joinTags, {
+      name: "Mario König",
+      from: "",
+      to: "",
+    });
+
+    expect(model.rows.map((r) => r.pause)).toEqual(["30", "0"]);
   });
 
   it("markiert die geplante Schicht je Zeile als ja/nein", () => {

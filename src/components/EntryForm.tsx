@@ -4,7 +4,6 @@ import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry, listEntries } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
 import {
-  addMinutesToTime,
   computeDuration,
   durationInputToMinutes,
   minutesToHhmm,
@@ -36,7 +35,6 @@ interface Props {
 
 type Mode = "range" | "duration";
 
-const QUICK_MINUTES = [15, 30, 45, 60, 90, 120];
 const LAST_DEFAULTS_KEY = "brlog.lastEntryDefaults";
 
 interface LastDefaults {
@@ -78,6 +76,19 @@ function initialDurationText(entry: TimeEntry, mode: Mode): string {
     : "";
 }
 
+/** Freies Zahlenfeld (keine H:MM-Eingabe): leer/ungültig/negativ -> 0. */
+function parsePauseMinutes(input: string): number {
+  const v = input.trim();
+  if (v === "") return 0;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function initialPauseText(entry: TimeEntry): string {
+  return entry.pauseMinutes > 0 ? String(entry.pauseMinutes) : "";
+}
+
 export default function EntryForm({
   entry,
   tags,
@@ -91,6 +102,7 @@ export default function EntryForm({
   const [durationText, setDurationText] = useState(() =>
     initialDurationText(entry, initialMode(entry))
   );
+  const [pauseText, setPauseText] = useState(() => initialPauseText(entry));
   const [error, setError] = useState<string | null>(null);
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -107,6 +119,7 @@ export default function EntryForm({
   const startId = `${idPrefix}-start`;
   const endId = `${idPrefix}-end`;
   const durationId = `${idPrefix}-duration`;
+  const pauseId = `${idPrefix}-pause`;
   const infoId = `${idPrefix}-info`;
   const secretId = `${idPrefix}-secret`;
   const shiftNoteId = `${idPrefix}-shift-note`;
@@ -114,7 +127,12 @@ export default function EntryForm({
   // Ausgangszustand für den Dirty-Check (Backdrop-Klick, Abbrechen, Escape,
   // View-Wechsel). Bleibt über die Lebensdauer der Komponente unverändert.
   const baselineRef = useRef(
-    JSON.stringify({ draft: entry, mode: initialMode(entry), durationText: initialDurationText(entry, initialMode(entry)) })
+    JSON.stringify({
+      draft: entry,
+      mode: initialMode(entry),
+      durationText: initialDurationText(entry, initialMode(entry)),
+      pauseText: initialPauseText(entry),
+    })
   );
   const lastDefaults = useMemo(() => loadLastDefaults(), []);
 
@@ -132,13 +150,14 @@ export default function EntryForm({
   // Dirty-Zustand + Entwurf nach oben melden (Draft-Persistenz, Wechsel-Sperre).
   useEffect(() => {
     const dirty =
-      JSON.stringify({ draft, mode, durationText }) !== baselineRef.current;
+      JSON.stringify({ draft, mode, durationText, pauseText }) !==
+      baselineRef.current;
     onDraftChange?.(draft, dirty);
     // Ein Überlappungs-/Wertehinweis von vorher gilt nicht mehr, sobald sich
     // die Zeitangaben ändern.
     setOverlapWarning(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, mode, durationText]);
+  }, [draft, mode, durationText, pauseText]);
 
   const toggleTag = (id: string) => patch({ tagIds: toggleId(draft.tagIds, id) });
 
@@ -147,7 +166,11 @@ export default function EntryForm({
   // Im Picker neu zuweisbar sind nur aktive Schlagwörter.
   const pickableTags = tags.filter((t) => !t.archived);
 
-  const rangeDuration = computeDuration(draft.startTime, draft.endTime);
+  const rangeDuration = computeDuration(
+    draft.startTime,
+    draft.endTime,
+    draft.pauseMinutes
+  );
   const durationPreviewMinutes =
     mode === "range" ? rangeDuration.minutes : durationInputToMinutes(durationText);
   const durationPreviewError =
@@ -172,7 +195,11 @@ export default function EntryForm({
     if (m === mode) return;
     setMode(m);
     if (m === "duration") {
-      patch({ startTime: null, endTime: null, durationMinutes: 0 });
+      // Pause ist nur bei Von/Bis-Erfassung sinnvoll (bei direkter Dauer-
+      // Eingabe gibt man bereits netto ein) -- Feld wird ausgeblendet und der
+      // Wert mit auf 0 zurückgesetzt.
+      setPauseText("");
+      patch({ startTime: null, endTime: null, durationMinutes: 0, pauseMinutes: 0 });
     } else {
       setDurationText("");
       patch({ durationMinutes: 0 });
@@ -188,17 +215,17 @@ export default function EntryForm({
     patch({ durationMinutes: mins ?? 0 });
   };
 
-  const nowHhmm = () => format(new Date(), "HH:mm");
-
-  const applyQuickMinutes = (mins: number) => {
-    if (mode === "duration") {
-      setDurationTextAndDraft(String(mins));
-      return;
-    }
-    const start = draft.startTime ?? nowHhmm();
-    const end = addMinutesToTime(start, mins);
-    patch({ startTime: start, endTime: end ?? draft.endTime });
+  // Pause ist eine freie Zahleneingabe (kein H:MM, keine Schnellwahl) --
+  // leer/ungültig/negativ wird als 0 behandelt. Live im Draft mitgeführt
+  // (nicht erst beim Speichern berechnet), damit die Dauer-Vorschau unten
+  // sofort die Netto-Dauer zeigt und ein Neustart-Draft (QuickEntryView) den
+  // Wert korrekt wiederherstellt.
+  const setPauseTextAndDraft = (v: string) => {
+    setPauseText(v);
+    patch({ pauseMinutes: parsePauseMinutes(v) });
   };
+
+  const nowHhmm = () => format(new Date(), "HH:mm");
 
   // Warnt (nicht-blockierend) vor Überschneidungen mit bestehenden Einträgen
   // desselben oder des Vortags – inkl. Über-Mitternacht-Schichten des Vortags.
@@ -224,17 +251,25 @@ export default function EntryForm({
     let finalStart: string | null = null;
     let finalEnd: string | null = null;
     let finalMinutes: number;
+    // Pause ist nur bei Von/Bis-Erfassung sinnvoll -- bei direkter
+    // Dauer-Eingabe gibt man bereits die Netto-Dauer ein, daher immer 0.
+    let finalPause = 0;
 
     if (mode === "range") {
       if (!draft.startTime || !draft.endTime)
         return setError("Bitte Von und Bis angeben.");
-      const duration = computeDuration(draft.startTime, draft.endTime);
+      const duration = computeDuration(
+        draft.startTime,
+        draft.endTime,
+        draft.pauseMinutes
+      );
       if (duration.error) return setError(duration.error);
       if (duration.minutes === null)
         return setError("Die Dauer muss größer als 0 sein.");
       finalStart = draft.startTime;
       finalEnd = draft.endTime;
       finalMinutes = duration.minutes;
+      finalPause = draft.pauseMinutes;
     } else {
       const mins = durationInputToMinutes(durationText);
       if (mins === null)
@@ -269,6 +304,7 @@ export default function EntryForm({
         startTime: finalStart,
         endTime: finalEnd,
         durationMinutes: finalMinutes,
+        pauseMinutes: finalPause,
       };
       await saveEntry(toSave);
       saveLastDefaults({
@@ -407,6 +443,22 @@ export default function EntryForm({
                   onChange={(e) => patch({ endTime: e.target.value || null })}
                 />
               </div>
+              <div>
+                <label htmlFor={pauseId} className={labelCls}>
+                  Pause (Minuten)
+                </label>
+                <input
+                  id={pauseId}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  placeholder="0"
+                  className={field}
+                  value={pauseText}
+                  onChange={(e) => setPauseTextAndDraft(e.target.value)}
+                />
+              </div>
             </>
           ) : (
             <div className="sm:col-span-2">
@@ -424,26 +476,6 @@ export default function EntryForm({
               />
             </div>
           )}
-        </div>
-
-        {/* Schnellwahl. Portrait-Feinschliff (Android): min-h-[44px] hebt die
-            Tap-Größe der häufig genutzten Minuten-Chips unter der sm-Grenze
-            an (inline-flex+items-center zentriert den Text dabei weiterhin
-            wie im Standard-Button-Rendering); ab sm: exakt wie zuvor. */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            Schnellwahl:
-          </span>
-          {QUICK_MINUTES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-3 py-0.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 sm:min-h-0 sm:px-2.5"
-              onClick={() => applyQuickMinutes(m)}
-            >
-              {m} Min
-            </button>
-          ))}
         </div>
 
         <div>

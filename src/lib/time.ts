@@ -36,10 +36,18 @@ export interface DurationResult {
  * (Folgetag, +24h) statt als Fehler – Nachtschichten sind bei BR-Zeiten Alltag.
  * Nur Bis === Von (Nullzeitraum) bleibt ein Fehler, da dort keine sinnvolle
  * Annahme möglich ist.
+ *
+ * `pauseMinutes` (optional, Default 0) wird von der Brutto-Spanne abgezogen --
+ * `minutes` ist damit bereits die NETTO-Dauer (= abgerechnete BR-Zeit). Eine
+ * Pause >= Brutto-Spanne ist kein sinnvoller Zustand (Netto wäre <= 0) und
+ * liefert stattdessen einen eigenen Fehler statt einer negativen/nullen Dauer.
+ * Negative Eingaben werden defensiv auf 0 geklemmt (die UI verhindert das
+ * bereits über ein Zahlenfeld mit min=0, s. EntryForm.tsx).
  */
 export function computeDuration(
   start: string | null,
-  end: string | null
+  end: string | null,
+  pauseMinutes = 0
 ): DurationResult {
   const s = parseTimeToMinutes(start);
   const e = parseTimeToMinutes(end);
@@ -48,7 +56,16 @@ export function computeDuration(
     return { minutes: null, error: "Die Dauer muss größer als 0 sein.", overnight: false };
   }
   const overnight = e < s;
-  return { minutes: durationFromRange(start, end), error: null, overnight };
+  const gross = durationFromRange(start, end)!; // s/e beide bekannt -> nie null
+  const pause = pauseMinutes > 0 ? Math.floor(pauseMinutes) : 0;
+  if (pause >= gross) {
+    return {
+      minutes: null,
+      error: "Die Pause ist länger als die Schicht.",
+      overnight,
+    };
+  }
+  return { minutes: gross - pause, error: null, overnight };
 }
 
 /** Minuten -> "H:MM". */
@@ -109,17 +126,6 @@ export function durationInputToMinutes(input: string): number | null {
   }
   if (/^\d+$/.test(v)) return Number(v);
   return null;
-}
-
-/** HH:mm + Minuten (rollt über Mitternacht, Ergebnis bleibt 00:00-23:59). */
-export function addMinutesToTime(hhmm: string, minutes: number): string | null {
-  const base = parseTimeToMinutes(hhmm);
-  if (base === null) return null;
-  const dayLen = 24 * 60;
-  const total = ((base + minutes) % dayLen + dayLen) % dayLen;
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 export interface DatedRange {

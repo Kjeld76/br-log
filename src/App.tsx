@@ -403,6 +403,7 @@ export default function App() {
       startTime: source.startTime,
       endTime: source.endTime,
       durationMinutes: source.durationMinutes,
+      pauseMinutes: source.pauseMinutes,
       infoForManagement: source.infoForManagement,
       secretDetails: source.secretDetails,
       hadPlannedShift: source.hadPlannedShift,

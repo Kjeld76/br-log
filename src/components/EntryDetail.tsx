@@ -42,6 +42,7 @@ export default function EntryDetail({
             ? `${entry.startTime} – ${entry.endTime}`
             : "—"
         )}
+        {entry.pauseMinutes > 0 && row("Pause", `${entry.pauseMinutes} Min`)}
         {row("Dauer", formatDurationFull(entry.durationMinutes))}
         {row(
           "Schlagwörter",

@@ -15,7 +15,8 @@ export interface TimeEntryBase {
   date: string; // YYYY-MM-DD (tagesgenau)
   startTime: string | null; // HH:mm, optional
   endTime: string | null; // HH:mm, optional
-  durationMinutes: number; // abgerechnete Dauer in Minuten (Kernwert)
+  durationMinutes: number; // abgerechnete (NETTO-)Dauer in Minuten (Kernwert)
+  pauseMinutes: number; // Pause in Minuten, nur bei Von/Bis-Erfassung relevant (0 bei direkter Dauer-Eingabe); bereits von durationMinutes abgezogen
   infoForManagement: string; // Was die Geschäftsleitung erfahren darf
   hadPlannedShift: boolean; // geplante Schicht zu der Zeit?
   shiftCompensationNote: string; // Freitext, nur relevant wenn hadPlannedShift = false

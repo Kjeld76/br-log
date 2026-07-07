@@ -22,6 +22,7 @@ interface EntryListRow {
   start_time: string | null;
   end_time: string | null;
   duration_minutes: number;
+  pause_minutes: number;
   info_for_management: string;
   had_planned_shift: number;
   shift_compensation_note: string;
@@ -39,7 +40,7 @@ interface EntryRow extends EntryListRow {
 // secret_details NICHT (Vertraulichkeitsschutz strukturell verankert), der
 // Voll-Pfad (Detail/Backup/Voll-Export) lädt es zusätzlich.
 const LIST_ENTRY_COLUMNS =
-  "e.id, e.date, e.start_time, e.end_time, e.duration_minutes, " +
+  "e.id, e.date, e.start_time, e.end_time, e.duration_minutes, e.pause_minutes, " +
   "e.info_for_management, e.had_planned_shift, e.shift_compensation_note, " +
   "e.is_compensation, e.created_at, e.updated_at";
 const FULL_ENTRY_COLUMNS = LIST_ENTRY_COLUMNS + ", e.secret_details";
@@ -70,6 +71,7 @@ export function newEntry(dateIso: string): TimeEntry {
     startTime: null,
     endTime: null,
     durationMinutes: 0,
+    pauseMinutes: 0,
     infoForManagement: "",
     secretDetails: "",
     hadPlannedShift: true,
@@ -97,6 +99,7 @@ function mapListEntry(
     startTime: r.start_time,
     endTime: r.end_time,
     durationMinutes: r.duration_minutes,
+    pauseMinutes: r.pause_minutes,
     infoForManagement: r.info_for_management,
     hadPlannedShift: r.had_planned_shift === 1,
     shiftCompensationNote: r.shift_compensation_note,
@@ -266,13 +269,14 @@ function entryWriteStatements(args: {
   if (exists) {
     st.push({
       sql: `UPDATE entries SET date=?, start_time=?, end_time=?, duration_minutes=?,
-         info_for_management=?, secret_details=?, had_planned_shift=?,
+         pause_minutes=?, info_for_management=?, secret_details=?, had_planned_shift=?,
          shift_compensation_note=?, is_compensation=?, updated_at=? WHERE id=?`,
       params: [
         entry.date,
         entry.startTime,
         entry.endTime,
         entry.durationMinutes,
+        entry.pauseMinutes,
         entry.infoForManagement,
         entry.secretDetails,
         entry.hadPlannedShift ? 1 : 0,
@@ -285,15 +289,16 @@ function entryWriteStatements(args: {
   } else {
     st.push({
       sql: `INSERT INTO entries (id, date, start_time, end_time, duration_minutes,
-         info_for_management, secret_details, had_planned_shift,
+         pause_minutes, info_for_management, secret_details, had_planned_shift,
          shift_compensation_note, is_compensation, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       params: [
         entry.id,
         entry.date,
         entry.startTime,
         entry.endTime,
         entry.durationMinutes,
+        entry.pauseMinutes,
         entry.infoForManagement,
         entry.secretDetails,
         entry.hadPlannedShift ? 1 : 0,
@@ -743,6 +748,7 @@ function toTimeEntry(e: EntryFullItem): TimeEntry {
     startTime: e.startTime,
     endTime: e.endTime,
     durationMinutes: e.durationMinutes,
+    pauseMinutes: e.pauseMinutes,
     infoForManagement: e.infoForManagement,
     secretDetails: e.secretDetails,
     hadPlannedShift: e.hadPlannedShift,
@@ -761,6 +767,11 @@ export async function getAllForBackup(): Promise<BackupPayload> {
   const rows = await db.select<EntryRow[]>("SELECT * FROM entries ORDER BY date");
   const entries = (await hydrateFullEntries(rows)).map(toTimeEntry);
   return {
+    // Bleibt bewusst 1: pauseMinutes ist additiv-tolerant (validateBackupEntry
+    // akzeptiert es optional, ein fehlendes Feld beim Import wird als 0
+    // behandelt, s. applyImport) -- ein älterer App-Stand liest ein solches
+    // Backup weiterhin anstandslos (ignoriert das unbekannte Feld einfach),
+    // eine Versionsanhebung wäre hier eine unnötige Kompatibilitätsbremse.
     schemaVersion: 1,
     exportedAt: nowIso(),
     app: "BR-Log",
@@ -914,8 +925,16 @@ export async function applyImport(
     if (!importerWins(localUpdated, e.updatedAt)) continue; // lokal gleich/älter -> bleibt
     statements.push(
       ...entryWriteStatements({
-        // Backup-Dateien können unvollständig sein -> Listen defensiv absichern.
-        entry: { ...e, tagIds: e.tagIds ?? [], objections: e.objections ?? [] },
+        // Backup-Dateien können unvollständig sein -> Listen/pauseMinutes
+        // defensiv absichern (pauseMinutes fehlt z. B. in Backups einer
+        // älteren App-Version vor diesem Feld -> 0, s. a. Kommentar bei
+        // getAllForBackup/validateBackupEntry).
+        entry: {
+          ...e,
+          tagIds: e.tagIds ?? [],
+          objections: e.objections ?? [],
+          pauseMinutes: e.pauseMinutes ?? 0,
+        },
         exists: !isNew,
         // WICHTIG (Finding 10): den ORIGINALEN updated_at aus dem Backup
         // erhalten statt auf 'jetzt' zu stempeln. Sonst verfälscht jeder
@@ -973,6 +992,20 @@ function validateBackupEntry(raw: unknown, index: number): void {
   ) {
     throw new AppError(
       `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat eine ungültige Dauer.`
+    );
+  }
+  // pauseMinutes ist optional (additiv-tolerant, s. getAllForBackup): fehlt es
+  // (Backup einer älteren App-Version vor diesem Feld), wird es beim Import
+  // als 0 behandelt (s. applyImport). Ist es gesetzt, muss es wie
+  // durationMinutes eine gültige, nicht-negative Zahl sein.
+  if (
+    raw.pauseMinutes !== undefined &&
+    (typeof raw.pauseMinutes !== "number" ||
+      !Number.isFinite(raw.pauseMinutes) ||
+      raw.pauseMinutes < 0)
+  ) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Eintrag „${raw.id}“ hat eine ungültige Pause.`
     );
   }
   if (raw.tagIds !== undefined && !Array.isArray(raw.tagIds)) {

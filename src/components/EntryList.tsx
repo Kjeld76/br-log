@@ -186,6 +186,7 @@ export default function EntryList({
                   {e.startTime && e.endTime && (
                     <span className="text-xs text-slate-500 dark:text-slate-400">
                       {e.startTime}–{e.endTime}
+                      {e.pauseMinutes > 0 && ` (Pause ${e.pauseMinutes} Min)`}
                     </span>
                   )}
                   {e.isCompensation && (

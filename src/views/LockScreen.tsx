@@ -129,16 +129,34 @@ export default function LockScreen({
   // Banking-Apps). Nur im echten Entsperren-Modus, NICHT bei Erst-
   // Einrichtung/Migration/keyfileMissing (dort gibt es noch keinen bio-Wrap
   // bzw. keine entsperrbare DB).
+  //
+  // Gerätetest-Fix (Hypothese "Auto-Prompt-Race", B-UI): App.tsx sperrt sofort
+  // bei document.hidden (visibilitychange) -- dieser Effekt hier lief bisher
+  // GENAU DANN mit, oft also noch während die App im Hintergrund ist bzw. die
+  // Android-Activity noch nicht wieder RESUMED ist. Der native BiometricPrompt
+  // dort auszulösen ist ein bekanntes Timing-Problem (FragmentTransaction vor
+  // onResume). Fix: nur auslösen, wenn document.visibilityState === "visible"
+  // ist; ist die Seite gerade verborgen, auf das nächste "visible"-Ereignis
+  // warten statt sofort zu feuern. Der native Kotlin-Teil (BiometricUnlock-
+  // Plugin.showPrompt) prüft zusätzlich den Activity-Lifecycle-Zustand
+  // (RESUMED) als zweite Verteidigungslinie.
   useEffect(() => {
     if (!mobile || !isUnlock) return;
     let active = true;
-    (async () => {
+
+    const tryAutoTrigger = async () => {
+      if (bioAutoTriggeredRef.current || document.visibilityState !== "visible") return;
       try {
         const [status, avail] = await Promise.all([bioStatus(), bioAvailable()]);
         if (!active) return;
         setBioEnrolled(status.enrolled);
         setBioAvail(avail.available);
-        if (status.enrolled && avail.available && !bioAutoTriggeredRef.current) {
+        if (
+          status.enrolled &&
+          avail.available &&
+          !bioAutoTriggeredRef.current &&
+          document.visibilityState === "visible"
+        ) {
           bioAutoTriggeredRef.current = true;
           void runBioUnlock();
         }
@@ -146,9 +164,14 @@ export default function LockScreen({
         // Fingerabdruck-Pfad ist ein Komfort-Zusatz -- ohne verlässliche
         // Antwort bleibt einfach nur die Passwort-Eingabe übrig.
       }
-    })();
+    };
+
+    void tryAutoTrigger();
+    const onVisibilityChange = () => void tryAutoTrigger();
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mobile, isUnlock]);

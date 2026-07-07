@@ -28,6 +28,7 @@ function baseEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     startTime: "08:00",
     endTime: "16:00",
     durationMinutes: 480,
+    pauseMinutes: 0,
     infoForManagement: "Schulung",
     secretDetails: "",
     hadPlannedShift: true,
@@ -78,6 +79,7 @@ describe("saveEntry", () => {
       entry.startTime,
       entry.endTime,
       entry.durationMinutes,
+      entry.pauseMinutes,
       entry.infoForManagement,
       entry.secretDetails,
       1, // hadPlannedShift: true -> 1
@@ -109,6 +111,7 @@ describe("saveEntry", () => {
       entry.startTime,
       entry.endTime,
       entry.durationMinutes,
+      entry.pauseMinutes,
       entry.infoForManagement,
       entry.secretDetails,
       1,
@@ -141,6 +144,18 @@ describe("saveEntry", () => {
     expect(objectionInserts).toHaveLength(1);
     expect(objectionInserts[0].params[1]).toBe(entry.id);
     expect(objectionInserts[0].params[2]).toBe("Grund");
+  });
+
+  it("schreibt eine gesetzte pauseMinutes korrekt in Spalte + Parameter (INSERT)", async () => {
+    selectMock.mockResolvedValueOnce([]);
+    const entry = baseEntry({ pauseMinutes: 30 });
+
+    await repo.saveEntry(entry);
+
+    const insert = batchStatement("INSERT INTO entries");
+    expect(insert!.sql).toContain("pause_minutes");
+    // Spaltenposition in entryWriteStatements: id,date,start,end,duration,pause,...
+    expect(insert!.params[5]).toBe(30);
   });
 });
 
@@ -198,6 +213,7 @@ describe("listEntries – Filterbau", () => {
           start_time: null,
           end_time: null,
           duration_minutes: 60,
+          pause_minutes: 0,
           info_for_management: "Info",
           had_planned_shift: 1,
           shift_compensation_note: "",
@@ -399,6 +415,31 @@ describe("applyImport – atomarer Merge", () => {
     expect(insert!.params[insert!.params.length - 1]).toBe(importedUpdatedAt);
   });
 
+  it("setzt eine fehlende pauseMinutes im Backup-Eintrag defensiv auf 0 (additiv-tolerantes Feld)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return [];
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    // Backup einer älteren App-Version: kein pauseMinutes-Feld am Eintrag.
+    const { pauseMinutes: _omit, ...entryWithoutPause } = baseEntry({ id: "e-old" });
+    const payload: BackupPayload = {
+      schemaVersion: 1,
+      exportedAt: "2026-01-20T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [entryWithoutPause as unknown as TimeEntry],
+    };
+
+    await repo.applyImport(payload);
+
+    const insert = batchStatement("INSERT INTO entries");
+    expect(insert).toBeDefined();
+    expect(insert!.sql).toContain("pause_minutes");
+    expect(insert!.params[5]).toBe(0);
+  });
+
   it("nutzt eine vorab berechnete Summary (precomputedSummary), ohne die Konflikt-Analyse erneut auszuführen", async () => {
     let analyzeQueryCount = 0;
     selectMock.mockImplementation(async (sql: string) => {
@@ -533,6 +574,40 @@ describe("parseBackup", () => {
       ],
     });
     expect(() => repo.parseBackup(raw)).toThrow("Schlagwort-Zuordnungen");
+  });
+
+  it("akzeptiert einen Eintrag ohne pauseMinutes (additiv-tolerant, älteres Backup)", () => {
+    const raw = JSON.stringify({
+      entries: [{ id: "e1", date: "2026-01-15", durationMinutes: 60 }],
+    });
+    expect(() => repo.parseBackup(raw)).not.toThrow();
+  });
+
+  it("akzeptiert einen Eintrag mit gültiger pauseMinutes", () => {
+    const raw = JSON.stringify({
+      entries: [
+        { id: "e1", date: "2026-01-15", durationMinutes: 60, pauseMinutes: 15 },
+      ],
+    });
+    expect(() => repo.parseBackup(raw)).not.toThrow();
+  });
+
+  it("wirft bei einem Eintrag mit negativer pauseMinutes", () => {
+    const raw = JSON.stringify({
+      entries: [
+        { id: "e1", date: "2026-01-15", durationMinutes: 60, pauseMinutes: -5 },
+      ],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("ungültige Pause");
+  });
+
+  it("wirft bei einem Eintrag mit nicht-numerischer pauseMinutes", () => {
+    const raw = JSON.stringify({
+      entries: [
+        { id: "e1", date: "2026-01-15", durationMinutes: 60, pauseMinutes: "15" },
+      ],
+    });
+    expect(() => repo.parseBackup(raw)).toThrow("ungültige Pause");
   });
 });
 

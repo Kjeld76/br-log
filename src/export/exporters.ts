@@ -33,6 +33,11 @@ function publicColumns(): CsvColumn<EntryListItem>[] {
     { header: "Datum", value: (e) => e.date },
     { header: "Von", value: (e) => e.startTime ?? "" },
     { header: "Bis", value: (e) => e.endTime ?? "" },
+    // Pause bewusst als eigene Spalte statt nur rechnerisch in der Dauer
+    // versteckt: der Nachweis muss "Von 9:00 Bis 17:30, Pause 30, BR-Zeit
+    // 8:00" konsistent zeigen, statt scheinbar widersprüchliche Von/Bis-
+    // Dauer-Angaben (Von-Bis-Spanne != Dauer, ohne dass die Pause sichtbar ist).
+    { header: "Pause (Min)", value: (e) => e.pauseMinutes },
     { header: "Dauer (Std:Min)", value: (e) => minutesToHhmm(e.durationMinutes) },
     {
       // Finding 11: Komma statt Punkt -- deutsches Excel (Zielformat laut

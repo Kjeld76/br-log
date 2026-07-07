@@ -29,6 +29,7 @@ export interface ReportRow {
   date: string; // bereits deutsch formatiert (formatDateDe)
   start: string;
   end: string;
+  pause: string; // Pause in Minuten als String, "0" ohne Pause (Konsistenz mit CSV-Export)
   duration: string; // "H:MM"
   tags: string;
   info: string;
@@ -54,6 +55,7 @@ const COLUMNS = [
   "Datum",
   "Von",
   "Bis",
+  "Pause (Min)",
   "Dauer",
   "Schlagwörter",
   "Info für Geschäftsleitung",
@@ -107,6 +109,7 @@ export function buildReportModel(
     date: formatDateDe(e.date),
     start: e.startTime ?? "",
     end: e.endTime ?? "",
+    pause: String(e.pauseMinutes),
     duration: minutesToHhmm(e.durationMinutes),
     tags: tagLabels(e),
     info: e.infoForManagement,
@@ -156,6 +159,7 @@ export function toAutoTableInput(model: ReportModel): {
       r.date,
       r.start,
       r.end,
+      r.pause,
       r.duration,
       r.tags,
       r.info,
@@ -201,13 +205,14 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     styles: { fontSize: 8.5, cellPadding: 1.5 },
     headStyles: { fillColor: [71, 85, 105] }, // slate-600
     columnStyles: {
-      0: { cellWidth: 22 },
-      1: { cellWidth: 13 },
-      2: { cellWidth: 13 },
-      3: { cellWidth: 15 },
-      4: { cellWidth: 30 },
-      6: { cellWidth: 22 },
-      // Spalte 5 (Info für Geschäftsleitung) bleibt "auto" -- nimmt den Rest.
+      0: { cellWidth: 22 }, // Datum
+      1: { cellWidth: 13 }, // Von
+      2: { cellWidth: 13 }, // Bis
+      3: { cellWidth: 15 }, // Pause (Min)
+      4: { cellWidth: 15 }, // Dauer
+      5: { cellWidth: 30 }, // Schlagwörter
+      7: { cellWidth: 22 }, // Geplante Schicht
+      // Spalte 6 (Info für Geschäftsleitung) bleibt "auto" -- nimmt den Rest.
     },
   });
 
