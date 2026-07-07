@@ -6,7 +6,6 @@
     "core:default",
     "core:window:allow-set-theme",
     "os:default",
-    "opener:default",
     "opener:allow-reveal-item-in-dir",
     {
       "identifier": "opener:allow-open-path",
@@ -15,6 +14,13 @@
         { "path": "$APPCONFIG/**" },
         { "path": "$EXE/BR-Log-Data" },
         { "path": "$EXE/BR-Log-Data/**" }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://ko-fi.com/*" },
+        { "url": "https://buymeacoffee.com/*" }
       ]
     }
   ]

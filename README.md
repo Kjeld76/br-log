@@ -260,6 +260,14 @@ Der Build ist bewusst **unsigniert**. Für eine Signatur künftig:
    `certificateThumbprint`/`digestAlgorithm`/`timestampUrl` setzen.
 3. Neu bauen – die SmartScreen-Warnung entfällt nach Reputationsaufbau.
 
+## Unterstützen
+
+BR-Log ist und bleibt kostenlos – kein Verkauf, keine Paywall, kein
+"Pro"-Upgrade (siehe Abschnitt *Lizenz*). Wer das Tool nützlich findet, kann
+freiwillig einen Kaffee spendieren: über [Ko-fi](https://ko-fi.com/mariokoenig)
+oder [Buy Me a Coffee](https://buymeacoffee.com/mariokoenig). Beides ist rein
+optional und ändert nichts am Funktionsumfang.
+
 ## Lizenz
 
 BR-Log steht unter der **GNU General Public License v3.0 (GPLv3)**.
