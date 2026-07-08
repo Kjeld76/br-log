@@ -29,6 +29,30 @@
   "inLanguage": "de"
 }
 </script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Was kostet BR-Log?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Nichts – jetzt nicht und später nicht. BR-Log ist freie Software (GPLv3). Wer mag, kann freiwillig einen Kaffee spendieren; alle Funktionen stehen aber jedem uneingeschränkt zur Verfügung." } },
+    { "@type": "Question", "name": "Was unterscheidet BR-Log von Excel oder Cloud-Zeiterfassung?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Cloud-Tools wie Clockify oder Toggl speichern die Daten auf fremden Servern – für vertrauliche Betriebsratsarbeit ungeeignet. Eine Excel-Liste bleibt zwar lokal, ist aber unverschlüsselt und rechnet keinen § 37-Saldo. BR-Log verbindet beides: die Vertraulichkeit einer lokalen, verschlüsselten Ablage mit den Fachfunktionen für BR-Arbeit (Freizeitausgleich, Monatsnachweis als PDF, Auswertung)." } },
+    { "@type": "Question", "name": "Wo liegen meine Daten – und wer kann sie lesen?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Ausschließlich auf dem eigenen Gerät, in einer mit AES-256 verschlüsselten Datenbank. Es gibt keinen Server, kein Konto und keine Übertragung. Lesen kann sie nur, wer das Passwort (oder auf dem Handy den Fingerabdruck) hat – auch der Entwickler nicht." } },
+    { "@type": "Question", "name": "Was passiert, wenn ich mein Passwort vergesse?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Bei der Einrichtung erzeugt BR-Log einen Wiederherstellungs-Code. Getrennt aufbewahrt (z. B. im Passwort-Manager) erlaubt er den Zugang und das Setzen eines neuen Passworts. Ohne Passwort und ohne Code sind die Daten unwiederbringlich verschlüsselt – genau das ist der Schutz." } },
+    { "@type": "Question", "name": "Kann ich zwischen PC und Handy wechseln?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Ja. Über den JSON-Export lassen sich die Einträge mitnehmen – beim Import zeigt BR-Log eine Konflikt-Vorschau und führt beide Stände sauber zusammen. Eine automatische Cloud-Synchronisation gibt es bewusst nicht." } },
+    { "@type": "Question", "name": "Wie bekomme ich Updates?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Neue Versionen erscheinen auf der GitHub-Release-Seite. Einfach die neue Version installieren – Daten und Einstellungen bleiben dabei erhalten." } },
+    { "@type": "Question", "name": "Windows warnt beim Installieren („unbekannter Herausgeber") – ist das normal?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Ja. BR-Log ist nicht mit einem kostenpflichtigen Code-Signing-Zertifikat signiert, deshalb zeigt Windows SmartScreen beim ersten Start des Installers eine Warnung. Auf „Weitere Informationen" und dann „Trotzdem ausführen" klicken. Der Quellcode ist öffentlich – jeder kann prüfen, was die App tut." } },
+    { "@type": "Question", "name": "Warum ist die Android-App nicht im Play Store?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Bewusste Entscheidung: kein Store-Konto, keine Store-Regeln, keine Zwischenstation. Die APK kommt direkt und signiert vom Entwickler. Android fragt deshalb einmalig nach der Erlaubnis, aus „unbekannten Quellen" zu installieren – das ist normal." } }
+  ]
+}
+</script>
 <meta name="theme-color" content="#1D3A5F">
 <link rel="icon" type="image/png" href="assets/icon.png">
 <style>
@@ -424,6 +448,10 @@ footer a{color:#C9D8E8}
       <details>
         <summary>Was kostet BR-Log?</summary>
         <p class="a">Nichts – jetzt nicht und später nicht. BR-Log ist freie Software (GPLv3). Wer mag, kann freiwillig einen Kaffee spendieren; alle Funktionen stehen aber jedem uneingeschränkt zur Verfügung.</p>
+      </details>
+      <details>
+        <summary>Was unterscheidet BR-Log von Excel oder Cloud-Zeiterfassung?</summary>
+        <p class="a">Cloud-Tools wie Clockify oder Toggl speichern deine Daten auf fremden Servern – für vertrauliche BR-Arbeit ungeeignet. Eine Excel-Liste bleibt zwar lokal, ist aber unverschlüsselt und rechnet keinen § 37-Saldo. BR-Log verbindet beides: die Vertraulichkeit einer lokalen, verschlüsselten Ablage mit den Fachfunktionen, die BR-Arbeit braucht – Freizeitausgleich, Monatsnachweis als PDF, Auswertung.</p>
       </details>
       <details>
         <summary>Wo liegen meine Daten – und wer kann sie lesen?</summary>

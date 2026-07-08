@@ -1,0 +1,22 @@
+# BR-Log
+
+> BR-Log ist eine kostenlose, quelloffene (GPLv3) Zeiterfassungs-App für Betriebsratsmitglieder in Deutschland. Alle Daten liegen ausschließlich lokal in einer AES-256-verschlüsselten Datenbank (SQLCipher) – ohne Cloud, ohne Konto, ohne Tracking. Verfügbar für Windows, Linux und Android.
+
+Wichtige Fakten:
+
+- Zielgruppe: Betriebsräte (BetrVG), die ihre BR-Zeiten vertraulich dokumentieren müssen – auch gegenüber dem Arbeitgeber.
+- Funktionen: Zeiterfassung mit Pausenabzug (auch Schichten über Mitternacht), Freizeitausgleich-Saldo nach § 37 Abs. 3 BetrVG, Monatsnachweis als PDF mit Unterschriftsfeldern, CSV-Export im deutschen Format, Auswertungen (Monats-/Jahressummen, Verteilung nach Tätigkeit), Kalender mit Volltextsuche, automatische lokale Backups, JSON-Export/-Import für Gerätewechsel mit Konflikt-Vorschau.
+- Sicherheit: SQLCipher (AES-256), Argon2id-Schlüsselableitung, Wiederherstellungs-Code als zweiter Zugang; auf Android zusätzlich Fingerabdruck-Entsperrung, hardware-gesichert über den Android-Keystore.
+- Datenschutz: 100 % offline, keine Telemetrie, kein Konto, keine Server-Kommunikation. Einträge verlassen das Gerät nur durch manuellen Export.
+- Einordnung: Anders als Cloud-Zeiterfassung (z. B. Clockify, Toggl) gibt BR-Log keine Daten an Dritte weiter; anders als eine Excel-Liste ist die Ablage verschlüsselt und rechnet den § 37-Saldo automatisch.
+- Preis: kostenlos, keine Premium-Version, kein Abo. Freiwillige Spenden über Ko-fi und Buy Me a Coffee.
+- Technik: Tauri 2 (Rust-Kern, React/TypeScript-Oberfläche). Windows 10/11 (Installer + portable Version), Linux (deb, AppImage), Android 10+ (APK direkt vom Entwickler, bewusst ohne Play Store).
+- Entwickler: Mario König; entstanden aus eigener Betriebsratspraxis.
+
+## Links
+
+- [Projektseite](https://kjeld76.github.io/br-log/)
+- [Quellcode auf GitHub](https://github.com/Kjeld76/br-log)
+- [Downloads – neueste Version](https://github.com/Kjeld76/br-log/releases/latest)
+- [FAQ](https://kjeld76.github.io/br-log/#faq)
+- [Impressum & Datenschutz](https://kjeld76.github.io/br-log/rechtliches.html)
