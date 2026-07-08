@@ -1,5 +1,11 @@
 # BR-Log
 
+[![Release](https://img.shields.io/github/v/release/Kjeld76/br-log?label=Release&color=2F8F6B)](https://github.com/Kjeld76/br-log/releases/latest)
+[![Lizenz: GPLv3](https://img.shields.io/badge/Lizenz-GPLv3-3D6E9E)](LICENSE)
+[![Plattformen](https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20Android-1D3A5F)](https://kjeld76.github.io/br-log/#download)
+
+**→ Projektseite mit Screenshots, Downloads und FAQ: https://kjeld76.github.io/br-log/**
+
 Lokale Desktop-App zur **Zeiterfassung für Betriebsratsmitglieder**. Jedes
 Mitglied erfasst seine BR-Zeiten tagesgenau (Stunden + Minuten). Zu jedem
 Eintrag werden zwei Informationsebenen getrennt gehalten:

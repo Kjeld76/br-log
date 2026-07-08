@@ -7,7 +7,28 @@
 <meta name="description" content="BR-Log erfasst deine Betriebsratszeiten verschlüsselt und ausschließlich auf deinem Gerät – mit PDF-Nachweis, § 37-Freizeitausgleich-Saldo und Fingerabdruck-Entsperrung. Kostenlos und quelloffen (GPLv3) für Windows, Linux und Android.">
 <meta property="og:title" content="BR-Log – Deine BR-Zeiten. Deine Daten. Niemand sonst.">
 <meta property="og:description" content="Verschlüsselte Zeiterfassung für Betriebsratsarbeit. 100 % lokal, kein Konto, kein Tracking. Kostenlos, quelloffen, für Windows, Linux und Android.">
-<meta property="og:image" content="https://kjeld76.github.io/br-log/assets/logo.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://kjeld76.github.io/br-log/">
+<meta property="og:image" content="https://kjeld76.github.io/br-log/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "BR-Log",
+  "operatingSystem": "Windows, Linux, Android",
+  "applicationCategory": "BusinessApplication",
+  "description": "Verschlüsselte Zeiterfassung für Betriebsratsmitglieder – 100 % lokal, ohne Cloud, quelloffen (GPLv3).",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "url": "https://kjeld76.github.io/br-log/",
+  "downloadUrl": "https://github.com/Kjeld76/br-log/releases/latest",
+  "author": { "@type": "Person", "name": "Mario König" },
+  "inLanguage": "de"
+}
+</script>
 <meta name="theme-color" content="#1D3A5F">
 <link rel="icon" type="image/png" href="assets/icon.png">
 <style>
@@ -419,6 +440,10 @@ footer a{color:#C9D8E8}
       <details>
         <summary>Wie bekomme ich Updates?</summary>
         <p class="a">Neue Versionen erscheinen auf der <a href="https://github.com/Kjeld76/br-log/releases" rel="noopener">Release-Seite</a>. Einfach die neue Version installieren – deine Daten und Einstellungen bleiben dabei erhalten.</p>
+      </details>
+      <details>
+        <summary>Windows warnt beim Installieren („unbekannter Herausgeber") – ist das normal?</summary>
+        <p class="a">Ja. BR-Log ist nicht mit einem kostenpflichtigen Code-Signing-Zertifikat signiert, deshalb zeigt Windows SmartScreen beim ersten Start des Installers eine Warnung. Klicke auf „Weitere Informationen" und dann „Trotzdem ausführen". Der Quellcode ist öffentlich – jeder kann prüfen, was die App tut.</p>
       </details>
       <details>
         <summary>Warum ist die Android-App nicht im Play Store?</summary>
