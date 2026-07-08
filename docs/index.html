@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BR-Log – Zeiterfassung für Betriebsräte. Verschlüsselt. Lokal. Quelloffen.</title>
+<meta name="description" content="BR-Log erfasst deine Betriebsratszeiten verschlüsselt und ausschließlich auf deinem Gerät – mit PDF-Nachweis, § 37-Freizeitausgleich-Saldo und Fingerabdruck-Entsperrung. Kostenlos und quelloffen (GPLv3) für Windows, Linux und Android.">
+<meta property="og:title" content="BR-Log – Deine BR-Zeiten. Deine Daten. Niemand sonst.">
+<meta property="og:description" content="Verschlüsselte Zeiterfassung für Betriebsratsarbeit. 100 % lokal, kein Konto, kein Tracking. Kostenlos, quelloffen, für Windows, Linux und Android.">
+<meta property="og:image" content="https://kjeld76.github.io/br-log/assets/logo.png">
+<meta name="theme-color" content="#1D3A5F">
+<link rel="icon" type="image/png" href="assets/logo.png">
+<style>
+/* ==== Fonts (selbst gehostet – keine externen Dienste, passend zum Versprechen der App) ==== */
+@font-face{font-family:'IBM Plex Sans Condensed';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/IBMPlexSansCondensed-600.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Sans Condensed';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/IBMPlexSansCondensed-700.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/IBMPlexSans-400.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/IBMPlexSans-600.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/IBMPlexMono-400.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/IBMPlexMono-500.woff2) format('woff2')}
+
+/* ==== Token ==== */
+:root{
+  --steel:#1D3A5F;        /* Charakterfarbe: Stahlblau (Hero, Header) */
+  --steel-deep:#162C49;
+  --brand:#3D6E9E;        /* Logo-Blau */
+  --accent:#2F8F6B;       /* Logo-Grün – nur für CTA + Verschlüsselungs-Momente */
+  --accent-ink:#1F6B4E;
+  --paper:#F4F7FA;        /* Grund, Blaustich */
+  --card:#FFFFFF;
+  --ink:#17222E;
+  --ink-2:#48586A;
+  --line:#D8E1EA;
+  --punch:#EDF2F7;        /* Stechkarten-Papier */
+  --display:'IBM Plex Sans Condensed',system-ui,sans-serif;
+  --body:'IBM Plex Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(23,34,46,.06),0 8px 24px rgba(23,34,46,.07);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0F1922; --card:#17222E; --ink:#E8EEF4; --ink-2:#9FB0C0;
+    --line:#26374A; --punch:#1C2B3B;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  }
+}
+
+/* ==== Grund ==== */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{font-family:var(--body);color:var(--ink);background:var(--paper);line-height:1.6;font-size:17px}
+img{max-width:100%;display:block}
+a{color:var(--brand)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{font-family:var(--display);font-weight:600;font-size:.82rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brand)}
+h2{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,3.5vw,2.3rem);line-height:1.15;text-wrap:balance;margin:.35em 0 .5em}
+.section{padding:72px 0}
+.section-head{max-width:640px;margin-bottom:40px}
+.section-head p{color:var(--ink-2)}
+
+/* ==== Header ==== */
+header{background:var(--steel);color:#fff;position:sticky;top:0;z-index:50;box-shadow:0 1px 0 rgba(255,255,255,.08)}
+.nav{display:flex;align-items:center;gap:28px;height:60px}
+.nav .logo{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-family:var(--display);font-weight:700;font-size:1.15rem;letter-spacing:.02em}
+.nav .logo img{width:30px;height:30px;border-radius:6px;background:#fff;padding:2px}
+.nav nav{display:flex;gap:22px;margin-left:auto}
+.nav nav a{color:#C9D8E8;text-decoration:none;font-size:.92rem;font-weight:600}
+.nav nav a:hover{color:#fff}
+.nav .gh{border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:5px 12px}
+@media(max-width:720px){.nav nav a:not(.gh){display:none}}
+
+/* ==== Hero ==== */
+.hero{background:linear-gradient(178deg,var(--steel) 0%,var(--steel-deep) 100%);color:#fff;padding:76px 0 84px;overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:56px;align-items:center}
+@media(max-width:860px){.hero .wrap{grid-template-columns:1fr}.hero{padding:56px 0}}
+.hero h1{font-family:var(--display);font-weight:700;font-size:clamp(2.3rem,5.5vw,3.6rem);line-height:1.06;text-wrap:balance;letter-spacing:.005em}
+.hero h1 .du{color:#8FD4B4}
+.hero .sub{margin:20px 0 30px;font-size:1.1rem;color:#C9D8E8;max-width:34em}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-weight:600;font-size:1.02rem;letter-spacing:.02em;text-decoration:none;border-radius:var(--radius);padding:13px 22px;transition:transform .12s ease,box-shadow .12s ease}
+.btn svg{width:19px;height:19px;flex:none}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 2px 0 var(--accent-ink)}
+.btn-primary:hover{transform:translateY(-1px)}
+.btn-ghost{color:#fff;border:1.5px solid rgba(255,255,255,.4)}
+.btn-ghost:hover{border-color:#fff}
+.hero .meta{margin-top:18px;font-family:var(--mono);font-size:.82rem;color:#8AA3BC}
+
+/* Stechkarte */
+.punchcard{background:var(--punch);color:var(--ink);border-radius:14px;box-shadow:var(--shadow);padding:26px 26px 22px;position:relative;transform:rotate(1.6deg);font-family:var(--mono);max-width:400px;justify-self:end}
+@media(max-width:860px){.punchcard{justify-self:center;transform:rotate(0deg)}}
+.punchcard::before{content:"";position:absolute;top:14px;left:22px;right:22px;height:10px;
+  background-image:radial-gradient(circle 3.5px,var(--paper) 96%,transparent 100%);background-size:22px 10px;background-repeat:repeat-x}
+.punchcard h3{font-family:var(--display);font-weight:700;font-size:.95rem;letter-spacing:.1em;text-transform:uppercase;margin:16px 0 14px;color:var(--ink-2)}
+.punch-rows{display:flex;flex-direction:column;gap:9px;font-size:.86rem}
+.punch-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px dashed var(--line);padding-bottom:8px;opacity:0;transform:translateY(6px);animation:stamp .4s ease forwards}
+.punch-row:nth-child(1){animation-delay:.15s}.punch-row:nth-child(2){animation-delay:.45s}
+.punch-row:nth-child(3){animation-delay:.75s}.punch-row:nth-child(4){animation-delay:1.05s}
+.punch-row .t{font-weight:500}
+.punch-row .g{color:var(--accent-ink);font-weight:500}
+@keyframes stamp{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.punch-row{animation:none;opacity:1;transform:none}}
+.stamp{position:absolute;right:18px;bottom:52px;transform:rotate(-11deg);border:2.5px solid var(--accent-ink);color:var(--accent-ink);border-radius:6px;font-family:var(--display);font-weight:700;letter-spacing:.2em;font-size:.82rem;padding:4px 10px;text-transform:uppercase;opacity:.9}
+.punch-sum{margin-top:12px;display:flex;justify-content:space-between;font-weight:500;font-size:.9rem}
+.punch-sum .lock{display:inline-flex;align-items:center;gap:6px;color:var(--accent-ink)}
+.punch-sum .lock svg{width:14px;height:14px}
+
+/* ==== Säulen ==== */
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+@media(max-width:820px){.pillars{grid-template-columns:1fr}}
+.pillar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow)}
+.pillar svg{width:30px;height:30px;color:var(--brand);margin-bottom:14px}
+.pillar h3{font-family:var(--display);font-weight:700;font-size:1.15rem;margin-bottom:8px}
+.pillar p{color:var(--ink-2);font-size:.95rem}
+
+/* ==== Features ==== */
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+@media(max-width:900px){.features{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.features{grid-template-columns:1fr}}
+.feature{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;transition:transform .15s ease,box-shadow .15s ease}
+.feature:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+@media (prefers-reduced-motion: reduce){.feature:hover{transform:none}}
+.feature .tag{font-family:var(--mono);font-size:.72rem;color:var(--brand);letter-spacing:.06em;text-transform:uppercase}
+.feature h3{font-family:var(--display);font-weight:700;font-size:1.08rem;margin:6px 0 6px}
+.feature p{color:var(--ink-2);font-size:.92rem}
+
+/* ==== Screenshots ==== */
+.shots{display:grid;grid-template-columns:1.4fr 1fr;gap:22px}
+@media(max-width:820px){.shots{grid-template-columns:1fr}}
+.shot{border:1.5px dashed var(--line);border-radius:var(--radius);background:var(--card);min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink-2);padding:20px;text-align:center}
+.shot.tall{grid-row:span 2;min-height:0}
+.shot .label{font-family:var(--display);font-weight:600;font-size:.95rem;color:var(--ink)}
+.shot .hint{font-family:var(--mono);font-size:.75rem}
+.shot img{border-radius:8px;box-shadow:var(--shadow)}
+
+/* ==== Download ==== */
+#download{background:linear-gradient(178deg,var(--steel) 0%,var(--steel-deep) 100%);color:#fff}
+#download .eyebrow{color:#8FD4B4}
+#download .section-head p{color:#C9D8E8}
+.dl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+@media(max-width:860px){.dl-grid{grid-template-columns:1fr}}
+.dl{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:var(--radius);padding:26px;display:flex;flex-direction:column;gap:14px}
+.dl h3{font-family:var(--display);font-weight:700;font-size:1.25rem;display:flex;align-items:center;gap:10px}
+.dl h3 svg{width:24px;height:24px;color:#8FD4B4}
+.dl .files{display:flex;flex-direction:column;gap:9px}
+.dl a.file{display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(255,255,255,.09);border-radius:8px;padding:10px 14px;color:#fff;text-decoration:none;font-size:.92rem;font-weight:600}
+.dl a.file:hover{background:rgba(255,255,255,.16)}
+.dl a.file .kind{font-family:var(--mono);font-size:.72rem;color:#9FE0BF;font-weight:400;white-space:nowrap}
+.dl .note{font-size:.82rem;color:#9DB4CA}
+.dl-version{margin-top:26px;font-family:var(--mono);font-size:.85rem;color:#8AA3BC}
+.dl-version a{color:#8FD4B4}
+
+/* ==== Open Source / Spenden ==== */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:820px){.split{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:30px;box-shadow:var(--shadow)}
+.panel h3{font-family:var(--display);font-weight:700;font-size:1.3rem;margin-bottom:10px}
+.panel p{color:var(--ink-2);font-size:.95rem;margin-bottom:16px}
+.panel .row{display:flex;gap:12px;flex-wrap:wrap}
+.btn-outline{border:1.5px solid var(--brand);color:var(--brand)}
+.btn-outline:hover{background:var(--brand);color:#fff}
+.btn-coffee{background:var(--accent);color:#fff;box-shadow:0 2px 0 var(--accent-ink)}
+code{font-family:var(--mono);font-size:.85em;background:var(--punch);padding:2px 6px;border-radius:5px}
+
+/* ==== FAQ ==== */
+.faq{max-width:760px}
+.faq details{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.faq summary{cursor:pointer;padding:18px 22px;font-family:var(--display);font-weight:600;font-size:1.02rem;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:14px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-family:var(--mono);color:var(--brand);font-size:1.2rem;flex:none}
+.faq details[open] summary::after{content:"–"}
+.faq .a{padding:0 22px 20px;color:var(--ink-2);font-size:.95rem;max-width:62ch}
+.faq .a a{color:var(--brand)}
+
+/* ==== Footer ==== */
+footer{background:var(--steel-deep);color:#9DB4CA;padding:36px 0;font-size:.88rem}
+footer .wrap{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;align-items:center}
+footer a{color:#C9D8E8}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="logo" href="#top"><img src="assets/logo.png" alt="" width="30" height="30">BR-Log</a>
+    <nav aria-label="Hauptnavigation">
+      <a href="#funktionen">Funktionen</a>
+      <a href="#sicherheit">Sicherheit</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/Kjeld76/br-log" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ======== HERO ======== -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <h1><span class="du">Deine</span> BR&#8209;Zeiten.<br><span class="du">Deine</span> Daten.<br>Niemand sonst.</h1>
+      <p class="sub">BR&#8209;Log erfasst deine Betriebsratsarbeit dort, wo sie hingehört: verschlüsselt auf deinem eigenen Gerät. Kein Konto, keine Cloud, kein Tracking – dafür ein sauberer Nachweis, wenn du ihn brauchst.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Kostenlos herunterladen
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Kjeld76/br-log" rel="noopener">Quellcode ansehen</a>
+      </div>
+      <p class="meta" id="hero-version">Windows · Linux · Android — quelloffen unter GPLv3</p>
+    </div>
+
+    <div class="punchcard" role="img" aria-label="Stilisierte Stechkarte mit Betriebsratszeiten, gestempelt als vertraulich">
+      <h3>Nachweis · Juli</h3>
+      <div class="punch-rows">
+        <div class="punch-row"><span>Di 07.07. · BR-Sitzung § 30</span><span class="t">09:00–11:30</span></div>
+        <div class="punch-row"><span>Mi 08.07. · Mitarbeitergespräch</span><span class="t">14:15–15:00</span></div>
+        <div class="punch-row"><span>Do 09.07. · Schulung § 37 (6)</span><span class="t">08:00–16:00</span></div>
+        <div class="punch-row"><span>Fr 10.07. · außerhalb der Schicht</span><span class="g">+ 1:45 Std</span></div>
+      </div>
+      <div class="punch-sum">
+        <span class="lock">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          AES-256
+        </span>
+        <span>Σ 12:00 Std</span>
+      </div>
+      <div class="stamp">Vertraulich</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== SICHERHEIT ======== -->
+<section class="section" id="sicherheit">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Warum BR-Log</p>
+      <h2>Betriebsratsarbeit ist vertraulich. Deine Zeiterfassung sollte es auch sein.</h2>
+      <p>Wer dokumentiert, worüber der Arbeitgeber nichts wissen muss, braucht ein Werkzeug ohne Hintertür. BR&#8209;Log ist dafür gebaut – von Grund auf.</p>
+    </div>
+    <div class="pillars">
+      <div class="pillar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <h3>Vollständig verschlüsselt</h3>
+        <p>Die gesamte Datenbank ist mit AES&#8209;256 (SQLCipher) verschlüsselt. Passwort, Wiederherstellungs&#8209;Code – und auf dem Handy dein Fingerabdruck. Ohne Schlüssel sind die Daten wertlos, auch bei Geräteverlust.</p>
+      </div>
+      <div class="pillar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 16.7A7 7 0 0 0 17.6 3.2a8 8 0 0 0-15.1 3A5.5 5.5 0 0 0 4 16.9"/><line x1="4" y1="21" x2="20" y2="3" /></svg>
+        <h3>100 % lokal</h3>
+        <p>Keine Cloud, kein Konto, kein Tracking, keine Telemetrie. BR&#8209;Log funktioniert komplett offline – deine Einträge verlassen dein Gerät nur, wenn du sie selbst exportierst.</p>
+      </div>
+      <div class="pillar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <h3>Quelloffen &amp; nachprüfbar</h3>
+        <p>Der komplette Quellcode ist öffentlich (GPLv3). Jeder kann prüfen, dass BR&#8209;Log hält, was es verspricht – Vertrauen per Bauplan statt per Versprechen.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== FUNKTIONEN ======== -->
+<section class="section" id="funktionen" style="padding-top:0">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Funktionen</p>
+      <h2>Gebaut für den BR-Alltag, nicht für die Buchhaltung.</h2>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <span class="tag">Erfassen</span>
+        <h3>Schnell festgehalten</h3>
+        <p>Von/Bis mit Pausenabzug oder direkte Dauereingabe – auch Schichten über Mitternacht. Duplizieren-Knopf für die wöchentliche Regelsitzung.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">§ 37 Abs. 3 BetrVG</span>
+        <h3>Freizeitausgleich im Blick</h3>
+        <p>BR-Arbeit außerhalb der Schicht wird als Guthaben geführt, genommener Ausgleich als Verbrauch – der Saldo ist immer aktuell, gesamt und je Monat.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Nachweis</span>
+        <h3>Monatsnachweis als PDF</h3>
+        <p>Berichtskopf, Zeitraum, Summen und Unterschriftsfelder – zur Vorlage bei Geschäftsleitung oder Gremium. Dazu CSV-Exporte für Excel (deutsches Format).</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Auswertung</span>
+        <h3>Zahlen, die argumentieren</h3>
+        <p>Monats- und Jahressummen, Verteilung nach Tätigkeit, Anteil außerhalb der geplanten Schicht – belastbare Grundlage für Freistellungs-Diskussionen.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Android</span>
+        <h3>Fingerabdruck statt Tippen</h3>
+        <p>Unterwegs entsperrst du per Fingerabdruck – hardware-gesichert über den Android-Keystore. Das Passwort bleibt dein Rettungsanker.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Sicherung</span>
+        <h3>Backup &amp; Gerätewechsel</h3>
+        <p>Automatische lokale Sicherungen bei jedem Entsperren plus JSON-Export für Umzug oder Abgleich zwischen PC und Handy – mit Konflikt-Vorschau.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== SCREENSHOTS ======== -->
+<section class="section" id="einblicke" style="padding-top:0">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Einblicke</p>
+      <h2>So sieht das aus.</h2>
+    </div>
+    <div class="shots">
+      <div class="shot" data-shot="desktop-hell">
+        <span class="label">Desktop – Erfassung &amp; Auswertung</span>
+        <span class="hint">Screenshot folgt · assets/screenshots/desktop-hell.png</span>
+      </div>
+      <div class="shot tall" data-shot="android">
+        <span class="label">Android – unterwegs erfassen</span>
+        <span class="hint">Screenshot folgt · assets/screenshots/android.png</span>
+      </div>
+      <div class="shot" data-shot="desktop-dunkel">
+        <span class="label">Desktop – dunkles Design</span>
+        <span class="hint">Screenshot folgt · assets/screenshots/desktop-dunkel.png</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== DOWNLOAD ======== -->
+<section class="section" id="download">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Download</p>
+      <h2>Kostenlos. Ohne Registrierung. Sofort loslegen.</h2>
+      <p>Lade die Version für dein Gerät – die Links zeigen immer auf die neueste Ausgabe.</p>
+    </div>
+    <div class="dl-grid">
+      <div class="dl">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 5.5 10.5 4.4V11H3zM12 4.2 21 3v8h-9zM3 13h7.5v6.6L3 18.5zM12 13h9v8l-9-1.2z"/></svg>Windows</h3>
+        <div class="files">
+          <a class="file" data-asset="setup.exe" href="https://github.com/Kjeld76/br-log/releases/latest">Installer <span class="kind">.exe</span></a>
+          <a class="file" data-asset="portable" href="https://github.com/Kjeld76/br-log/releases/latest">Portabel für USB-Stick <span class="kind">.zip</span></a>
+        </div>
+        <p class="note">Windows 10/11. Die portable Version läuft ohne Installation – Daten wandern mit dem Stick.</p>
+      </div>
+      <div class="dl">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="22" x2="16" y2="22"/><line x1="12" y1="18" x2="12" y2="22"/></svg>Linux</h3>
+        <div class="files">
+          <a class="file" data-asset=".deb" href="https://github.com/Kjeld76/br-log/releases/latest">Debian / Ubuntu <span class="kind">.deb</span></a>
+          <a class="file" data-asset=".AppImage" href="https://github.com/Kjeld76/br-log/releases/latest">Alle Distributionen <span class="kind">.AppImage</span></a>
+        </div>
+        <p class="note">deb für Ubuntu 22.04+/Debian 12+, AppImage läuft überall (ausführbar machen, starten).</p>
+      </div>
+      <div class="dl">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18.5" x2="13" y2="18.5"/></svg>Android</h3>
+        <div class="files">
+          <a class="file" data-asset="android-arm64.apk" href="https://github.com/Kjeld76/br-log/releases/latest">App-Paket <span class="kind">.apk</span></a>
+        </div>
+        <p class="note">Android 10+. Beim ersten Mal „Installation aus unbekannten Quellen" erlauben – die App kommt direkt von hier statt aus einem Store.</p>
+      </div>
+    </div>
+    <p class="dl-version" id="dl-version">Alle Versionen und Änderungen: <a href="https://github.com/Kjeld76/br-log/releases" rel="noopener">github.com/Kjeld76/br-log/releases</a></p>
+  </div>
+</section>
+
+<!-- ======== OPEN SOURCE / SPENDEN ======== -->
+<section class="section" id="opensource">
+  <div class="wrap split">
+    <div class="panel">
+      <h3>Offen wie ein gutes Protokoll</h3>
+      <p>BR-Log ist freie Software unter der <strong>GPLv3</strong>: nutzen, prüfen, verändern, weitergeben – ausdrücklich erwünscht. Entwickelt von Mario König, entstanden aus echter Betriebsratspraxis. Fehler gefunden oder Idee im Kopf? Auf GitHub bist du richtig.</p>
+      <div class="row">
+        <a class="btn btn-outline" href="https://github.com/Kjeld76/br-log" rel="noopener">Zum Quellcode</a>
+        <a class="btn btn-outline" href="https://github.com/Kjeld76/br-log/issues" rel="noopener">Feedback geben</a>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Kostenlos – und das bleibt so</h3>
+      <p>Keine Paywall, keine Premium-Version, kein Abo. Wenn dir BR-Log den Alltag erleichtert und du dich bedanken möchtest, freue ich mich über einen Kaffee – völlig freiwillig.</p>
+      <div class="row">
+        <a class="btn btn-coffee" href="https://ko-fi.com/mariokoenig" rel="noopener">☕ Ko-fi</a>
+        <a class="btn btn-coffee" href="https://buymeacoffee.com/mariokoenig" rel="noopener">☕ Buy Me a Coffee</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======== FAQ ======== -->
+<section class="section" id="faq" style="padding-top:0">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">FAQ</p>
+      <h2>Kurz beantwortet.</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Was kostet BR-Log?</summary>
+        <p class="a">Nichts – jetzt nicht und später nicht. BR-Log ist freie Software (GPLv3). Wer mag, kann freiwillig einen Kaffee spendieren; alle Funktionen stehen aber jedem uneingeschränkt zur Verfügung.</p>
+      </details>
+      <details>
+        <summary>Wo liegen meine Daten – und wer kann sie lesen?</summary>
+        <p class="a">Ausschließlich auf deinem Gerät, in einer mit AES-256 verschlüsselten Datenbank. Es gibt keinen Server, kein Konto und keine Übertragung. Lesen kann sie nur, wer dein Passwort (oder auf dem Handy deinen Fingerabdruck) hat – auch der Entwickler nicht.</p>
+      </details>
+      <details>
+        <summary>Was passiert, wenn ich mein Passwort vergesse?</summary>
+        <p class="a">Bei der Einrichtung erzeugt BR-Log einen Wiederherstellungs-Code. Bewahre ihn getrennt auf (z. B. im Passwort-Manager) – mit ihm kommst du wieder rein und setzt ein neues Passwort. Ohne Passwort <em>und</em> ohne Code sind die Daten unwiederbringlich verschlüsselt: Genau das ist der Schutz.</p>
+      </details>
+      <details>
+        <summary>Kann ich zwischen PC und Handy wechseln?</summary>
+        <p class="a">Ja. Über den JSON-Export nimmst du deine Einträge mit – beim Import zeigt BR-Log eine Konflikt-Vorschau und führt beide Stände sauber zusammen. Eine automatische Cloud-Synchronisation gibt es bewusst nicht.</p>
+      </details>
+      <details>
+        <summary>Wie bekomme ich Updates?</summary>
+        <p class="a">Neue Versionen erscheinen auf der <a href="https://github.com/Kjeld76/br-log/releases" rel="noopener">Release-Seite</a>. Einfach die neue Version installieren – deine Daten und Einstellungen bleiben dabei erhalten.</p>
+      </details>
+      <details>
+        <summary>Warum ist die Android-App nicht im Play Store?</summary>
+        <p class="a">Bewusste Entscheidung: kein Store-Konto, keine Store-Regeln, keine Zwischenstation. Die APK kommt direkt und signiert vom Entwickler. Android fragt deshalb einmalig nach der Erlaubnis, aus „unbekannten Quellen" zu installieren – das ist normal.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="year">2026</span> Mario König · <a href="https://github.com/Kjeld76/br-log/blob/main/LICENSE" rel="noopener">GPLv3</a></span>
+    <span><a href="https://github.com/Kjeld76/br-log" rel="noopener">GitHub</a> · <a href="https://github.com/Kjeld76/br-log/blob/main/THIRD_PARTY_NOTICES.md" rel="noopener">Lizenzhinweise</a> · <a href="https://ko-fi.com/mariokoenig" rel="noopener">Unterstützen</a></span>
+  </div>
+</footer>
+
+<script>
+document.getElementById('year').textContent = new Date().getFullYear();
+
+// Screenshots einblenden, sobald die Dateien existieren (Platzhalter bis dahin).
+document.querySelectorAll('.shot').forEach(function (slot) {
+  var img = new Image();
+  img.src = 'assets/screenshots/' + slot.dataset.shot + '.png';
+  img.alt = slot.querySelector('.label').textContent;
+  img.onload = function () {
+    slot.innerHTML = '';
+    slot.style.border = 'none';
+    slot.style.minHeight = '0';
+    slot.style.padding = '0';
+    slot.appendChild(img);
+  };
+});
+
+// Download-Buttons direkt aufs neueste Release verdrahten (öffentliche GitHub-API,
+// kein Tracking-Dienst). Fallback bleibt die Release-Seite.
+fetch('https://api.github.com/repos/Kjeld76/br-log/releases/latest')
+  .then(function (r) { return r.ok ? r.json() : null; })
+  .then(function (rel) {
+    if (!rel || !rel.assets) return;
+    document.querySelectorAll('a.file[data-asset]').forEach(function (a) {
+      var key = a.dataset.asset;
+      var hit = rel.assets.find(function (as) { return as.name.indexOf(key) !== -1; });
+      if (hit) a.href = hit.browser_download_url;
+    });
+    var v = document.getElementById('dl-version');
+    if (rel.tag_name) {
+      var s = document.createElement('span');
+      s.textContent = 'Aktuelle Version: ' + rel.tag_name + ' · ';
+      v.prepend(s);
+    }
+  })
+  .catch(function () { /* Fallback-Links stehen bereits im Markup */ });
+</script>
+</body>
+</html>
