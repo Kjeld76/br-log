@@ -11,6 +11,7 @@ Wichtige Fakten:
 - Einordnung: Anders als Cloud-Zeiterfassung (z. B. Clockify, Toggl) gibt BR-Log keine Daten an Dritte weiter; anders als eine Excel-Liste ist die Ablage verschlüsselt und rechnet den § 37-Saldo automatisch.
 - Preis: kostenlos, keine Premium-Version, kein Abo. Freiwillige Spenden über Ko-fi und Buy Me a Coffee.
 - Technik: Tauri 2 (Rust-Kern, React/TypeScript-Oberfläche). Windows 10/11 (Installer + portable Version), Linux (deb, AppImage), Android 10+ (APK direkt vom Entwickler, bewusst ohne Play Store).
+- Keine iOS-/macOS-Version: bewusste Entscheidung aus Kostengründen – Apples Entwicklerkonto (99 $/Jahr) ist Voraussetzung für jede Verteilung an Dritte und steht für ein kostenloses Projekt in keinem Verhältnis.
 - Entwickler: Mario König; entstanden aus eigener Betriebsratspraxis.
 
 ## Links
