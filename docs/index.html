@@ -311,17 +311,17 @@ footer a{color:#C9D8E8}
       <h2>So sieht das aus.</h2>
     </div>
     <div class="shots">
-      <div class="shot" data-shot="desktop-hell">
-        <span class="label">Desktop – Erfassung &amp; Auswertung</span>
-        <span class="hint">Screenshot folgt · assets/screenshots/desktop-hell.png</span>
+      <div class="shot" data-shot="erfassen-desktop.png">
+        <span class="label">Erfassen – mit Pause, Schlagwörtern und vertraulicher Dokumentation</span>
+        <span class="hint">Screenshot folgt</span>
       </div>
-      <div class="shot tall" data-shot="android">
-        <span class="label">Android – unterwegs erfassen</span>
-        <span class="hint">Screenshot folgt · assets/screenshots/android.png</span>
+      <div class="shot tall" data-shot="android.jpg">
+        <span class="label">Unterwegs – die App auf dem Handy</span>
+        <span class="hint">Screenshot folgt</span>
       </div>
-      <div class="shot" data-shot="desktop-dunkel">
-        <span class="label">Desktop – dunkles Design</span>
-        <span class="hint">Screenshot folgt · assets/screenshots/desktop-dunkel.png</span>
+      <div class="shot" data-shot="historie-desktop.png">
+        <span class="label">Kalender &amp; Historie – Volltextsuche und Summen</span>
+        <span class="hint">Screenshot folgt</span>
       </div>
     </div>
   </div>
@@ -437,7 +437,7 @@ document.getElementById('year').textContent = new Date().getFullYear();
 // Screenshots einblenden, sobald die Dateien existieren (Platzhalter bis dahin).
 document.querySelectorAll('.shot').forEach(function (slot) {
   var img = new Image();
-  img.src = 'assets/screenshots/' + slot.dataset.shot + '.png';
+  img.src = 'assets/screenshots/' + slot.dataset.shot;
   img.alt = slot.querySelector('.label').textContent;
   img.onload = function () {
     slot.innerHTML = '';
