@@ -126,15 +126,16 @@ header{background:var(--steel);color:#fff;position:sticky;top:0;z-index:50;box-s
 .feature h3{font-family:var(--display);font-weight:700;font-size:1.08rem;margin:6px 0 6px}
 .feature p{color:var(--ink-2);font-size:.92rem}
 
-/* ==== Screenshots ==== */
-.shots{display:grid;grid-template-columns:1.4fr 1fr;gap:22px}
+/* ==== Screenshots: einheitliche Bildkarten, Klick öffnet das Original ==== */
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 @media(max-width:820px){.shots{grid-template-columns:1fr}}
-.shot{border:1.5px dashed var(--line);border-radius:var(--radius);background:var(--card);min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink-2);padding:20px;text-align:center}
-.shot.tall{grid-row:span 2;min-height:0}
-.shot.wide{grid-column:1 / -1}
-.shot .label{font-family:var(--display);font-weight:600;font-size:.95rem;color:var(--ink)}
-.shot .hint{font-family:var(--mono);font-size:.75rem}
-.shot img{border-radius:8px;box-shadow:var(--shadow)}
+.shot{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;box-shadow:var(--shadow);text-decoration:none;color:var(--ink);transition:transform .15s ease}
+.shot:hover{transform:translateY(-2px)}
+@media (prefers-reduced-motion: reduce){.shot:hover{transform:none}}
+.shot img{width:100%;height:340px;object-fit:cover;object-position:top;border-bottom:1px solid var(--line)}
+@media(max-width:820px){.shot img{height:260px}}
+.shot .label{font-family:var(--display);font-weight:600;font-size:.92rem;padding:13px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.shot .label .zoom{font-family:var(--mono);font-size:.72rem;color:var(--ink-2);white-space:nowrap;font-weight:400}
 
 /* ==== Download ==== */
 #download{background:linear-gradient(178deg,var(--steel) 0%,var(--steel-deep) 100%);color:#fff}
@@ -312,22 +313,22 @@ footer a{color:#C9D8E8}
       <h2>So sieht das aus.</h2>
     </div>
     <div class="shots">
-      <div class="shot" data-shot="erfassen-desktop.png">
-        <span class="label">Erfassen – mit Pause, Schlagwörtern und vertraulicher Dokumentation</span>
-        <span class="hint">Screenshot folgt</span>
-      </div>
-      <div class="shot tall" data-shot="android.jpg">
-        <span class="label">Unterwegs – die App auf dem Handy</span>
-        <span class="hint">Screenshot folgt</span>
-      </div>
-      <div class="shot" data-shot="historie-desktop.png">
-        <span class="label">Kalender &amp; Historie – Volltextsuche und Summen</span>
-        <span class="hint">Screenshot folgt</span>
-      </div>
-      <div class="shot wide" data-shot="hell-desktop.png">
-        <span class="label">Helles Design – folgt automatisch deiner Systemeinstellung</span>
-        <span class="hint">Screenshot folgt</span>
-      </div>
+      <a class="shot" href="assets/screenshots/erfassen-desktop.png" target="_blank" rel="noopener">
+        <img src="assets/screenshots/erfassen-desktop.png" loading="lazy" alt="Erfassen-Formular mit Pausenfeld, Schlagwörtern und vertraulicher Tätigkeitsbeschreibung (dunkles Design)">
+        <span class="label">Erfassen – Pause, Schlagwörter, vertrauliche Dokumentation <span class="zoom">Bild öffnen ↗</span></span>
+      </a>
+      <a class="shot" href="assets/screenshots/android.jpg" target="_blank" rel="noopener">
+        <img src="assets/screenshots/android.jpg" loading="lazy" alt="BR-Log auf einem Android-Handy: Erfassen-Ansicht mit unterer Navigationsleiste">
+        <span class="label">Unterwegs – die App auf dem Handy <span class="zoom">Bild öffnen ↗</span></span>
+      </a>
+      <a class="shot" href="assets/screenshots/historie-desktop.png" target="_blank" rel="noopener">
+        <img src="assets/screenshots/historie-desktop.png" loading="lazy" alt="Kalender und Historie mit Volltextsuche, Schlagwort-Filtern und Summenzeile">
+        <span class="label">Kalender &amp; Historie – Volltextsuche und Summen <span class="zoom">Bild öffnen ↗</span></span>
+      </a>
+      <a class="shot" href="assets/screenshots/hell-desktop.png" target="_blank" rel="noopener">
+        <img src="assets/screenshots/hell-desktop.png" loading="lazy" alt="Erfassen-Formular im hellen Design">
+        <span class="label">Helles Design – folgt deiner Systemeinstellung <span class="zoom">Bild öffnen ↗</span></span>
+      </a>
     </div>
   </div>
 </section>
@@ -438,20 +439,6 @@ footer a{color:#C9D8E8}
 
 <script>
 document.getElementById('year').textContent = new Date().getFullYear();
-
-// Screenshots einblenden, sobald die Dateien existieren (Platzhalter bis dahin).
-document.querySelectorAll('.shot').forEach(function (slot) {
-  var img = new Image();
-  img.src = 'assets/screenshots/' + slot.dataset.shot;
-  img.alt = slot.querySelector('.label').textContent;
-  img.onload = function () {
-    slot.innerHTML = '';
-    slot.style.border = 'none';
-    slot.style.minHeight = '0';
-    slot.style.padding = '0';
-    slot.appendChild(img);
-  };
-});
 
 // Download-Buttons direkt aufs neueste Release verdrahten (öffentliche GitHub-API,
 // kein Tracking-Dienst). Fallback bleibt die Release-Seite.
