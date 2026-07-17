@@ -98,6 +98,11 @@ export async function initSearch(): Promise<void> {
       await db.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(entry_id UNINDEXED, public_content, secret_content)"
       );
+      // Termin-Suchindex: gleiche Spaltentrennung public/secret wie bei
+      // Einträgen; beide Tabellen teilen sich Verfügbarkeit + Fallback.
+      await db.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS appointments_fts USING fts5(appointment_id UNINDEXED, public_content, secret_content)"
+      );
       ftsAvailable = true;
     } catch (e) {
       ftsAvailable = false;

@@ -24,6 +24,22 @@ export function buildSecretContent(secretDetails: string): string {
 }
 
 /**
+ * Baut den öffentlichen Suchtext eines Termins (NICHT vertraulich): Titel +
+ * Ort + Beschreibung + Schlagwort-Labels. Das vertrauliche Notizfeld läuft --
+ * wie bei Einträgen -- getrennt über buildSecretContent in die secret-Spalte.
+ */
+export function buildAppointmentPublicContent(args: {
+  title: string;
+  location: string;
+  description: string;
+  tagLabels: string[];
+}): string {
+  return [args.title, args.location, args.description, args.tagLabels.join(" ")]
+    .filter((s) => s && s.trim().length > 0)
+    .join(" \n ");
+}
+
+/**
  * Baut einen spaltengebundenen FTS5-MATCH-Ausdruck (Prefix-Suche, AND-verknüpft).
  * Beispiel: {secret_content} : ("foo"* "bar"*)
  */

@@ -1,5 +1,10 @@
 import { getDb, isFtsAvailable, type Db, type BatchStatement } from "./client";
-import { buildPublicContent, buildSecretContent, buildFtsMatch } from "./ftsContent";
+import {
+  buildAppointmentPublicContent,
+  buildPublicContent,
+  buildSecretContent,
+  buildFtsMatch,
+} from "./ftsContent";
 import { AppError } from "../lib/errors";
 import type {
   TimeEntry,
@@ -11,6 +16,12 @@ import type {
   SearchHit,
   BackupPayload,
   ImportSummary,
+  Appointment,
+  AppointmentColor,
+  AppointmentFullItem,
+  AppointmentListItem,
+  AppointmentReminder,
+  ReminderFired,
 } from "../types";
 
 // ---------- Roh-Zeilentypen (snake_case wie in SQLite) ----------
@@ -53,6 +64,43 @@ interface ObjectionRow {
   date: string | null;
 }
 
+// Schlanke Terminzeile OHNE secret_details – für Kalender/Agenda/Suche.
+interface AppointmentListRow {
+  id: string;
+  title: string;
+  location: string;
+  description: string;
+  is_all_day: number;
+  start_date: string;
+  start_time: string | null;
+  end_date: string;
+  end_time: string | null;
+  is_important: number;
+  color: string | null;
+  rrule: string | null;
+  exdates: string; // JSON-Array (YYYY-MM-DD)
+  parent_id: string | null;
+  recurrence_anchor: string | null;
+  ics_uid: string | null;
+  ics_sequence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Vollständige Terminzeile inkl. secret_details – für Detail/Backup/FTS.
+interface AppointmentRow extends AppointmentListRow {
+  secret_details: string;
+}
+
+// Explizite Spaltenlisten (alias `a`) nach dem LIST_ENTRY_COLUMNS-Muster:
+// Kalender-/Agenda-/Suchpfad lädt secret_details strukturell NICHT.
+const LIST_APPT_COLUMNS =
+  "a.id, a.title, a.location, a.description, a.is_all_day, a.start_date, " +
+  "a.start_time, a.end_date, a.end_time, a.is_important, a.color, a.rrule, " +
+  "a.exdates, a.parent_id, a.recurrence_anchor, a.ics_uid, a.ics_sequence, " +
+  "a.created_at, a.updated_at";
+const FULL_APPT_COLUMNS = LIST_APPT_COLUMNS + ", a.secret_details";
+
 // ---------- Hilfen ----------
 
 function generateId(): string {
@@ -86,6 +134,40 @@ export function newEntry(dateIso: string): TimeEntry {
 
 export function newObjection(): Objection {
   return { id: generateId(), reason: "", byWhom: "", date: null };
+}
+
+/** Leerer Einzeltermin am übergebenen Tag (09:00–10:00), Muster von newEntry. */
+export function newAppointment(dateIso: string): Appointment {
+  const now = nowIso();
+  return {
+    id: generateId(),
+    title: "",
+    location: "",
+    description: "",
+    secretDetails: "",
+    isAllDay: false,
+    startDate: dateIso,
+    startTime: "09:00",
+    endDate: dateIso,
+    endTime: "10:00",
+    isImportant: false,
+    color: null,
+    rrule: null,
+    exdates: [],
+    parentId: null,
+    recurrenceAnchor: null,
+    icsUid: null,
+    icsSequence: 0,
+    tagIds: [],
+    reminders: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Neue Erinnerung mit stabiler UUID (siehe AppointmentReminder in types.ts). */
+export function newReminder(minutesBefore: number): AppointmentReminder {
+  return { id: generateId(), minutesBefore };
 }
 
 function mapListEntry(
@@ -157,24 +239,38 @@ async function loadTagsByEntryIds(
   db: Db,
   ids: string[]
 ): Promise<Map<string, { id: string; label: string }[]>> {
+  return loadTagsByOwnerIds(db, ids, "entry_tags", "entry_id");
+}
+
+/**
+ * Parametrisierte Variante des Tag-Joins für beide n:m-Tabellen (entry_tags
+ * und appointment_tags teilen sich task_tags). Tabellen-/Spaltennamen sind
+ * Compile-Zeit-Literale, keine Nutzereingaben.
+ */
+async function loadTagsByOwnerIds(
+  db: Db,
+  ids: string[],
+  joinTable: "entry_tags" | "appointment_tags",
+  ownerCol: "entry_id" | "appointment_id"
+): Promise<Map<string, { id: string; label: string }[]>> {
   const tagRows = await selectByIdChunks<{
-    entry_id: string;
+    owner_id: string;
     id: string;
     label: string;
   }>(
     db,
     ids,
-    (ph) => `SELECT et.entry_id, t.id, t.label
-       FROM entry_tags et JOIN task_tags t ON t.id = et.tag_id
-      WHERE et.entry_id IN (${ph})`
+    (ph) => `SELECT et.${ownerCol} as owner_id, t.id, t.label
+       FROM ${joinTable} et JOIN task_tags t ON t.id = et.tag_id
+      WHERE et.${ownerCol} IN (${ph})`
   );
-  const tagsByEntry = new Map<string, { id: string; label: string }[]>();
+  const tagsByOwner = new Map<string, { id: string; label: string }[]>();
   for (const t of tagRows) {
-    const arr = tagsByEntry.get(t.entry_id) || [];
+    const arr = tagsByOwner.get(t.owner_id) || [];
     arr.push({ id: t.id, label: t.label });
-    tagsByEntry.set(t.entry_id, arr);
+    tagsByOwner.set(t.owner_id, arr);
   }
-  return tagsByEntry;
+  return tagsByOwner;
 }
 
 /** Lädt Schlagwort-Labels und Widersprüche für die übergebenen Eintrags-IDs. */
@@ -739,6 +835,549 @@ export async function getLastEntryDate(): Promise<string | null> {
   return rows[0]?.maxDate ?? null;
 }
 
+// ---------- Termine ----------
+
+/** Defensives Parsen der exdates-JSON-Spalte (kaputte Werte -> leeres Array). */
+function parseExdates(raw: string): string[] {
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function mapListAppointment(
+  r: AppointmentListRow,
+  tags: { id: string; label: string }[],
+  reminders: AppointmentReminder[]
+): AppointmentListItem {
+  return {
+    id: r.id,
+    title: r.title,
+    location: r.location,
+    description: r.description,
+    isAllDay: r.is_all_day === 1,
+    startDate: r.start_date,
+    startTime: r.start_time,
+    endDate: r.end_date,
+    endTime: r.end_time,
+    isImportant: r.is_important === 1,
+    color: (r.color as AppointmentColor | null) ?? null,
+    rrule: r.rrule,
+    exdates: parseExdates(r.exdates),
+    parentId: r.parent_id,
+    recurrenceAnchor: r.recurrence_anchor,
+    icsUid: r.ics_uid,
+    icsSequence: r.ics_sequence,
+    tagIds: tags.map((t) => t.id),
+    tagLabels: tags.map((t) => t.label),
+    reminders,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+function mapFullAppointment(
+  r: AppointmentRow,
+  tags: { id: string; label: string }[],
+  reminders: AppointmentReminder[]
+): AppointmentFullItem {
+  return {
+    ...mapListAppointment(r, tags, reminders),
+    secretDetails: r.secret_details,
+  };
+}
+
+/** Lädt Schlagwörter + Erinnerungen für die übergebenen Termin-IDs. */
+async function loadApptRelations(ids: string[]): Promise<{
+  tagsByAppt: Map<string, { id: string; label: string }[]>;
+  remindersByAppt: Map<string, AppointmentReminder[]>;
+}> {
+  const db = await getDb();
+  const tagsByAppt = await loadTagsByOwnerIds(
+    db,
+    ids,
+    "appointment_tags",
+    "appointment_id"
+  );
+  const remRows = await selectByIdChunks<{
+    id: string;
+    appointment_id: string;
+    minutes_before: number;
+  }>(
+    db,
+    ids,
+    (ph) => `SELECT id, appointment_id, minutes_before
+       FROM appointment_reminders WHERE appointment_id IN (${ph})
+      ORDER BY minutes_before`
+  );
+  const remindersByAppt = new Map<string, AppointmentReminder[]>();
+  for (const r of remRows) {
+    const arr = remindersByAppt.get(r.appointment_id) || [];
+    arr.push({ id: r.id, minutesBefore: r.minutes_before });
+    remindersByAppt.set(r.appointment_id, arr);
+  }
+  return { tagsByAppt, remindersByAppt };
+}
+
+async function hydrateListAppointments(
+  rows: AppointmentListRow[]
+): Promise<AppointmentListItem[]> {
+  if (rows.length === 0) return [];
+  const { tagsByAppt, remindersByAppt } = await loadApptRelations(
+    rows.map((r) => r.id)
+  );
+  return rows.map((r) =>
+    mapListAppointment(r, tagsByAppt.get(r.id) || [], remindersByAppt.get(r.id) || [])
+  );
+}
+
+async function hydrateFullAppointments(
+  rows: AppointmentRow[]
+): Promise<AppointmentFullItem[]> {
+  if (rows.length === 0) return [];
+  const { tagsByAppt, remindersByAppt } = await loadApptRelations(
+    rows.map((r) => r.id)
+  );
+  return rows.map((r) =>
+    mapFullAppointment(r, tagsByAppt.get(r.id) || [], remindersByAppt.get(r.id) || [])
+  );
+}
+
+/** DELETE+INSERT der FTS-Zeile eines Termins (leer, falls FTS5 fehlt). */
+function apptFtsUpsertStatements(args: {
+  appointmentId: string;
+  title: string;
+  location: string;
+  description: string;
+  tagLabels: string[];
+  secretDetails: string;
+}): BatchStatement[] {
+  if (!isFtsAvailable()) return [];
+  const publicContent = buildAppointmentPublicContent(args);
+  const secretContent = buildSecretContent(args.secretDetails);
+  return [
+    {
+      sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+      params: [args.appointmentId],
+    },
+    {
+      sql: "INSERT INTO appointments_fts (appointment_id, public_content, secret_content) VALUES (?,?,?)",
+      params: [args.appointmentId, publicContent, secretContent],
+    },
+  ];
+}
+
+/**
+ * Baut alle Statements, um EINEN Termin zu schreiben (Terminzeile, Schlagwort-
+ * Zuordnungen, Erinnerungen, FTS) – atomare Einheit für db_batch, Muster von
+ * entryWriteStatements.
+ *
+ * Besonderheiten:
+ *  - Overrides (parentId gesetzt) erben Schlagwörter + Erinnerungen des
+ *    Masters -- für sie werden KEINE appointment_tags/-reminders geschrieben.
+ *  - Erinnerungen werden DIFF-basiert geschrieben (nur entfernte löschen,
+ *    geänderte aktualisieren, neue einfügen): ein pauschales DELETE+INSERT
+ *    würde via ON DELETE CASCADE das reminder_fired-Protokoll mitreißen und
+ *    bereits gezeigte Erinnerungen nach jedem Speichern erneut feuern lassen.
+ *    `existingReminders` ist der aktuelle DB-Stand (leer bei Neuanlage).
+ */
+function appointmentWriteStatements(args: {
+  appt: Appointment;
+  exists: boolean;
+  updatedAt: string;
+  createdAtDefault: string;
+  tagLabelById: Map<string, string>;
+  existingReminders: AppointmentReminder[];
+}): BatchStatement[] {
+  const { appt, exists, updatedAt, createdAtDefault, tagLabelById } = args;
+  const st: BatchStatement[] = [];
+  const isOverride = appt.parentId !== null;
+  const validTagIds = isOverride
+    ? []
+    : appt.tagIds.filter((id) => tagLabelById.has(id));
+  const exdatesJson = JSON.stringify(appt.exdates ?? []);
+
+  if (exists) {
+    st.push({
+      sql: `UPDATE appointments SET title=?, location=?, description=?, secret_details=?,
+         is_all_day=?, start_date=?, start_time=?, end_date=?, end_time=?, is_important=?,
+         color=?, rrule=?, exdates=?, parent_id=?, recurrence_anchor=?, ics_uid=?,
+         ics_sequence=?, updated_at=? WHERE id=?`,
+      params: [
+        appt.title,
+        appt.location,
+        appt.description,
+        appt.secretDetails,
+        appt.isAllDay ? 1 : 0,
+        appt.startDate,
+        appt.startTime,
+        appt.endDate,
+        appt.endTime,
+        appt.isImportant ? 1 : 0,
+        appt.color,
+        appt.rrule,
+        exdatesJson,
+        appt.parentId,
+        appt.recurrenceAnchor,
+        appt.icsUid,
+        appt.icsSequence,
+        updatedAt,
+        appt.id,
+      ],
+    });
+  } else {
+    st.push({
+      sql: `INSERT INTO appointments (id, title, location, description, secret_details,
+         is_all_day, start_date, start_time, end_date, end_time, is_important, color,
+         rrule, exdates, parent_id, recurrence_anchor, ics_uid, ics_sequence,
+         created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      params: [
+        appt.id,
+        appt.title,
+        appt.location,
+        appt.description,
+        appt.secretDetails,
+        appt.isAllDay ? 1 : 0,
+        appt.startDate,
+        appt.startTime,
+        appt.endDate,
+        appt.endTime,
+        appt.isImportant ? 1 : 0,
+        appt.color,
+        appt.rrule,
+        exdatesJson,
+        appt.parentId,
+        appt.recurrenceAnchor,
+        appt.icsUid,
+        appt.icsSequence,
+        appt.createdAt || createdAtDefault,
+        updatedAt,
+      ],
+    });
+  }
+
+  if (!isOverride) {
+    st.push({
+      sql: "DELETE FROM appointment_tags WHERE appointment_id = ?",
+      params: [appt.id],
+    });
+    for (const tagId of validTagIds) {
+      st.push({
+        sql: "INSERT OR IGNORE INTO appointment_tags (appointment_id, tag_id) VALUES (?,?)",
+        params: [appt.id, tagId],
+      });
+    }
+
+    // Erinnerungs-DIFF (s. Funktionskommentar).
+    const wanted = new Map(appt.reminders.map((r) => [r.id, r.minutesBefore]));
+    for (const ex of args.existingReminders) {
+      if (!wanted.has(ex.id)) {
+        st.push({
+          sql: "DELETE FROM appointment_reminders WHERE id = ?",
+          params: [ex.id],
+        });
+      } else if (wanted.get(ex.id) !== ex.minutesBefore) {
+        st.push({
+          sql: "UPDATE appointment_reminders SET minutes_before = ? WHERE id = ?",
+          params: [wanted.get(ex.id), ex.id],
+        });
+      }
+    }
+    const existingIds = new Set(args.existingReminders.map((r) => r.id));
+    for (const r of appt.reminders) {
+      if (!existingIds.has(r.id)) {
+        st.push({
+          sql: "INSERT OR IGNORE INTO appointment_reminders (id, appointment_id, minutes_before) VALUES (?,?,?)",
+          params: [r.id, appt.id, r.minutesBefore],
+        });
+      }
+    }
+  }
+
+  st.push(
+    ...apptFtsUpsertStatements({
+      appointmentId: appt.id,
+      title: appt.title,
+      location: appt.location,
+      description: appt.description,
+      tagLabels: validTagIds.map((id) => tagLabelById.get(id)!),
+      secretDetails: appt.secretDetails,
+    })
+  );
+  return st;
+}
+
+export async function getAppointment(
+  id: string
+): Promise<AppointmentFullItem | null> {
+  const db = await getDb();
+  const rows = await db.select<AppointmentRow[]>(
+    `SELECT ${FULL_APPT_COLUMNS} FROM appointments a WHERE a.id = ?`,
+    [id]
+  );
+  if (rows.length === 0) return null;
+  const items = await hydrateFullAppointments(rows);
+  return items[0] ?? null;
+}
+
+/**
+ * Speichert einen Termin (Master, Einzeltermin oder Override) samt Schlag-
+ * wörtern, Erinnerungen und FTS-Index ATOMAR. `updatedAtOverride` erhält beim
+ * Import den Original-Zeitstempel (Last-Writer-Wins, wie saveEntry).
+ */
+export async function saveAppointment(
+  appt: Appointment,
+  updatedAtOverride?: string
+): Promise<void> {
+  const db = await getDb();
+  const now = nowIso();
+  const exists =
+    (
+      await db.select<{ id: string }[]>(
+        "SELECT id FROM appointments WHERE id = ?",
+        [appt.id]
+      )
+    ).length > 0;
+  const tagLabelById = await loadTagLabels(db, appt.tagIds);
+  const existingReminders = exists
+    ? await db.select<{ id: string; minutes_before: number }[]>(
+        "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
+        [appt.id]
+      )
+    : [];
+  const statements = appointmentWriteStatements({
+    appt,
+    exists,
+    updatedAt: updatedAtOverride ?? now,
+    createdAtDefault: now,
+    tagLabelById,
+    existingReminders: existingReminders.map((r) => ({
+      id: r.id,
+      minutesBefore: r.minutes_before,
+    })),
+  });
+  await db.batch(statements);
+}
+
+/**
+ * Löscht einen Termin. Bei einem Serien-Master fallen die Overrides per
+ * ON DELETE CASCADE mit -- deren FTS-Zeilen (kein FK-Bezug) werden hier
+ * explizit mit abgeräumt (Muster von deleteEntry: explizite DELETEs als klare
+ * Absicht, Kaskade als zweite Verteidigungslinie).
+ */
+export async function deleteAppointment(id: string): Promise<void> {
+  const db = await getDb();
+  const overrideIds = (
+    await db.select<{ id: string }[]>(
+      "SELECT id FROM appointments WHERE parent_id = ?",
+      [id]
+    )
+  ).map((r) => r.id);
+  const statements: BatchStatement[] = [
+    { sql: "DELETE FROM reminder_fired WHERE appointment_id = ?", params: [id] },
+    {
+      sql: "DELETE FROM appointment_reminders WHERE appointment_id = ?",
+      params: [id],
+    },
+    { sql: "DELETE FROM appointment_tags WHERE appointment_id = ?", params: [id] },
+    { sql: "DELETE FROM appointments WHERE parent_id = ?", params: [id] },
+    { sql: "DELETE FROM appointments WHERE id = ?", params: [id] },
+  ];
+  if (isFtsAvailable()) {
+    for (const fid of [id, ...overrideIds]) {
+      statements.push({
+        sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+        params: [fid],
+      });
+    }
+  }
+  await db.batch(statements);
+}
+
+/**
+ * Lädt alle Termine, die für ein Anzeigefenster [from, to] relevant sind, als
+ * schlanke Listen-Items (OHNE secretDetails). Drei Teilmengen:
+ *  1. Einzeltermine, die das Fenster überlappen (mehrtägige inklusive),
+ *  2. ALLE Serien-Master mit start_date <= to (ob eine Instanz ins Fenster
+ *     fällt, entscheidet erst die RRULE-Expansion in lib/appointments.ts --
+ *     UNTIL/COUNT lassen sich SQL-seitig nicht auswerten),
+ *  3. ALLE Overrides der geladenen Master (ein Override kann von außerhalb
+ *     ins Fenster verschoben worden sein und umgekehrt).
+ */
+export async function listAppointmentsRange(
+  from: string,
+  to: string
+): Promise<AppointmentListItem[]> {
+  const db = await getDb();
+  const singles = await db.select<AppointmentListRow[]>(
+    `SELECT ${LIST_APPT_COLUMNS} FROM appointments a
+      WHERE a.rrule IS NULL AND a.parent_id IS NULL
+        AND a.start_date <= ? AND a.end_date >= ?`,
+    [to, from]
+  );
+  const masters = await db.select<AppointmentListRow[]>(
+    `SELECT ${LIST_APPT_COLUMNS} FROM appointments a
+      WHERE a.rrule IS NOT NULL AND a.parent_id IS NULL AND a.start_date <= ?`,
+    [to]
+  );
+  const masterIds = masters.map((m) => m.id);
+  const overrides =
+    masterIds.length === 0
+      ? []
+      : await selectByIdChunks<AppointmentListRow>(
+          db,
+          masterIds,
+          (ph) =>
+            `SELECT ${LIST_APPT_COLUMNS} FROM appointments a WHERE a.parent_id IN (${ph})`
+        );
+  return hydrateListAppointments([...singles, ...masters, ...overrides]);
+}
+
+/**
+ * Löscht EINE Instanz einer Serie ("nur dieser Termin"): Anker in exdates des
+ * Masters aufnehmen; ein eventueller Override dieser Instanz wird mit
+ * entfernt (die Instanz soll ganz verschwinden, nicht auf den generierten
+ * Stand zurückfallen).
+ */
+export async function deleteOccurrence(
+  masterId: string,
+  anchor: string
+): Promise<void> {
+  const db = await getDb();
+  const rows = await db.select<{ exdates: string }[]>(
+    "SELECT exdates FROM appointments WHERE id = ?",
+    [masterId]
+  );
+  if (rows.length === 0) return;
+  const exdates = parseExdates(rows[0].exdates);
+  if (!exdates.includes(anchor)) exdates.push(anchor);
+  exdates.sort();
+  const override = await db.select<{ id: string }[]>(
+    "SELECT id FROM appointments WHERE parent_id = ? AND recurrence_anchor = ?",
+    [masterId, anchor]
+  );
+  const statements: BatchStatement[] = [
+    {
+      sql: "UPDATE appointments SET exdates = ?, updated_at = ? WHERE id = ?",
+      params: [JSON.stringify(exdates), nowIso(), masterId],
+    },
+  ];
+  for (const o of override) {
+    statements.push({
+      sql: "DELETE FROM appointments WHERE id = ?",
+      params: [o.id],
+    });
+    if (isFtsAvailable()) {
+      statements.push({
+        sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+        params: [o.id],
+      });
+    }
+  }
+  await db.batch(statements);
+}
+
+/**
+ * "Diesen und alle folgenden bearbeiten" (UNTIL-Split) in EINER Transaktion:
+ * der Aufrufer hat den alten Master bereits mit UNTIL (Vortag des Ankers)
+ * versehen und die neue Serie ab dem Anker aufgebaut (inkl. aufgeteilter
+ * exdates); hier werden beide geschrieben und die Overrides ab dem Anker auf
+ * die neue Serie umgehängt.
+ */
+export async function splitSeries(args: {
+  master: Appointment;
+  newSeries: Appointment;
+  anchor: string;
+}): Promise<void> {
+  const db = await getDb();
+  const now = nowIso();
+  const tagLabelById = await loadTagLabels(db, [
+    ...args.master.tagIds,
+    ...args.newSeries.tagIds,
+  ]);
+  const existingReminders = await db.select<
+    { id: string; minutes_before: number }[]
+  >(
+    "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
+    [args.master.id]
+  );
+  const statements: BatchStatement[] = [
+    ...appointmentWriteStatements({
+      appt: args.master,
+      exists: true,
+      updatedAt: now,
+      createdAtDefault: now,
+      tagLabelById,
+      existingReminders: existingReminders.map((r) => ({
+        id: r.id,
+        minutesBefore: r.minutes_before,
+      })),
+    }),
+    ...appointmentWriteStatements({
+      appt: args.newSeries,
+      exists: false,
+      updatedAt: now,
+      createdAtDefault: now,
+      tagLabelById,
+      existingReminders: [],
+    }),
+    {
+      sql: `UPDATE appointments SET parent_id = ?
+             WHERE parent_id = ? AND recurrence_anchor >= ?`,
+      params: [args.newSeries.id, args.master.id, args.anchor],
+    },
+  ];
+  await db.batch(statements);
+}
+
+// ---------- Erinnerungs-Protokoll (reminder_fired) ----------
+
+/** Markiert eine Erinnerung als gefeuert (idempotent via INSERT OR IGNORE). */
+export async function markReminderFired(f: ReminderFired): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT OR IGNORE INTO reminder_fired
+       (appointment_id, reminder_id, occurrence_anchor, fired_at)
+     VALUES (?,?,?,?)`,
+    [f.appointmentId, f.reminderId, f.occurrenceAnchor, f.firedAt]
+  );
+}
+
+/** Alle Feuer-Markierungen ab dem übergebenen Anker (für das Scheduler-Set). */
+export async function listFiredReminders(
+  fromAnchor: string
+): Promise<ReminderFired[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      appointment_id: string;
+      reminder_id: string;
+      occurrence_anchor: string;
+      fired_at: string;
+    }[]
+  >(
+    "SELECT appointment_id, reminder_id, occurrence_anchor, fired_at FROM reminder_fired WHERE occurrence_anchor >= ?",
+    [fromAnchor]
+  );
+  return rows.map((r) => ({
+    appointmentId: r.appointment_id,
+    reminderId: r.reminder_id,
+    occurrenceAnchor: r.occurrence_anchor,
+    firedAt: r.fired_at,
+  }));
+}
+
+/** Räumt alte Feuer-Markierungen auf (Best-effort beim Start, ~90 Tage). */
+export async function cleanupFiredBefore(anchorIso: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM reminder_fired WHERE occurrence_anchor < ?", [
+    anchorIso,
+  ]);
+}
+
 // ---------- Backup / Import ----------
 
 function toTimeEntry(e: EntryFullItem): TimeEntry {
@@ -761,22 +1400,61 @@ function toTimeEntry(e: EntryFullItem): TimeEntry {
   };
 }
 
+/** Appointment (Backup-Form) aus einem voll geladenen Termin (ohne tagLabels). */
+function toAppointment(a: AppointmentFullItem): Appointment {
+  return {
+    id: a.id,
+    title: a.title,
+    location: a.location,
+    description: a.description,
+    secretDetails: a.secretDetails,
+    isAllDay: a.isAllDay,
+    startDate: a.startDate,
+    startTime: a.startTime,
+    endDate: a.endDate,
+    endTime: a.endTime,
+    isImportant: a.isImportant,
+    color: a.color,
+    rrule: a.rrule,
+    exdates: a.exdates,
+    parentId: a.parentId,
+    recurrenceAnchor: a.recurrenceAnchor,
+    icsUid: a.icsUid,
+    icsSequence: a.icsSequence,
+    tagIds: a.tagIds,
+    reminders: a.reminders,
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
+  };
+}
+
 export async function getAllForBackup(): Promise<BackupPayload> {
   const db = await getDb();
   const tags = await listTags(true);
   const rows = await db.select<EntryRow[]>("SELECT * FROM entries ORDER BY date");
   const entries = (await hydrateFullEntries(rows)).map(toTimeEntry);
+  const apptRows = await db.select<AppointmentRow[]>(
+    // Master vor Overrides (parent_id NULL zuerst): applyImport schreibt in
+    // Dateireihenfolge, Overrides brauchen ihren Master wegen des FK bereits.
+    "SELECT * FROM appointments ORDER BY (parent_id IS NOT NULL), start_date"
+  );
+  const appointments = (await hydrateFullAppointments(apptRows)).map(toAppointment);
+  const reminderFired = await listFiredReminders("0000-01-01");
   return {
-    // Bleibt bewusst 1: pauseMinutes ist additiv-tolerant (validateBackupEntry
-    // akzeptiert es optional, ein fehlendes Feld beim Import wird als 0
-    // behandelt, s. applyImport) -- ein älterer App-Stand liest ein solches
-    // Backup weiterhin anstandslos (ignoriert das unbekannte Feld einfach),
-    // eine Versionsanhebung wäre hier eine unnötige Kompatibilitätsbremse.
-    schemaVersion: 1,
+    // Version 2 seit dem Terminkalender: Termine sind ein eigener Datenbestand
+    // -- ein älterer App-Stand würde das Feld stillschweigend ignorieren und
+    // beim Restore alle Termine verlieren. Die Versionsanhebung sorgt dafür,
+    // dass er stattdessen die klare "bitte App aktualisieren"-Meldung zeigt
+    // (parseBackup lehnt unbekannte neuere Versionen ab). pauseMinutes blieb
+    // seinerzeit bewusst additiv-tolerant unter Version 1 -- dort ging es nur
+    // um ein Zusatzfeld bestehender Einträge, nicht um einen ganzen Bestand.
+    schemaVersion: 2,
     exportedAt: nowIso(),
     app: "BR-Log",
     tags,
     entries,
+    appointments,
+    reminderFired,
   };
 }
 
@@ -860,7 +1538,33 @@ export async function analyzeImport(
     knownLabels.add(key);
     newTags++;
   }
-  return { newEntries, conflicts, unchanged, newTags, conflictItems };
+
+  // Termine: dieselbe Last-Writer-Wins-Zählung wie Einträge (importerWins).
+  let newAppointments = 0;
+  let appointmentConflicts = 0;
+  let appointmentUnchanged = 0;
+  if (payload.appointments && payload.appointments.length > 0) {
+    const localAppts = await db.select<{ id: string; updated_at: string }[]>(
+      "SELECT id, updated_at FROM appointments"
+    );
+    const localApptMap = new Map(localAppts.map((a) => [a.id, a.updated_at]));
+    for (const a of payload.appointments) {
+      const localUpdated = localApptMap.get(a.id);
+      if (localUpdated === undefined) newAppointments++;
+      else if (importerWins(localUpdated, a.updatedAt)) appointmentConflicts++;
+      else appointmentUnchanged++;
+    }
+  }
+  return {
+    newEntries,
+    conflicts,
+    unchanged,
+    newTags,
+    conflictItems,
+    newAppointments,
+    appointmentConflicts,
+    appointmentUnchanged,
+  };
 }
 
 /**
@@ -949,12 +1653,120 @@ export async function applyImport(
     );
   }
 
+  // 3) Termine mergen (dieselbe LWW-Regel). Master vor Overrides schreiben
+  //    (FK parent_id) -- getAllForBackup sortiert bereits so, aber defensiv
+  //    erneut sortieren, weil Backups auch von Hand bearbeitet sein können.
+  const payloadAppts = payload.appointments ?? [];
+  const payloadFired = payload.reminderFired ?? [];
+  const writtenApptReminders = new Map<string, AppointmentReminder[]>();
+  // Nur laden, wenn das Backup überhaupt Termin-Daten mitbringt (v1-Backups
+  // ohne Termine sollen keinen einzigen zusätzlichen Query kosten).
+  const localReminderRows =
+    payloadAppts.length > 0 || payloadFired.length > 0
+      ? await db.select<
+          { id: string; appointment_id: string; minutes_before: number }[]
+        >("SELECT id, appointment_id, minutes_before FROM appointment_reminders")
+      : [];
+  if (payloadAppts.length > 0) {
+    const localAppts = await db.select<{ id: string; updated_at: string }[]>(
+      "SELECT id, updated_at FROM appointments"
+    );
+    const localApptMap = new Map(localAppts.map((a) => [a.id, a.updated_at]));
+    const payloadApptIds = new Set(payloadAppts.map((a) => a.id));
+    const remindersByAppt = new Map<string, AppointmentReminder[]>();
+    for (const r of localReminderRows) {
+      const arr = remindersByAppt.get(r.appointment_id) || [];
+      arr.push({ id: r.id, minutesBefore: r.minutes_before });
+      remindersByAppt.set(r.appointment_id, arr);
+    }
+    const sorted = [...payloadAppts].sort(
+      (a, b) => Number(a.parentId != null) - Number(b.parentId != null)
+    );
+    for (const a of sorted) {
+      // Override mit unauflösbarem Master (weder lokal noch im Payload) würde
+      // die gesamte Import-Transaktion an der FK-Prüfung scheitern lassen --
+      // defensiv überspringen statt alles abzubrechen.
+      if (
+        a.parentId != null &&
+        !localApptMap.has(a.parentId) &&
+        !payloadApptIds.has(a.parentId)
+      ) {
+        continue;
+      }
+      const localUpdated = localApptMap.get(a.id);
+      const isNew = localUpdated === undefined;
+      if (!importerWins(localUpdated, a.updatedAt)) continue;
+      const appt: Appointment = {
+        ...a,
+        exdates: a.exdates ?? [],
+        tagIds: a.tagIds ?? [],
+        reminders: a.reminders ?? [],
+        parentId: a.parentId ?? null,
+        recurrenceAnchor: a.recurrenceAnchor ?? null,
+        rrule: a.rrule ?? null,
+        color: a.color ?? null,
+        icsUid: a.icsUid ?? null,
+        icsSequence: a.icsSequence ?? 0,
+      };
+      statements.push(
+        ...appointmentWriteStatements({
+          appt,
+          exists: !isNew,
+          // Original-Zeitstempel erhalten (Finding 10, wie Einträge).
+          updatedAt: a.updatedAt || now,
+          createdAtDefault: now,
+          tagLabelById,
+          existingReminders: remindersByAppt.get(a.id) ?? [],
+        })
+      );
+      writtenApptReminders.set(appt.id, appt.reminders);
+    }
+  }
+
+  // 4) Feuer-Protokoll übernehmen -- nur Zeilen, deren (Termin, Erinnerung)
+  //    nach dem Merge tatsächlich existiert (sonst FK-Abbruch der Transaktion):
+  //    für geschriebene Termine gelten die Payload-Erinnerungen, für alle
+  //    anderen der lokale Bestand.
+  const fired = payloadFired;
+  if (fired.length > 0) {
+    const localPairs = new Set(
+      localReminderRows.map((r) => `${r.appointment_id}|${r.id}`)
+    );
+    const pairValid = (apptId: string, remId: string): boolean => {
+      const written = writtenApptReminders.get(apptId);
+      if (written) return written.some((r) => r.id === remId);
+      return localPairs.has(`${apptId}|${remId}`);
+    };
+    for (const f of fired) {
+      if (
+        typeof f.appointmentId !== "string" ||
+        typeof f.reminderId !== "string" ||
+        typeof f.occurrenceAnchor !== "string" ||
+        !ISO_DATE_RE.test(f.occurrenceAnchor) ||
+        !pairValid(f.appointmentId, f.reminderId)
+      ) {
+        continue; // Komfort-Daten: defekte/verwaiste Zeilen still überspringen
+      }
+      statements.push({
+        sql: `INSERT OR IGNORE INTO reminder_fired
+               (appointment_id, reminder_id, occurrence_anchor, fired_at)
+             VALUES (?,?,?,?)`,
+        params: [
+          f.appointmentId,
+          f.reminderId,
+          f.occurrenceAnchor,
+          typeof f.firedAt === "string" ? f.firedAt : now,
+        ],
+      });
+    }
+  }
+
   await db.batch(statements);
   return summary;
 }
 
 /** Höchste vom Code verstandene Backup-Schema-Version (siehe getAllForBackup). */
-const SUPPORTED_SCHEMA_VERSION = 1;
+const SUPPORTED_SCHEMA_VERSION = 2;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -1020,6 +1832,105 @@ function validateBackupEntry(raw: unknown, index: number): void {
   }
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const HHMM_RE = /^\d{2}:\d{2}$/;
+
+/**
+ * Pflichtfeld-/Typprüfung je importiertem Termin (Muster validateBackupEntry):
+ * wirft mit konkreter deutscher Meldung VOR dem ersten Schreibzugriff, statt
+ * den Fehler als CHECK-/FK-Verletzung mitten in der Import-Transaktion zu
+ * erleben (die appointments-Tabelle hat strenge CHECKs, s. Migration 3).
+ */
+function validateBackupAppointment(raw: unknown, index: number): void {
+  if (!isPlainObject(raw)) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin ${index + 1} ist kein gültiges Objekt.`
+    );
+  }
+  if (typeof raw.id !== "string" || raw.id.trim() === "") {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin ${index + 1} hat keine gültige ID.`
+    );
+  }
+  if (typeof raw.startDate !== "string" || !ISO_DATE_RE.test(raw.startDate)) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ hat kein gültiges Startdatum (erwartet JJJJ-MM-TT).`
+    );
+  }
+  if (typeof raw.endDate !== "string" || !ISO_DATE_RE.test(raw.endDate)) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ hat kein gültiges Enddatum (erwartet JJJJ-MM-TT).`
+    );
+  }
+  if (raw.endDate < raw.startDate) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ endet vor seinem Beginn.`
+    );
+  }
+  const isAllDay = raw.isAllDay === true;
+  const validTime = (v: unknown) => typeof v === "string" && HHMM_RE.test(v);
+  if (isAllDay) {
+    if (raw.startTime != null || raw.endTime != null) {
+      throw new AppError(
+        `Ungültige Backup-Datei: Ganztägiger Termin „${raw.id}“ darf keine Uhrzeiten haben.`
+      );
+    }
+  } else if (!validTime(raw.startTime) || !validTime(raw.endTime)) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ hat keine gültigen Uhrzeiten (erwartet HH:MM).`
+    );
+  }
+  if (
+    raw.exdates !== undefined &&
+    (!Array.isArray(raw.exdates) ||
+      raw.exdates.some((x) => typeof x !== "string" || !ISO_DATE_RE.test(x)))
+  ) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ hat ungültige Serien-Ausnahmen.`
+    );
+  }
+  // Override-Kopplung wie die DB-CHECKs: parentId erzwingt Anker, verbietet rrule.
+  const hasParent = typeof raw.parentId === "string" && raw.parentId !== "";
+  if (hasParent) {
+    if (
+      typeof raw.recurrenceAnchor !== "string" ||
+      !ISO_DATE_RE.test(raw.recurrenceAnchor)
+    ) {
+      throw new AppError(
+        `Ungültige Backup-Datei: Serien-Ausnahme „${raw.id}“ hat keinen gültigen Instanz-Anker.`
+      );
+    }
+    if (raw.rrule != null) {
+      throw new AppError(
+        `Ungültige Backup-Datei: Serien-Ausnahme „${raw.id}“ darf keine eigene Serienregel haben.`
+      );
+    }
+  }
+  if (raw.tagIds !== undefined && !Array.isArray(raw.tagIds)) {
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ hat ungültige Schlagwort-Zuordnungen.`
+    );
+  }
+  if (raw.reminders !== undefined) {
+    if (
+      !Array.isArray(raw.reminders) ||
+      raw.reminders.some(
+        (r) =>
+          !isPlainObject(r) ||
+          typeof r.id !== "string" ||
+          r.id.trim() === "" ||
+          typeof r.minutesBefore !== "number" ||
+          !Number.isFinite(r.minutesBefore) ||
+          r.minutesBefore < 0
+      )
+    ) {
+      throw new AppError(
+        `Ungültige Backup-Datei: Termin „${raw.id}“ hat ungültige Erinnerungen.`
+      );
+    }
+  }
+}
+
 export function parseBackup(raw: string): BackupPayload {
   let data: unknown;
   try {
@@ -1048,6 +1959,21 @@ export function parseBackup(raw: string): BackupPayload {
   }
   data.entries.forEach((e, i) => validateBackupEntry(e, i));
   if (!Array.isArray(data.tags)) data.tags = [];
+  // Termine sind optional (v1-Backups haben das Feld nicht); wenn vorhanden,
+  // gelten dieselben strengen Prüfungen wie für Einträge.
+  if (data.appointments !== undefined) {
+    if (!Array.isArray(data.appointments)) {
+      throw new AppError(
+        "Ungültige Backup-Datei: 'appointments' ist keine Liste."
+      );
+    }
+    data.appointments.forEach((a, i) => validateBackupAppointment(a, i));
+  }
+  if (data.reminderFired !== undefined && !Array.isArray(data.reminderFired)) {
+    // Defekte Feuer-Protokolle sind kein Grund, den ganzen Import zu
+    // verweigern -- sie sind reine Komfort-Daten (verhindern Doppel-Feuern).
+    data.reminderFired = [];
+  }
   return data as unknown as BackupPayload;
 }
 
@@ -1073,8 +1999,28 @@ function ftsStatementsForItems(items: EntryFullItem[]): BatchStatement[] {
   return st;
 }
 
+/** FTS-Statements (DELETE+INSERT) für bereits hydratisierte Termine. */
+function ftsStatementsForAppointments(
+  items: AppointmentFullItem[]
+): BatchStatement[] {
+  const st: BatchStatement[] = [];
+  for (const it of items) {
+    st.push(
+      ...apptFtsUpsertStatements({
+        appointmentId: it.id,
+        title: it.title,
+        location: it.location,
+        description: it.description,
+        tagLabels: it.tagLabels,
+        secretDetails: it.secretDetails,
+      })
+    );
+  }
+  return st;
+}
+
 /**
- * Baut den FTS-Index vollständig neu auf (leeren + aus allen Einträgen füllen).
+ * Baut beide FTS-Indizes vollständig neu auf (leeren + aus dem Bestand füllen).
  * Aufrufbar für Wartung/nach Schemaänderungen; No-Op ohne FTS5.
  */
 export async function rebuildFts(): Promise<void> {
@@ -1082,9 +2028,13 @@ export async function rebuildFts(): Promise<void> {
   const db = await getDb();
   const rows = await db.select<EntryRow[]>("SELECT * FROM entries");
   const items = await hydrateFullEntries(rows);
+  const apptRows = await db.select<AppointmentRow[]>("SELECT * FROM appointments");
+  const apptItems = await hydrateFullAppointments(apptRows);
   const statements: BatchStatement[] = [
     { sql: "DELETE FROM entries_fts", params: [] },
     ...ftsStatementsForItems(items),
+    { sql: "DELETE FROM appointments_fts", params: [] },
+    ...ftsStatementsForAppointments(apptItems),
   ];
   await db.batch(statements);
 }
@@ -1317,6 +2267,9 @@ export async function getCompensationBalance(): Promise<CompensationBalance> {
 export async function reconcileFts(): Promise<void> {
   if (!isFtsAvailable()) return;
   const db = await getDb();
+  const statements: BatchStatement[] = [];
+
+  // Einträge (entries_fts).
   const entryIds = (
     await db.select<{ id: string }[]>("SELECT id FROM entries")
   ).map((r) => r.id);
@@ -1329,9 +2282,6 @@ export async function reconcileFts(): Promise<void> {
   const ftsSet = new Set(ftsIds);
   const missing = entryIds.filter((id) => !ftsSet.has(id));
   const ghosts = ftsIds.filter((id) => !entrySet.has(id));
-  if (missing.length === 0 && ghosts.length === 0) return;
-
-  const statements: BatchStatement[] = [];
   for (const id of ghosts) {
     statements.push({
       sql: "DELETE FROM entries_fts WHERE entry_id = ?",
@@ -1347,5 +2297,36 @@ export async function reconcileFts(): Promise<void> {
     const items = await hydrateFullEntries(rows);
     statements.push(...ftsStatementsForItems(items));
   }
+
+  // Termine (appointments_fts) -- gleicher Abgleich.
+  const apptIds = (
+    await db.select<{ id: string }[]>("SELECT id FROM appointments")
+  ).map((r) => r.id);
+  const apptFtsIds = (
+    await db.select<{ appointment_id: string }[]>(
+      "SELECT appointment_id FROM appointments_fts"
+    )
+  ).map((r) => r.appointment_id);
+  const apptSet = new Set(apptIds);
+  const apptFtsSet = new Set(apptFtsIds);
+  const apptMissing = apptIds.filter((id) => !apptFtsSet.has(id));
+  const apptGhosts = apptFtsIds.filter((id) => !apptSet.has(id));
+  for (const id of apptGhosts) {
+    statements.push({
+      sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+      params: [id],
+    });
+  }
+  if (apptMissing.length > 0) {
+    const rows = await selectByIdChunks<AppointmentRow>(
+      db,
+      apptMissing,
+      (ph) => `SELECT * FROM appointments WHERE id IN (${ph})`
+    );
+    const items = await hydrateFullAppointments(rows);
+    statements.push(...ftsStatementsForAppointments(items));
+  }
+
+  if (statements.length === 0) return;
   await db.batch(statements);
 }
