@@ -2,16 +2,20 @@ import logo from "../assets/logo.png";
 import { Icon, type IconName } from "./Icon";
 import AppMenu from "./AppMenu";
 
-export type View = "erfassen" | "historie" | "auswertung" | "daten";
+export type View = "erfassen" | "kalender" | "historie" | "auswertung" | "daten";
 
 // Gemeinsame Navigations-Definition für Sidebar (Desktop) UND BottomNav
 // (Android) -- EINE Quelle für Reihenfolge/Icon/Label, keine Duplikation
 // zwischen den beiden Komponenten (siehe BottomNav.tsx). `label` ist der
 // volle Sidebar-Text, `shortLabel` das kompakte Pendant für die schmalen
 // Tabs der BottomNav.
+//
+// Seit dem Terminkalender ist "Kalender" ein eigener Haupt-Tab (Termine +
+// erfasste Zeiten in einer Ansicht); "Historie" behält die Eintragsliste.
 export const NAV: { key: View; label: string; shortLabel: string; icon: IconName }[] = [
   { key: "erfassen", label: "Zeit erfassen", shortLabel: "Erfassen", icon: "clock" },
-  { key: "historie", label: "Kalender & Historie", shortLabel: "Historie", icon: "calendar" },
+  { key: "kalender", label: "Kalender", shortLabel: "Kalender", icon: "calendar" },
+  { key: "historie", label: "Historie", shortLabel: "Historie", icon: "list" },
   { key: "auswertung", label: "Auswertung", shortLabel: "Auswertung", icon: "bar-chart" },
   { key: "daten", label: "Daten", shortLabel: "Daten", icon: "folder-open" },
 ];

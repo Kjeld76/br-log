@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { differenceInCalendarDays, parseISO } from "date-fns";
-import type { TimeEntry, TaskTag, EntryListItem, EntryFullItem } from "./types";
+import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
+import type {
+  TimeEntry,
+  TaskTag,
+  EntryListItem,
+  EntryFullItem,
+  Appointment,
+  AppointmentFullItem,
+} from "./types";
 import {
   initSchema,
   initSearch,
@@ -14,6 +21,10 @@ import {
   deleteEntry,
   getEntry,
   getLastEntryDate,
+  newAppointment,
+  newReminder,
+  getAppointment,
+  deleteAppointment,
 } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
@@ -33,18 +44,27 @@ import BottomNav from "./components/BottomNav";
 import TopBar from "./components/TopBar";
 import QuickEntryView, { clearQuickEntryDraft } from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
+import CalendarPage from "./views/CalendarPage";
 import StatsView from "./views/StatsView";
 import DataView from "./views/DataView";
 import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
+import AppointmentForm from "./components/AppointmentForm";
+import AppointmentDetail from "./components/AppointmentDetail";
 import SettingsPanel from "./components/SettingsPanel";
 import AboutPanel from "./components/AboutPanel";
 import { Icon } from "./components/Icon";
+import type { Occurrence } from "./lib/appointments";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
   | { type: "detail"; entry: EntryFullItem }
+  // Terminkalender: Formular + Detailansicht laufen über denselben Modal-
+  // Mechanismus wie die Eintrags-Dialoge. occurrenceDate ist der Tag der
+  // angezeigten Instanz (bei Serien relevant, Einzeltermin: startDate).
+  | { type: "apptForm"; appointment: Appointment }
+  | { type: "apptDetail"; appointment: AppointmentFullItem; occurrenceDate: string }
   // Einstellungen/Über BR-Log (aus dem neuen AppMenu, siehe Sidebar/TopBar):
   // laufen bewusst über denselben Modal-Mechanismus wie Bearbeiten/Detail
   // (gleiche Fokusfalle, gleiches mobil-/Desktop-Layout) statt einer
@@ -187,7 +207,11 @@ export default function App() {
   useModalFocusTrap(
     modalRef,
     !!modal,
-    modal?.type === "form" ? dateFieldRef : undefined
+    // Eintragsformular: Datumsfeld; Terminformular: Titelfeld (gleiche Ref,
+    // es ist immer nur EIN Modal offen).
+    modal?.type === "form" || modal?.type === "apptForm"
+      ? dateFieldRef
+      : undefined
   );
   useModalFocusTrap(confirmRef, !!confirmDiscard);
 
@@ -351,6 +375,117 @@ export default function App() {
     bump();
     showToast("Eintrag gespeichert");
   };
+
+  // ---------- Termin-Dialoge (Muster der Eintrags-Dialoge) ----------
+
+  const openNewAppointment = (iso: string) => {
+    setFormDirty(false);
+    setModal({ type: "apptForm", appointment: newAppointment(iso) });
+  };
+  // Detailansicht lädt den Termin VOLLSTÄNDIG nach (inkl. secretDetails) --
+  // Kalender-/Agenda-Items tragen das vertrauliche Feld strukturell nicht.
+  const openOccurrence = async (occ: Occurrence) => {
+    try {
+      const full = await getAppointment(occ.appointment.id);
+      if (!full) {
+        showToast("Termin nicht gefunden");
+        bump();
+        return;
+      }
+      setModal({ type: "apptDetail", appointment: full, occurrenceDate: occ.anchor });
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const handleApptSaved = () => {
+    setModal(null);
+    setFormDirty(false);
+    bump();
+    showToast("Termin gespeichert");
+  };
+  const editApptFromDetail = async (appt: AppointmentFullItem) => {
+    try {
+      const fresh = (await getAppointment(appt.id)) ?? appt;
+      setFormDirty(false);
+      setModal({ type: "apptForm", appointment: fresh });
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const requestApptDelete = (id: string) => {
+    setConfirmDiscard({
+      message: "Diesen Termin unwiderruflich löschen?",
+      confirmLabel: "Löschen",
+      onConfirm: () => {
+        setConfirmDiscard(null);
+        void handleApptDelete(id);
+      },
+    });
+  };
+  const handleApptDelete = async (id: string) => {
+    try {
+      await deleteAppointment(id);
+      setModal(null);
+      bump();
+      showToast("Termin gelöscht");
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  // Übernimmt einen Termin als Vorlage: frische ID, heutiges Datum unter
+  // Erhalt der Dauer in Tagen, NEUE Erinnerungs-IDs (appointment_reminders.id
+  // ist global eindeutig -- kopierte IDs würden am PK scheitern) und ohne
+  // ICS-Identität (UID/SEQUENCE gehören zum Original).
+  const duplicateAppointment = (source: AppointmentFullItem): Appointment => {
+    const now = new Date().toISOString();
+    const today = todayIso();
+    const spanDays = differenceInCalendarDays(
+      parseISO(source.endDate),
+      parseISO(source.startDate)
+    );
+    return {
+      id: crypto.randomUUID(),
+      title: source.title,
+      location: source.location,
+      description: source.description,
+      secretDetails: source.secretDetails,
+      isAllDay: source.isAllDay,
+      startDate: today,
+      startTime: source.startTime,
+      endDate: format(addDays(parseISO(today), spanDays), "yyyy-MM-dd"),
+      endTime: source.endTime,
+      isImportant: source.isImportant,
+      color: source.color,
+      rrule: null,
+      exdates: [],
+      parentId: null,
+      recurrenceAnchor: null,
+      icsUid: null,
+      icsSequence: 0,
+      tagIds: source.tagIds,
+      reminders: source.reminders.map((r) => newReminder(r.minutesBefore)),
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
+  const handleApptDuplicate = (appt: AppointmentFullItem) => {
+    setFormDirty(false);
+    setModal({ type: "apptForm", appointment: duplicateAppointment(appt) });
+  };
+  // "Zeit buchen": Eintragsformular vorbefüllt aus dem Termin -- Datum der
+  // Instanz, Uhrzeiten (bei ganztägig leer), Titel als GL-Info, Schlagwörter.
+  const bookTimeFromAppointment = (
+    appt: AppointmentFullItem,
+    occurrenceDate: string
+  ) => {
+    const entry = newEntry(occurrenceDate);
+    entry.startTime = appt.isAllDay ? null : appt.startTime;
+    entry.endTime = appt.isAllDay ? null : appt.endTime;
+    entry.infoForManagement = appt.title;
+    entry.tagIds = appt.tagIds;
+    setFormDirty(false);
+    setModal({ type: "form", entry });
+  };
   // Finding 2: Löschen lief bisher ohne jede Rückfrage sofort und
   // unwiderruflich (EntryDetail-Klick -> direkt handleDelete), UND ohne
   // try/catch -- ein DB-Fehler wäre eine unhandled rejection gewesen (Modal
@@ -423,9 +558,12 @@ export default function App() {
   // Schließen des Bearbeiten-Formulars (Backdrop-Klick, Abbrechen, Escape) –
   // bei ungespeicherten Änderungen erst rückfragen, statt kommentarlos zu verwerfen.
   const requestCloseModal = () => {
-    if (modal?.type === "form" && formDirty) {
+    if ((modal?.type === "form" || modal?.type === "apptForm") && formDirty) {
       setConfirmDiscard({
-        message: "Ungespeicherte Änderungen am Eintrag verwerfen?",
+        message:
+          modal.type === "form"
+            ? "Ungespeicherte Änderungen am Eintrag verwerfen?"
+            : "Ungespeicherte Änderungen am Termin verwerfen?",
         onConfirm: () => {
           setFormDirty(false);
           setConfirmDiscard(null);
@@ -601,6 +739,15 @@ export default function App() {
               }}
             />
           )}
+          {view === "kalender" && (
+            <CalendarPage
+              reloadKey={reloadKey}
+              onOpenEntry={openDetail}
+              onNewEntry={openNew}
+              onOpenOccurrence={openOccurrence}
+              onNewAppointment={openNewAppointment}
+            />
+          )}
           {view === "historie" && (
             <HistoryView
               tags={tags}
@@ -688,6 +835,45 @@ export default function App() {
                   onEdit={() => editFromDetail(modal.entry)}
                   onDelete={() => requestDelete(modal.entry.id)}
                   onDuplicate={() => handleDuplicate(modal.entry)}
+                  onClose={() => setModal(null)}
+                />
+              </>
+            )}
+            {modal.type === "apptForm" && (
+              <>
+                <h2
+                  id="entry-modal-heading"
+                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  Termin
+                </h2>
+                <AppointmentForm
+                  appointment={modal.appointment}
+                  tags={allTags}
+                  titleInputRef={dateFieldRef}
+                  onSaved={handleApptSaved}
+                  onCancel={requestCloseModal}
+                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                />
+              </>
+            )}
+            {modal.type === "apptDetail" && (
+              <>
+                <h2
+                  id="entry-modal-heading"
+                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  Termin-Details
+                </h2>
+                <AppointmentDetail
+                  appointment={modal.appointment}
+                  occurrenceDate={modal.occurrenceDate}
+                  onEdit={() => editApptFromDetail(modal.appointment)}
+                  onDelete={() => requestApptDelete(modal.appointment.id)}
+                  onDuplicate={() => handleApptDuplicate(modal.appointment)}
+                  onBookTime={() =>
+                    bookTimeFromAppointment(modal.appointment, modal.occurrenceDate)
+                  }
                   onClose={() => setModal(null)}
                 />
               </>
