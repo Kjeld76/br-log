@@ -5,12 +5,29 @@ import { toUserMessage } from "../lib/errors";
 import { toggleId } from "../lib/collections";
 import { inputCls, secondaryBtnCls } from "../lib/ui";
 import {
+  buildRrule,
+  parseRruleToPreset,
+  WEEKDAY_CODES,
+  type SeriesPreset,
+  type WeekdayCode,
+} from "../lib/appointments";
+import {
   COLOR_OPTIONS,
   REMINDER_PRESETS,
   reminderLabel,
 } from "../lib/appointmentUi";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
+
+const WEEKDAY_LABELS: Record<WeekdayCode, string> = {
+  MO: "Mo",
+  TU: "Di",
+  WE: "Mi",
+  TH: "Do",
+  FR: "Fr",
+  SA: "Sa",
+  SU: "So",
+};
 
 interface Props {
   appointment: Appointment;
@@ -22,6 +39,13 @@ interface Props {
   onDraftChange?: (draft: Appointment, dirty: boolean) => void;
   // Externe Ref auf das Titelfeld für die Fokusfalle des Modals (Finding B5).
   titleInputRef?: React.RefObject<HTMLInputElement>;
+  /**
+   * Ersetzt das Standard-Speichern (saveAppointment) -- der "diesen und
+   * folgende"-Split übergibt hier splitSeries mit dem gekürzten alten Master.
+   */
+  saveAction?: (appt: Appointment) => Promise<void>;
+  /** Hinweistext oberhalb des Formulars (z. B. Split-/Override-Kontext). */
+  contextHint?: string;
 }
 
 export default function AppointmentForm({
@@ -31,11 +55,19 @@ export default function AppointmentForm({
   onCancel,
   onDraftChange,
   titleInputRef: externalTitleInputRef,
+  saveAction,
+  contextHint,
 }: Props) {
   const [draft, setDraft] = useState<Appointment>(appointment);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  // Serien-Preset aus der Regel rekonstruieren; nicht abbildbare (importierte)
+  // Regeln laufen als "custom" unverändert durch das Formular.
+  const [seriesPreset, setSeriesPreset] = useState<SeriesPreset | null>(() =>
+    appointment.rrule ? parseRruleToPreset(appointment.rrule) : null
+  );
+  const isCustomRule = draft.rrule !== null && seriesPreset === null;
   const ownTitleInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = externalTitleInputRef ?? ownTitleInputRef;
 
@@ -82,6 +114,37 @@ export default function AppointmentForm({
     patch({ startDate: v, endDate: draft.endDate < v ? v : draft.endDate });
   };
 
+  // Preset-Änderungen halten draft.rrule als einzige Quelle der Wahrheit mit.
+  const applyPreset = (p: SeriesPreset | null) => {
+    setSeriesPreset(p);
+    patch({ rrule: p ? buildRrule(p) : null });
+  };
+  const setFreq = (freq: "" | SeriesPreset["freq"]) => {
+    if (freq === "") {
+      applyPreset(null);
+      return;
+    }
+    applyPreset({
+      freq,
+      interval: seriesPreset?.interval ?? 1,
+      byWeekdays: freq === "WEEKLY" ? seriesPreset?.byWeekdays ?? [] : [],
+      end: seriesPreset?.end ?? { type: "never" },
+    });
+  };
+  const patchPreset = (p: Partial<SeriesPreset>) => {
+    if (!seriesPreset) return;
+    applyPreset({ ...seriesPreset, ...p });
+  };
+  const toggleWeekday = (code: WeekdayCode) => {
+    if (!seriesPreset) return;
+    const has = seriesPreset.byWeekdays.includes(code);
+    patchPreset({
+      byWeekdays: has
+        ? seriesPreset.byWeekdays.filter((c) => c !== code)
+        : [...seriesPreset.byWeekdays, code],
+    });
+  };
+
   const toggleReminderPreset = (minutes: number) => {
     const existing = draft.reminders.find((r) => r.minutesBefore === minutes);
     if (existing) {
@@ -109,10 +172,25 @@ export default function AppointmentForm({
       if (draft.startDate === draft.endDate && draft.endTime <= draft.startTime)
         return setError("Die Endzeit muss nach der Beginnzeit liegen.");
     }
+    if (seriesPreset) {
+      if (
+        seriesPreset.end.type === "count" &&
+        (!Number.isInteger(seriesPreset.end.count) || seriesPreset.end.count < 1)
+      ) {
+        return setError("Bitte eine gültige Anzahl an Terminen angeben.");
+      }
+      if (
+        seriesPreset.end.type === "until" &&
+        (!seriesPreset.end.date || seriesPreset.end.date < draft.startDate)
+      ) {
+        return setError("Das Serienende darf nicht vor dem ersten Termin liegen.");
+      }
+    }
 
     setSaving(true);
     try {
-      await saveAppointment({ ...draft, title: draft.title.trim() });
+      const save = saveAction ?? saveAppointment;
+      await save({ ...draft, title: draft.title.trim() });
       onSaved();
     } catch (e) {
       setError(toUserMessage(e));
@@ -145,6 +223,12 @@ export default function AppointmentForm({
 
   return (
     <div className="space-y-4">
+      {contextHint && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+          {contextHint}
+        </p>
+      )}
+
       {/* Block 1: Termin */}
       <div className={blockCls}>
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -277,7 +361,188 @@ export default function AppointmentForm({
         </div>
       </div>
 
-      {/* Block 2: Erinnerungen */}
+      {/* Block 2: Serie -- nicht für Overrides (die Einzeländerung einer
+          Instanz hat nie eine eigene Regel, siehe Migration-3-CHECK). */}
+      {draft.parentId === null && (
+        <div className={blockCls}>
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            Wiederholung
+          </h3>
+          {isCustomRule ? (
+            <div className="space-y-2">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Benutzerdefinierte Serienregel (z. B. aus einem ICS-Import) –
+                bleibt beim Speichern unverändert erhalten.
+              </p>
+              <code className="block break-all rounded bg-slate-100 p-2 text-xs text-slate-600 dark:bg-slate-900/50 dark:text-slate-300">
+                {draft.rrule}
+              </code>
+              <button
+                type="button"
+                className="text-sm text-red-700 hover:underline dark:text-red-400"
+                onClick={() => applyPreset(null)}
+              >
+                Wiederholung entfernen
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={`${idPrefix}-freq`} className={labelCls}>
+                    Wiederholt sich
+                  </label>
+                  <select
+                    id={`${idPrefix}-freq`}
+                    className={field}
+                    value={seriesPreset?.freq ?? ""}
+                    onChange={(e) =>
+                      setFreq(e.target.value as "" | SeriesPreset["freq"])
+                    }
+                  >
+                    <option value="">Nie</option>
+                    <option value="DAILY">Täglich</option>
+                    <option value="WEEKLY">Wöchentlich</option>
+                    <option value="MONTHLY">Monatlich</option>
+                    <option value="YEARLY">Jährlich</option>
+                  </select>
+                </div>
+                {seriesPreset && (
+                  <div>
+                    <label htmlFor={`${idPrefix}-interval`} className={labelCls}>
+                      Alle
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id={`${idPrefix}-interval`}
+                        type="number"
+                        min={1}
+                        className={inputCls + " w-20"}
+                        value={seriesPreset.interval}
+                        onChange={(e) =>
+                          patchPreset({
+                            interval: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                          })
+                        }
+                      />
+                      <span className="text-sm text-slate-600 dark:text-slate-300">
+                        {seriesPreset.freq === "DAILY" && "Tage"}
+                        {seriesPreset.freq === "WEEKLY" && "Wochen"}
+                        {seriesPreset.freq === "MONTHLY" && "Monate"}
+                        {seriesPreset.freq === "YEARLY" && "Jahre"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {seriesPreset?.freq === "WEEKLY" && (
+                <div>
+                  <span className={labelCls}>An diesen Wochentagen</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEKDAY_CODES.map((code) => (
+                      <TagChip
+                        key={code}
+                        label={WEEKDAY_LABELS[code]}
+                        variant="selectable"
+                        active={seriesPreset.byWeekdays.includes(code)}
+                        onClick={() => toggleWeekday(code)}
+                      />
+                    ))}
+                  </div>
+                  {seriesPreset.byWeekdays.length === 0 && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Ohne Auswahl gilt der Wochentag des ersten Termins.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {seriesPreset && (
+                <div className="space-y-2">
+                  <span className={labelCls}>Ende der Serie</span>
+                  <div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name={`${idPrefix}-series-end`}
+                        checked={seriesPreset.end.type === "never"}
+                        onChange={() => patchPreset({ end: { type: "never" } })}
+                      />
+                      Nie
+                    </label>
+                    <label className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="radio"
+                        name={`${idPrefix}-series-end`}
+                        checked={seriesPreset.end.type === "count"}
+                        onChange={() =>
+                          patchPreset({ end: { type: "count", count: 10 } })
+                        }
+                      />
+                      Nach
+                      <input
+                        type="number"
+                        min={1}
+                        className={inputCls + " w-20 py-1"}
+                        disabled={seriesPreset.end.type !== "count"}
+                        value={
+                          seriesPreset.end.type === "count"
+                            ? seriesPreset.end.count
+                            : 10
+                        }
+                        onChange={(e) =>
+                          patchPreset({
+                            end: {
+                              type: "count",
+                              count: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                            },
+                          })
+                        }
+                      />
+                      Terminen
+                    </label>
+                    <label className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="radio"
+                        name={`${idPrefix}-series-end`}
+                        checked={seriesPreset.end.type === "until"}
+                        onChange={() =>
+                          patchPreset({
+                            end: { type: "until", date: draft.startDate },
+                          })
+                        }
+                      />
+                      Am
+                      <input
+                        type="date"
+                        className={inputCls + " py-1"}
+                        disabled={seriesPreset.end.type !== "until"}
+                        min={draft.startDate}
+                        value={
+                          seriesPreset.end.type === "until"
+                            ? seriesPreset.end.date
+                            : draft.startDate
+                        }
+                        onChange={(e) =>
+                          patchPreset({
+                            end: { type: "until", date: e.target.value },
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Blöcke 3+4 (Erinnerungen, Schlagwörter) gelten je Serie und nicht je
+          Einzeländerung -- Overrides erben sie vom Master (siehe Migration 3)
+          und zeigen die Blöcke deshalb gar nicht erst an. */}
+      {draft.parentId === null && (
       <div className={blockCls}>
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           Erinnerungen
@@ -301,9 +566,11 @@ export default function AppointmentForm({
           </p>
         )}
       </div>
+      )}
 
-      {/* Block 3: Schlagwörter (dieselben wie bei Zeiteinträgen -- Vorbefüllung
+      {/* Block 4: Schlagwörter (dieselben wie bei Zeiteinträgen -- Vorbefüllung
           bei "Zeit buchen") */}
+      {draft.parentId === null && (
       <div className={blockCls}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -344,8 +611,9 @@ export default function AppointmentForm({
           </div>
         )}
       </div>
+      )}
 
-      {/* Block 4: Beschreibung + vertrauliche Notizen */}
+      {/* Block 5: Beschreibung + vertrauliche Notizen */}
       <div className={blockCls}>
         <div>
           <label htmlFor={descriptionId} className={labelCls}>

@@ -5,13 +5,18 @@ import { secondaryBtnCls } from "../lib/ui";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
 
+/** Die konkret angezeigte Instanz (bei Serien ≠ Master-Startdaten). */
+export interface OccurrenceRef {
+  anchor: string; // YYYY-MM-DD der Instanz
+  startDate: string;
+  startTime: string | null;
+  endDate: string;
+  endTime: string | null;
+}
+
 interface Props {
   appointment: AppointmentFullItem;
-  /**
-   * YYYY-MM-DD der angezeigten Instanz (bei Serien die konkrete Instanz,
-   * bei Einzelterminen = startDate). Steuert Anzeige und "Zeit buchen".
-   */
-  occurrenceDate: string;
+  occurrence: OccurrenceRef;
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -22,7 +27,7 @@ interface Props {
 
 export default function AppointmentDetail({
   appointment,
-  occurrenceDate,
+  occurrence,
   onEdit,
   onDelete,
   onClose,
@@ -41,14 +46,16 @@ export default function AppointmentDetail({
     </div>
   );
 
-  const multiDay = a.startDate !== a.endDate;
+  // Datum/Zeit der ANGEZEIGTEN Instanz (bei Serien die konkrete Instanz,
+  // bei Einzelterminen identisch mit den Terminfeldern).
+  const multiDay = occurrence.startDate !== occurrence.endDate;
   const dateValue = multiDay
-    ? `${formatDateDe(a.startDate)} – ${formatDateDe(a.endDate)}`
-    : formatDateDe(a.startDate);
+    ? `${formatDateDe(occurrence.startDate)} – ${formatDateDe(occurrence.endDate)}`
+    : formatDateDe(occurrence.startDate);
   const timeValue = a.isAllDay
     ? "Ganztägig"
-    : a.startTime && a.endTime
-    ? `${a.startTime} – ${a.endTime}`
+    : occurrence.startTime && occurrence.endTime
+    ? `${occurrence.startTime} – ${occurrence.endTime}`
     : "—";
 
   return (
@@ -73,15 +80,12 @@ export default function AppointmentDetail({
         {row("Datum", dateValue)}
         {row("Zeit", timeValue)}
         {a.location && row("Ort", a.location)}
-        {a.rrule !== null &&
+        {(a.rrule !== null || a.parentId !== null) &&
           row(
             "Serie",
-            <span>
-              Serientermin
-              {a.recurrenceAnchor === null && occurrenceDate !== a.startDate
-                ? ` – angezeigte Instanz: ${formatDateDe(occurrenceDate)}`
-                : ""}
-            </span>
+            a.parentId !== null
+              ? "Serientermin (diese Instanz wurde einzeln geändert)"
+              : "Serientermin"
           )}
         {row(
           "Erinnerungen",

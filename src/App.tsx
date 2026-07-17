@@ -25,6 +25,9 @@ import {
   newReminder,
   getAppointment,
   deleteAppointment,
+  deleteOccurrence,
+  splitSeries,
+  truncateSeries,
 } from "./db/repository";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
@@ -51,20 +54,36 @@ import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
 import AppointmentForm from "./components/AppointmentForm";
-import AppointmentDetail from "./components/AppointmentDetail";
+import AppointmentDetail, {
+  type OccurrenceRef,
+} from "./components/AppointmentDetail";
+import SeriesScopeDialog, {
+  type SeriesScope,
+} from "./components/SeriesScopeDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import AboutPanel from "./components/AboutPanel";
 import { Icon } from "./components/Icon";
-import type { Occurrence } from "./lib/appointments";
+import {
+  remainingCountFrom,
+  rruleWithUntil,
+  splitUntilDate,
+  type Occurrence,
+} from "./lib/appointments";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
   | { type: "detail"; entry: EntryFullItem }
   // Terminkalender: Formular + Detailansicht laufen über denselben Modal-
-  // Mechanismus wie die Eintrags-Dialoge. occurrenceDate ist der Tag der
-  // angezeigten Instanz (bei Serien relevant, Einzeltermin: startDate).
-  | { type: "apptForm"; appointment: Appointment }
-  | { type: "apptDetail"; appointment: AppointmentFullItem; occurrenceDate: string }
+  // Mechanismus wie die Eintrags-Dialoge. `occ` ist die konkret angezeigte
+  // Instanz (bei Serien ≠ Master-Startdaten); `saveAction`/`contextHint`
+  // steuern die Serien-Sonderfälle des Formulars (Override, UNTIL-Split).
+  | {
+      type: "apptForm";
+      appointment: Appointment;
+      saveAction?: (appt: Appointment) => Promise<void>;
+      contextHint?: string;
+    }
+  | { type: "apptDetail"; appointment: AppointmentFullItem; occ: OccurrenceRef }
   // Einstellungen/Über BR-Log (aus dem neuen AppMenu, siehe Sidebar/TopBar):
   // laufen bewusst über denselben Modal-Mechanismus wie Bearbeiten/Detail
   // (gleiche Fokusfalle, gleiches mobil-/Desktop-Layout) statt einer
@@ -158,6 +177,14 @@ export default function App() {
     message: string;
     confirmLabel?: string;
     onConfirm: () => void;
+  } | null>(null);
+  // Drei-Optionen-Dialog "Nur dieser / Dieser und folgende / Alle" für das
+  // Bearbeiten/Löschen von Serieninstanzen (liegt wie confirmDiscard ÜBER dem
+  // Detail-Modal).
+  const [seriesScope, setSeriesScope] = useState<{
+    mode: "edit" | "delete";
+    appt: AppointmentFullItem;
+    occ: OccurrenceRef;
   } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // Erinnerung bei fehlender Erfassung (Finding 31).
@@ -384,15 +411,38 @@ export default function App() {
   };
   // Detailansicht lädt den Termin VOLLSTÄNDIG nach (inkl. secretDetails) --
   // Kalender-/Agenda-Items tragen das vertrauliche Feld strukturell nicht.
+  // Bei Overrides werden Schlagwörter/Erinnerungen des Masters eingeblendet
+  // (Overrides erben sie, ihre eigene Zeile trägt keine).
   const openOccurrence = async (occ: Occurrence) => {
     try {
-      const full = await getAppointment(occ.appointment.id);
+      let full = await getAppointment(occ.appointment.id);
       if (!full) {
         showToast("Termin nicht gefunden");
         bump();
         return;
       }
-      setModal({ type: "apptDetail", appointment: full, occurrenceDate: occ.anchor });
+      if (full.parentId) {
+        const master = await getAppointment(full.parentId);
+        if (master) {
+          full = {
+            ...full,
+            tagIds: master.tagIds,
+            tagLabels: master.tagLabels,
+            reminders: master.reminders,
+          };
+        }
+      }
+      setModal({
+        type: "apptDetail",
+        appointment: full,
+        occ: {
+          anchor: occ.anchor,
+          startDate: occ.startDate,
+          startTime: occ.startTime,
+          endDate: occ.endDate,
+          endTime: occ.endTime,
+        },
+      });
     } catch (e) {
       showToast(toUserMessage(e));
     }
@@ -412,15 +462,198 @@ export default function App() {
       showToast(toUserMessage(e));
     }
   };
-  const requestApptDelete = (id: string) => {
+  const requestApptDelete = (id: string, message?: string) => {
     setConfirmDiscard({
-      message: "Diesen Termin unwiderruflich löschen?",
+      message: message ?? "Diesen Termin unwiderruflich löschen?",
       confirmLabel: "Löschen",
       onConfirm: () => {
         setConfirmDiscard(null);
         void handleApptDelete(id);
       },
     });
+  };
+
+  // ---------- Serien-Bearbeitung/-Löschung (Scope-Dialog) ----------
+
+  /** AppointmentFullItem -> Appointment (ohne Anzeige-Felder tagLabels/search). */
+  const plainAppointment = (a: AppointmentFullItem): Appointment => ({
+    id: a.id,
+    title: a.title,
+    location: a.location,
+    description: a.description,
+    secretDetails: a.secretDetails,
+    isAllDay: a.isAllDay,
+    startDate: a.startDate,
+    startTime: a.startTime,
+    endDate: a.endDate,
+    endTime: a.endTime,
+    isImportant: a.isImportant,
+    color: a.color,
+    rrule: a.rrule,
+    exdates: a.exdates,
+    parentId: a.parentId,
+    recurrenceAnchor: a.recurrenceAnchor,
+    icsUid: a.icsUid,
+    icsSequence: a.icsSequence,
+    tagIds: a.tagIds,
+    reminders: a.reminders,
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
+  });
+
+  /** Entwurf einer Serien-Ausnahme ("nur dieser") aus der Master-Instanz. */
+  const buildOverrideDraft = (
+    master: AppointmentFullItem,
+    occ: OccurrenceRef
+  ): Appointment => {
+    const now = new Date().toISOString();
+    return {
+      ...plainAppointment(master),
+      id: crypto.randomUUID(),
+      startDate: occ.startDate,
+      startTime: occ.startTime,
+      endDate: occ.endDate,
+      endTime: occ.endTime,
+      rrule: null,
+      exdates: [],
+      parentId: master.id,
+      recurrenceAnchor: occ.anchor,
+      icsUid: null,
+      icsSequence: 0,
+      // Overrides erben Schlagwörter/Erinnerungen -- eigene Zeile trägt keine.
+      tagIds: [],
+      reminders: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
+
+  /** Entwurf der NEUEN Serie ab dem Anker ("dieser und folgende"). */
+  const buildSplitDraft = (
+    master: AppointmentFullItem,
+    occ: OccurrenceRef
+  ): Appointment => {
+    const now = new Date().toISOString();
+    const spanDays = differenceInCalendarDays(
+      parseISO(master.endDate),
+      parseISO(master.startDate)
+    );
+    // Bei COUNT-Regeln bekommt der neue Teil das RESTLICHE Kontingent --
+    // sonst würde die Gesamtzahl der Termine durch den Split wachsen.
+    let rrule = master.rrule;
+    if (rrule) {
+      const remaining = remainingCountFrom(master, occ.anchor);
+      if (remaining !== null) rrule = rrule.replace(/COUNT=\d+/i, `COUNT=${remaining}`);
+    }
+    return {
+      ...plainAppointment(master),
+      id: crypto.randomUUID(),
+      startDate: occ.anchor,
+      endDate: format(addDays(parseISO(occ.anchor), spanDays), "yyyy-MM-dd"),
+      rrule,
+      exdates: master.exdates.filter((d) => d >= occ.anchor),
+      icsUid: null,
+      icsSequence: 0,
+      reminders: master.reminders.map((r) => newReminder(r.minutesBefore)),
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
+
+  /** Master mit UNTIL = Vortag des Ankers (alter Serienteil bei Split/Kürzen). */
+  const truncatedMaster = (
+    master: AppointmentFullItem,
+    anchor: string
+  ): Appointment => ({
+    ...plainAppointment(master),
+    rrule: master.rrule
+      ? rruleWithUntil(master.rrule, splitUntilDate(anchor))
+      : master.rrule,
+    exdates: master.exdates.filter((d) => d < anchor),
+  });
+
+  // Bearbeiten/Löschen aus der Detailansicht: Einzeltermine direkt, Serien-
+  // Instanzen (Master ODER Override) über den Scope-Dialog.
+  const requestApptEdit = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    if (appt.rrule === null && appt.parentId === null) {
+      void editApptFromDetail(appt);
+      return;
+    }
+    setSeriesScope({ mode: "edit", appt, occ });
+  };
+  const requestApptDeleteSmart = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    if (appt.rrule === null && appt.parentId === null) {
+      requestApptDelete(appt.id);
+      return;
+    }
+    setSeriesScope({ mode: "delete", appt, occ });
+  };
+
+  const handleSeriesScopeSelect = async (scope: SeriesScope) => {
+    const ctx = seriesScope;
+    if (!ctx) return;
+    setSeriesScope(null);
+    const { mode, appt, occ } = ctx;
+    const masterId = appt.parentId ?? appt.id;
+    const anchor = appt.parentId ? appt.recurrenceAnchor ?? occ.anchor : occ.anchor;
+    try {
+      const master = await getAppointment(masterId);
+      if (!master) {
+        showToast("Termin nicht gefunden");
+        bump();
+        return;
+      }
+      if (mode === "edit") {
+        setFormDirty(false);
+        if (scope === "all") {
+          setModal({
+            type: "apptForm",
+            appointment: plainAppointment(master),
+            contextHint:
+              "Änderungen gelten für ALLE Termine der Serie. Einzeln geänderte " +
+              "Instanzen behalten ihre Abweichungen, solange sich das Datumsraster " +
+              "der Serie nicht ändert.",
+          });
+        } else if (scope === "single") {
+          const isOverride = appt.parentId !== null;
+          setModal({
+            type: "apptForm",
+            appointment: isOverride
+              ? { ...plainAppointment(appt), tagIds: [], reminders: [] }
+              : buildOverrideDraft(master, occ),
+            contextHint: `Nur der Termin am ${formatDateDe(anchor)} wird geändert. Erinnerungen und Schlagwörter erbt er weiterhin von der Serie.`,
+          });
+        } else {
+          const oldMaster = truncatedMaster(master, anchor);
+          setModal({
+            type: "apptForm",
+            appointment: buildSplitDraft(master, occ),
+            contextHint: `Änderungen gelten ab dem ${formatDateDe(anchor)}. Frühere Termine der Serie bleiben unverändert.`,
+            saveAction: (a) =>
+              splitSeries({ master: oldMaster, newSeries: a, anchor }),
+          });
+        }
+      } else {
+        if (scope === "all") {
+          requestApptDelete(
+            masterId,
+            "Die GESAMTE Serie unwiderruflich löschen (alle Termine)?"
+          );
+        } else if (scope === "single") {
+          await deleteOccurrence(masterId, anchor);
+          setModal(null);
+          bump();
+          showToast("Termin gelöscht");
+        } else {
+          await truncateSeries({ master: truncatedMaster(master, anchor), anchor });
+          setModal(null);
+          bump();
+          showToast("Termin und Folgetermine gelöscht");
+        }
+      }
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
   };
   const handleApptDelete = async (id: string) => {
     try {
@@ -472,15 +705,13 @@ export default function App() {
     setFormDirty(false);
     setModal({ type: "apptForm", appointment: duplicateAppointment(appt) });
   };
-  // "Zeit buchen": Eintragsformular vorbefüllt aus dem Termin -- Datum der
-  // Instanz, Uhrzeiten (bei ganztägig leer), Titel als GL-Info, Schlagwörter.
-  const bookTimeFromAppointment = (
-    appt: AppointmentFullItem,
-    occurrenceDate: string
-  ) => {
-    const entry = newEntry(occurrenceDate);
-    entry.startTime = appt.isAllDay ? null : appt.startTime;
-    entry.endTime = appt.isAllDay ? null : appt.endTime;
+  // "Zeit buchen": Eintragsformular vorbefüllt aus dem Termin -- Datum und
+  // Uhrzeiten der konkreten INSTANZ (bei ganztägig leer), Titel als GL-Info,
+  // Schlagwörter.
+  const bookTimeFromAppointment = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    const entry = newEntry(occ.startDate);
+    entry.startTime = appt.isAllDay ? null : occ.startTime;
+    entry.endTime = appt.isAllDay ? null : occ.endTime;
     entry.infoForManagement = appt.title;
     entry.tagIds = appt.tagIds;
     setFormDirty(false);
@@ -607,6 +838,9 @@ export default function App() {
   useBackClose(mobile && !locked && modal !== null, requestCloseModal);
   useBackClose(mobile && !locked && confirmDiscard !== null, () =>
     setConfirmDiscard(null)
+  );
+  useBackClose(mobile && !locked && seriesScope !== null, () =>
+    setSeriesScope(null)
   );
 
   if (startMode === "loading") {
@@ -854,6 +1088,8 @@ export default function App() {
                   onSaved={handleApptSaved}
                   onCancel={requestCloseModal}
                   onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  saveAction={modal.saveAction}
+                  contextHint={modal.contextHint}
                 />
               </>
             )}
@@ -867,12 +1103,12 @@ export default function App() {
                 </h2>
                 <AppointmentDetail
                   appointment={modal.appointment}
-                  occurrenceDate={modal.occurrenceDate}
-                  onEdit={() => editApptFromDetail(modal.appointment)}
-                  onDelete={() => requestApptDelete(modal.appointment.id)}
+                  occurrence={modal.occ}
+                  onEdit={() => requestApptEdit(modal.appointment, modal.occ)}
+                  onDelete={() => requestApptDeleteSmart(modal.appointment, modal.occ)}
                   onDuplicate={() => handleApptDuplicate(modal.appointment)}
                   onBookTime={() =>
-                    bookTimeFromAppointment(modal.appointment, modal.occurrenceDate)
+                    bookTimeFromAppointment(modal.appointment, modal.occ)
                   }
                   onClose={() => setModal(null)}
                 />
@@ -935,6 +1171,16 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Serien-Scope: "Nur dieser / Dieser und folgende / Alle" -- liegt wie
+          der Bestätigungsdialog über dem Detail-Modal. */}
+      {seriesScope && (
+        <SeriesScopeDialog
+          mode={seriesScope.mode}
+          onSelect={(scope) => void handleSeriesScopeSelect(scope)}
+          onCancel={() => setSeriesScope(null)}
+        />
       )}
 
       {/* Bestätigung: ungespeicherte Eingaben verwerfen ODER Eintrag löschen

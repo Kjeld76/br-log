@@ -1333,6 +1333,57 @@ export async function splitSeries(args: {
   await db.batch(statements);
 }
 
+/**
+ * "Diesen und alle folgenden LÖSCHEN": der Aufrufer hat den Master bereits
+ * mit UNTIL (Vortag des Ankers) versehen und die exdates auf < Anker
+ * gefiltert; hier wird er geschrieben und die Overrides ab dem Anker werden
+ * mitsamt ihrer FTS-Zeilen entfernt -- in EINER Transaktion.
+ */
+export async function truncateSeries(args: {
+  master: Appointment;
+  anchor: string;
+}): Promise<void> {
+  const db = await getDb();
+  const now = nowIso();
+  const tagLabelById = await loadTagLabels(db, args.master.tagIds);
+  const existingReminders = await db.select<
+    { id: string; minutes_before: number }[]
+  >(
+    "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
+    [args.master.id]
+  );
+  const overrideRows = await db.select<{ id: string }[]>(
+    "SELECT id FROM appointments WHERE parent_id = ? AND recurrence_anchor >= ?",
+    [args.master.id, args.anchor]
+  );
+  const statements: BatchStatement[] = [
+    ...appointmentWriteStatements({
+      appt: args.master,
+      exists: true,
+      updatedAt: now,
+      createdAtDefault: now,
+      tagLabelById,
+      existingReminders: existingReminders.map((r) => ({
+        id: r.id,
+        minutesBefore: r.minutes_before,
+      })),
+    }),
+  ];
+  for (const o of overrideRows) {
+    statements.push({
+      sql: "DELETE FROM appointments WHERE id = ?",
+      params: [o.id],
+    });
+    if (isFtsAvailable()) {
+      statements.push({
+        sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+        params: [o.id],
+      });
+    }
+  }
+  await db.batch(statements);
+}
+
 // ---------- Erinnerungs-Protokoll (reminder_fired) ----------
 
 /** Markiert eine Erinnerung als gefeuert (idempotent via INSERT OR IGNORE). */
