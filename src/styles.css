@@ -61,7 +61,7 @@ body {
 }
 
 .text-confidential {
-  color: var(--color-confidential-ink);
+  color: var(--color-confidential-text);
 }
 
 /* Logo im Header: im Dunkelmodus auf hellem „Badge" lesbar halten.

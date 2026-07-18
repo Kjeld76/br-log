@@ -47,6 +47,7 @@
   --color-confidential-surface: #fef2f2;
   --color-confidential-border: #fecaca;
   --color-confidential-ink: #991b1b;
+  --color-confidential-text: #991b1b;        /* Fließtext-Auszeichnung "vertraulich" */
   --color-confidential-placeholder: #fca5a5;
   --color-confidential-input-bg: #ffffff;
   --color-confidential-input-ink: #7f1d1d;
@@ -112,6 +113,7 @@
     --color-confidential-surface: rgba(190, 18, 60, .16);
     --color-confidential-border: #be123c;
     --color-confidential-ink: #fecdd3;
+    --color-confidential-text: #fda4af;
     --color-confidential-placeholder: #9f6b76;
     --color-confidential-input-bg: #1c1117;
     --color-confidential-input-ink: #fecdd3;
@@ -153,6 +155,7 @@
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;
+  --color-confidential-text: #fda4af;
   --color-confidential-placeholder: #9f6b76;
   --color-confidential-input-bg: #1c1117;
   --color-confidential-input-ink: #fecdd3;
