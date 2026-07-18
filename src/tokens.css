@@ -29,6 +29,9 @@
   --color-focus-ring: #0ea5e9;
   --color-info-surface: #f0f9ff;
 
+  /* --- Logo-Badge (Kontrastfläche hinter dem Header-Logo im Dark-Modus) --- */
+  --color-logo-badge: transparent;
+
   /* --- Status: Fläche / Text / Rahmen --- */
   --color-success-surface: #d1fae5;
   --color-success-ink: #065f46;
@@ -59,6 +62,11 @@
   --shadow-1: 0 1px 2px rgba(15, 23, 42, .08);
   --shadow-2: 0 4px 12px rgba(15, 23, 42, .12);
   --shadow-3: 0 12px 32px rgba(15, 23, 42, .16);
+
+  /* --- Druck (immer Papier, unabhängig vom Theme; PRINT.ink etc., s. lib/tokens.ts) --- */
+  --print-ink: #000000;
+  --print-paper: #ffffff;
+  --print-frame: #cbd5e1;
 
   /* --- Modusunabhängig --- */
   --font-system: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -91,6 +99,7 @@
     --color-link: #38bdf8;
     --color-focus-ring: #38bdf8;
     --color-info-surface: rgba(12, 74, 110, .3);
+    --color-logo-badge: #f1f5f9;
     --color-success-surface: rgba(6, 78, 59, .4);
     --color-success-ink: #6ee7b7;
     --color-success: #34d399;
@@ -131,6 +140,7 @@
   --color-link: #38bdf8;
   --color-focus-ring: #38bdf8;
   --color-info-surface: rgba(12, 74, 110, .3);
+  --color-logo-badge: #f1f5f9;
   --color-success-surface: rgba(6, 78, 59, .4);
   --color-success-ink: #6ee7b7;
   --color-success: #34d399;
