@@ -39,8 +39,20 @@ Es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
 - Volltextsuche (FTS5) – vertrauliche Treffer werden in Listen nie im Klartext
   gezeigt, nur als „Treffer in vertraulichem Feld"
 - Schlagwort-Filter als Chips, Datums-/Zeitraumfilter, Tages-/Monatssummen
-- Kalender-Monatsansicht mit markierten Tagen und Tagessummen
-- Export: GL-CSV (ohne Vertrauliches), Voll-CSV, JSON-Backup/Import (Merge)
+- Vollwertiger Terminkalender: Einzel- und Serientermine (täglich/wöchentlich/
+  monatlich/jährlich, „nur dieser / dieser und folgende / alle" bearbeiten),
+  ganztägige und mehrtägige Termine, Wichtig-Kennzeichnung, Farben,
+  Monats- und Agenda-Ansicht mit Termin-Suche – kombiniert mit den
+  Tagessummen der Zeiterfassung; „Zeit buchen" legt aus einem Termin den
+  vorbefüllten Zeiteintrag an
+- Termin-Erinnerungen als Systembenachrichtigung: Desktop mit optionalem
+  Tray-Betrieb (Schließen versteckt) und Autostart, Android mit geplanten
+  Benachrichtigungen auch bei geschlossener App; Verpasstes wird beim
+  nächsten Start nachgeholt. Auch Termine tragen ein vertrauliches
+  Notizfeld nach dem BR-Geheimnis-Muster
+- Export: GL-CSV (ohne Vertrauliches), Voll-CSV, JSON-Backup/Import (Merge),
+  ICS-Export/-Import der Termine (Outlook/Thunderbird/Google-kompatibel,
+  standardmäßig ohne vertrauliche Notizen)
 
 ## Datenspeicherort
 

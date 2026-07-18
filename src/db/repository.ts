@@ -773,7 +773,7 @@ export async function listEntriesFull(
 
 /**
  * Tagessummen ALLER Aktivität (BR-Zeit UND Freizeitausgleich zusammen) --
- * bewusst ungefiltert, weil die Kalender-Tages-Marker (CalendarView) jede
+ * bewusst ungefiltert, weil die Kalender-Tages-Marker (AppointmentMonthGrid) jede
  * Aktivität an einem Tag zeigen sollen, unabhängig von ihrer Art.
  */
 export async function daySums(
@@ -792,7 +792,7 @@ export async function daySums(
 
 /**
  * BR-Arbeitszeit- und Freizeitausgleich-Minuten GETRENNT für einen Zeitraum
- * (Finding B2/Summen-Konsistenz). Die Kalender-Monatssumme (CalendarView) und
+ * (Finding B2/Summen-Konsistenz). Die Kalender-Monatssumme (AppointmentMonthGrid) und
  * die "Diese Woche"-Summe (QuickEntryView) zählten Ausgleichs-Minuten bisher
  * über daySums MIT, während die Auswertung (getStatsSummary) sie ausschließt
  * -- unterschiedliche Zahlen für dieselbe Frage "wie viel BR-Zeit". Eine
@@ -1382,6 +1382,76 @@ export async function truncateSeries(args: {
     }
   }
   await db.batch(statements);
+}
+
+/**
+ * Volltextsuche über Termine (Muster searchHits: spaltengebundene Treffer-
+ * Herkunft public/secret, LIKE-Fallback ohne FTS5). Liefert schlanke
+ * Listen-Items (OHNE secretDetails) mit gesetztem `search`, sortiert nach
+ * Startdatum. Overrides zählen als eigene Treffer (sie tragen eigene Texte).
+ */
+export async function searchAppointments(
+  term: string
+): Promise<AppointmentListItem[]> {
+  const trimmed = term.trim();
+  if (!trimmed) return [];
+  const db = await getDb();
+  const map = new Map<string, SearchHit>();
+  const mark = (id: string, key: keyof SearchHit) => {
+    const h = map.get(id) || { hasPublicHit: false, hasSecretHit: false };
+    h[key] = true;
+    map.set(id, h);
+  };
+
+  if (isFtsAvailable()) {
+    const pub = buildFtsMatch("public_content", trimmed);
+    const sec = buildFtsMatch("secret_content", trimmed);
+    if (pub) {
+      const r = await db.select<{ appointment_id: string }[]>(
+        "SELECT appointment_id FROM appointments_fts WHERE appointments_fts MATCH ?",
+        [pub]
+      );
+      for (const x of r) mark(x.appointment_id, "hasPublicHit");
+    }
+    if (sec) {
+      const r = await db.select<{ appointment_id: string }[]>(
+        "SELECT appointment_id FROM appointments_fts WHERE appointments_fts MATCH ?",
+        [sec]
+      );
+      for (const x of r) mark(x.appointment_id, "hasSecretHit");
+    }
+  } else {
+    const like = `%${trimmed.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
+    const pub = await db.select<{ id: string }[]>(
+      `SELECT DISTINCT a.id FROM appointments a
+        WHERE a.title LIKE ? ESCAPE '\\'
+           OR a.location LIKE ? ESCAPE '\\'
+           OR a.description LIKE ? ESCAPE '\\'
+           OR EXISTS (SELECT 1 FROM appointment_tags at JOIN task_tags t ON t.id=at.tag_id
+                       WHERE at.appointment_id=a.id AND t.label LIKE ? ESCAPE '\\')`,
+      [like, like, like, like]
+    );
+    for (const x of pub) mark(x.id, "hasPublicHit");
+    const sec = await db.select<{ id: string }[]>(
+      "SELECT id FROM appointments WHERE secret_details LIKE ? ESCAPE '\\'",
+      [like]
+    );
+    for (const x of sec) mark(x.id, "hasSecretHit");
+  }
+
+  const ids = [...map.keys()];
+  if (ids.length === 0) return [];
+  const rows = await selectByIdChunks<AppointmentListRow>(
+    db,
+    ids,
+    (ph) => `SELECT ${LIST_APPT_COLUMNS} FROM appointments a WHERE a.id IN (${ph})`
+  );
+  rows.sort((a, b) =>
+    a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0
+  );
+  const items = await hydrateListAppointments(rows);
+  for (const it of items) it.search = map.get(it.id);
+  return items;
 }
 
 /**
