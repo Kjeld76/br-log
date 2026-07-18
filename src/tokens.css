@@ -69,6 +69,30 @@
   --color-primary-outline-ink: #0369a1;
   --color-primary-outline-hover: #f0f9ff;
 
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-7-Restfälle) --- */
+  /* Info-Hinweis-Banner (Formulare) */
+  --color-info-banner-surface: #f0f9ff;
+  --color-info-banner-line: #bae6fd;
+  --color-info-banner-ink: #0c4a6e;
+  /* Pflichtfeld-Markierung */
+  --color-required: #ef4444;
+  /* Erfolgs-Hinweisfläche (zart, Freizeitausgleich) */
+  --color-success-banner-surface: rgba(236, 253, 245, .4);
+  --color-success-banner-line: #a7f3d0;
+  /* Zähler-Badge Fehler/Widersprüche */
+  --color-error-badge-surface: #fee2e2;
+  --color-error-badge-ink: #991b1b;
+  /* Warn-Aktion (kräftiger Amber-Button + Ghost-Variante) */
+  --color-warning-action: #d97706;
+  --color-warning-action-hover: #b45309;
+  --color-warning-action-line: #fcd34d;
+  --color-warning-action-ghost-hover: #ffffff;
+  /* Destruktiver Text-Link (Entfernen/Löschen) */
+  --color-destructive-ink: #b91c1c;
+  --color-destructive-hover: #fef2f2;
+  /* Archiviert-Kennzeichnung (Chip) */
+  --color-archived-surface: #94a3b8;
+
   /* --- Vertraulich (BR-Geheimnis) — eigene semantische Gruppe --- */
   --color-confidential-surface: #fef2f2;
   --color-confidential-border: #fecaca;
@@ -162,6 +186,19 @@
     --color-primary-outline-border: #38bdf8;
     --color-primary-outline-ink: #7dd3fc;
     --color-primary-outline-hover: rgba(12, 74, 110, .2);
+    /* --- Ergänzungs-Tokens (Fix-Runde, Task-7-Restfälle) --- */
+    --color-info-banner-surface: rgba(12, 74, 110, .2);
+    --color-info-banner-line: #075985;
+    --color-info-banner-ink: #bae6fd;
+    --color-success-banner-surface: rgba(6, 78, 59, .1);
+    --color-success-banner-line: #065f46;
+    --color-error-badge-surface: rgba(127, 29, 29, .4);
+    --color-error-badge-ink: #fca5a5;
+    --color-warning-action-line: #b45309;
+    --color-warning-action-ghost-hover: rgba(120, 53, 15, .4);
+    --color-destructive-ink: #f87171;
+    --color-destructive-hover: rgba(127, 29, 29, .3);
+    --color-archived-surface: #475569;
     --color-confidential-surface: rgba(190, 18, 60, .16);
     --color-confidential-border: #be123c;
     --color-confidential-ink: #fecdd3;
@@ -221,6 +258,19 @@
   --color-primary-outline-border: #38bdf8;
   --color-primary-outline-ink: #7dd3fc;
   --color-primary-outline-hover: rgba(12, 74, 110, .2);
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-7-Restfälle) --- */
+  --color-info-banner-surface: rgba(12, 74, 110, .2);
+  --color-info-banner-line: #075985;
+  --color-info-banner-ink: #bae6fd;
+  --color-success-banner-surface: rgba(6, 78, 59, .1);
+  --color-success-banner-line: #065f46;
+  --color-error-badge-surface: rgba(127, 29, 29, .4);
+  --color-error-badge-ink: #fca5a5;
+  --color-warning-action-line: #b45309;
+  --color-warning-action-ghost-hover: rgba(120, 53, 15, .4);
+  --color-destructive-ink: #f87171;
+  --color-destructive-hover: rgba(127, 29, 29, .3);
+  --color-archived-surface: #475569;
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;

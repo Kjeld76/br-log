@@ -215,7 +215,7 @@ export default function AppointmentForm({
   return (
     <div className="space-y-4">
       {contextHint && (
-        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+        <p className="rounded-lg border border-info-banner-line bg-info-banner p-3 text-sm text-info-banner-ink">
           {contextHint}
         </p>
       )}
@@ -227,7 +227,7 @@ export default function AppointmentForm({
         </h3>
         <div>
           <label htmlFor={titleId} className={labelCls}>
-            Titel <span className="text-red-500">*</span>
+            Titel <span className="text-required">*</span>
           </label>
           <input
             id={titleId}
@@ -263,7 +263,7 @@ export default function AppointmentForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className={draft.isAllDay ? "sm:col-span-2" : ""}>
             <label htmlFor={startDateId} className={labelCls}>
-              Beginn <span className="text-red-500">*</span>
+              Beginn <span className="text-required">*</span>
             </label>
             <input
               id={startDateId}
@@ -289,7 +289,7 @@ export default function AppointmentForm({
           )}
           <div className={draft.isAllDay ? "sm:col-span-2" : ""}>
             <label htmlFor={endDateId} className={labelCls}>
-              Ende <span className="text-red-500">*</span>
+              Ende <span className="text-required">*</span>
             </label>
             <input
               id={endDateId}
@@ -365,12 +365,12 @@ export default function AppointmentForm({
                 Benutzerdefinierte Serienregel (z. B. aus einem ICS-Import) –
                 bleibt beim Speichern unverändert erhalten.
               </p>
-              <code className="block break-all rounded bg-slate-100 p-2 text-xs text-secondary-ink dark:bg-slate-900/50">
+              <code className="block break-all rounded bg-surface-dim p-2 text-xs text-secondary-ink">
                 {draft.rrule}
               </code>
               <button
                 type="button"
-                className="text-sm text-red-700 hover:underline dark:text-red-400"
+                className="text-sm text-destructive-ink hover:underline"
                 onClick={() => applyPreset(null)}
               >
                 Wiederholung entfernen

@@ -335,7 +335,7 @@ export default function EntryForm({
   return (
     <div className="space-y-4">
       {showLastDefaultsHint && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-info-banner-line bg-info-banner p-3 text-sm text-info-banner-ink">
           <span>Wie beim letzten Eintrag übernehmen?</span>
           <button
             type="button"
@@ -384,7 +384,7 @@ export default function EntryForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label htmlFor={dateId} className={labelCls}>
-              Datum <span className="text-red-500">*</span>
+              Datum <span className="text-required">*</span>
             </label>
             <input
               id={dateId}
@@ -400,7 +400,7 @@ export default function EntryForm({
             <>
               <div>
                 <label htmlFor={startId} className={labelCls}>
-                  Von <span className="text-red-500">*</span>
+                  Von <span className="text-required">*</span>
                 </label>
                 <div className="flex gap-1">
                   <input
@@ -422,7 +422,7 @@ export default function EntryForm({
               </div>
               <div>
                 <label htmlFor={endId} className={labelCls}>
-                  Bis <span className="text-red-500">*</span>
+                  Bis <span className="text-required">*</span>
                 </label>
                 <input
                   id={endId}
@@ -452,7 +452,7 @@ export default function EntryForm({
           ) : (
             <div className="sm:col-span-2">
               <label htmlFor={durationId} className={labelCls}>
-                Dauer (Std:Min oder Minuten) <span className="text-red-500">*</span>
+                Dauer (Std:Min oder Minuten) <span className="text-required">*</span>
               </label>
               <input
                 id={durationId}
@@ -571,7 +571,7 @@ export default function EntryForm({
         {/* Freizeitausgleich (Finding 14, § 37 Abs. 3 BetrVG): ein genommener
             Ausgleich ist keine BR-Tätigkeit -- Tags/GL-Info/Vertraulich werden
             deaktiviert statt eine fachlich sinnlose Dokumentation zu erzwingen. */}
-        <div className="space-y-1 rounded border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
+        <div className="space-y-1 rounded border border-success-banner-line bg-success-banner p-3">
           <label className="flex items-center gap-2 text-sm font-medium text-primary-ink">
             <input
               type="checkbox"
@@ -606,7 +606,7 @@ export default function EntryForm({
           >
             <Icon name="eye" size={16} />
             Tätigkeit (Info für Geschäftsleitung)
-            <span className="text-red-500">*</span>
+            <span className="text-required">*</span>
           </label>
           <textarea
             id={infoId}
@@ -653,7 +653,7 @@ export default function EntryForm({
             <Icon name="alert-triangle" size={16} />
             Widersprüche der Geschäftsleitung
             {draft.objections.length > 0 && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300">
+              <span className="rounded-full bg-error-badge px-2 py-0.5 text-xs text-error-badge-ink">
                 {draft.objections.length}
               </span>
             )}
@@ -680,14 +680,14 @@ export default function EntryForm({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              className="rounded border border-amber-300 px-3 py-1 text-xs hover:bg-white dark:border-amber-700 dark:hover:bg-amber-900/40"
+              className="rounded border border-warning-action-line px-3 py-1 text-xs hover:bg-warning-action-ghost-hover"
               onClick={() => setOverlapWarning(null)}
             >
               Zeiten prüfen
             </button>
             <button
               type="button"
-              className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-on-primary hover:bg-amber-700"
+              className="rounded bg-warning-action px-3 py-1 text-xs font-medium text-on-primary hover:bg-warning-action-hover"
               onClick={() => handleSave({ skipOverlapCheck: true })}
             >
               Trotzdem speichern

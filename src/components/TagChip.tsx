@@ -35,7 +35,7 @@ export default function TagChip({
       <span
         className={
           "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-on-primary " +
-          (archived ? "bg-slate-400 dark:bg-slate-600" : "bg-primary")
+          (archived ? "bg-archived-surface" : "bg-primary")
         }
       >
         {label}
