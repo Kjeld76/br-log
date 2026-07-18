@@ -1384,6 +1384,106 @@ export async function truncateSeries(args: {
   await db.batch(statements);
 }
 
+/**
+ * ALLE Termine voll geladen (inkl. secretDetails/tagLabels) -- für den
+ * ICS-Export. Master/Einzeltermine vor Overrides (stabile Export-Ordnung).
+ */
+export async function listAllAppointmentsFull(): Promise<AppointmentFullItem[]> {
+  const db = await getDb();
+  const rows = await db.select<AppointmentRow[]>(
+    "SELECT * FROM appointments ORDER BY (parent_id IS NOT NULL), start_date"
+  );
+  return hydrateFullAppointments(rows);
+}
+
+/**
+ * (ics_uid -> lokale Master-Zeile) für die Import-Dedupe (UID+SEQUENCE).
+ * Nur Master/Einzeltermine -- Overrides tragen keine eigene UID.
+ */
+export async function listAppointmentsByIcsUid(
+  uids: string[]
+): Promise<Map<string, { id: string; icsSequence: number }>> {
+  const map = new Map<string, { id: string; icsSequence: number }>();
+  if (uids.length === 0) return map;
+  const db = await getDb();
+  const rows = await selectByIdChunks<{
+    id: string;
+    ics_uid: string;
+    ics_sequence: number;
+  }>(
+    db,
+    uids,
+    (ph) => `SELECT id, ics_uid, ics_sequence FROM appointments
+      WHERE parent_id IS NULL AND ics_uid IN (${ph})`
+  );
+  for (const r of rows) map.set(r.ics_uid, { id: r.id, icsSequence: r.ics_sequence });
+  return map;
+}
+
+/**
+ * Wendet einen ICS-Import ATOMAR an: ersetzte Bestände (UID-Match mit
+ * neuerer SEQUENCE -- die Serie wird KOMPLETT ersetzt, inkl. Overrides und
+ * Feuer-Protokoll) löschen, dann alle importierten Termine frisch einfügen
+ * (Master vor Overrides, Reihenfolge liefert der Aufrufer).
+ */
+export async function applyIcsAppointments(
+  appointments: Appointment[],
+  replaceIds: string[]
+): Promise<void> {
+  if (appointments.length === 0 && replaceIds.length === 0) return;
+  const db = await getDb();
+  const now = nowIso();
+  const tagLabelById = await loadTagLabels(
+    db,
+    appointments.flatMap((a) => a.tagIds)
+  );
+  const replacedOverrideIds =
+    replaceIds.length === 0
+      ? []
+      : (
+          await selectByIdChunks<{ id: string }>(
+            db,
+            replaceIds,
+            (ph) => `SELECT id FROM appointments WHERE parent_id IN (${ph})`
+          )
+        ).map((r) => r.id);
+
+  const statements: BatchStatement[] = [];
+  for (const id of replaceIds) {
+    statements.push(
+      { sql: "DELETE FROM reminder_fired WHERE appointment_id = ?", params: [id] },
+      {
+        sql: "DELETE FROM appointment_reminders WHERE appointment_id = ?",
+        params: [id],
+      },
+      { sql: "DELETE FROM appointment_tags WHERE appointment_id = ?", params: [id] },
+      { sql: "DELETE FROM appointments WHERE parent_id = ?", params: [id] },
+      { sql: "DELETE FROM appointments WHERE id = ?", params: [id] }
+    );
+  }
+  if (isFtsAvailable()) {
+    for (const fid of [...replaceIds, ...replacedOverrideIds]) {
+      statements.push({
+        sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+        params: [fid],
+      });
+    }
+  }
+  for (const a of appointments) {
+    statements.push(
+      ...appointmentWriteStatements({
+        appt: a,
+        exists: false,
+        updatedAt: a.updatedAt || now,
+        createdAtDefault: now,
+        tagLabelById,
+        existingReminders: [],
+      })
+    );
+  }
+  await db.batch(statements);
+}
+
 // ---------- Erinnerungs-Protokoll (reminder_fired) ----------
 
 /** Markiert eine Erinnerung als gefeuert (idempotent via INSERT OR IGNORE). */
