@@ -101,6 +101,21 @@ export default function AppointmentMonthGrid({
   }, [month, reloadKey]);
 
   const handleDayClick = async (iso: string) => {
+    const minutes = sums[iso];
+    if (!minutes) {
+      dayRequestIdRef.current++; // laufende Tages-Abfragen invalidieren
+      if (occurrencesOnDay(occurrences, iso).length === 0) {
+        // Komplett leerer Tag: direkt das vorbefüllte Eintragsformular --
+        // der Ein-Klick-Nacherfassungs-Weg der alten CalendarView.
+        onNewEntry(iso);
+        return;
+      }
+      // Ohne erfasste Zeit ist das Eintrags-Ergebnis vorhersagbar leer --
+      // Panel (mit Terminen) ohne listEntries-Roundtrip öffnen.
+      setSelectedDay(iso);
+      setDayEntries([]);
+      return;
+    }
     const id = ++dayRequestIdRef.current;
     try {
       const items = await listEntries({ from: iso, to: iso });
@@ -178,7 +193,10 @@ export default function AppointmentMonthGrid({
                     title={`Erfasste Zeit: ${minutesToHhmm(minutes)} Std`}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
-                    <span className="hidden sm:inline">{minutesToHhmm(minutes)}</span>
+                    {/* Auf allen Breiten sichtbar: das Raster ist für
+                        Android-Portrait getunt; ein title-Tooltip ist auf
+                        Touch nicht erreichbar. */}
+                    <span>{minutesToHhmm(minutes)}</span>
                   </span>
                 ) : null}
               </span>

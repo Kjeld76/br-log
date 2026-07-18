@@ -96,8 +96,29 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   const today = todayIso();
   const searching = term.trim().length > 0;
 
-  // Suchtreffer öffnen: als Instanz an seinem (Original-)Starttag.
-  const openResult = (a: AppointmentListItem) => {
+  // Suchtreffer öffnen. Einzeltermine und Overrides sind selbst die Instanz;
+  // ein Serien-MASTER wird dagegen als real existierende Instanz geöffnet
+  // (nächste ab heute, sonst die letzte): sein startDate kann per Exdate
+  // gelöscht oder durch einen Override ersetzt sein -- die Detailansicht
+  // zeigte sonst eine Phantom-Instanz, die im Kalender nicht existiert.
+  const openResult = async (a: AppointmentListItem) => {
+    if (a.rrule !== null && a.parentId === null) {
+      try {
+        const horizon = format(addDays(parseISO(today), 366), "yyyy-MM-dd");
+        const items = await listAppointmentsRange(a.startDate, horizon);
+        const series = expandOccurrences(items, a.startDate, horizon).filter(
+          (o) => o.appointment.id === a.id || o.appointment.parentId === a.id
+        );
+        const next =
+          series.find((o) => o.endDate >= today) ?? series[series.length - 1];
+        if (next) {
+          onOpenOccurrence(next);
+          return;
+        }
+      } catch {
+        // Fallback unten: lieber die Roh-Instanz zeigen als gar nichts.
+      }
+    }
     onOpenOccurrence({
       appointment: a,
       anchor: a.recurrenceAnchor ?? a.startDate,
@@ -139,11 +160,11 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
                 role="button"
                 tabIndex={0}
                 className="cursor-pointer rounded border border-slate-200 bg-white p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
-                onClick={() => openResult(a)}
+                onClick={() => void openResult(a)}
                 onKeyDown={(ev) => {
                   if (ev.key === "Enter" || ev.key === " ") {
                     ev.preventDefault();
-                    openResult(a);
+                    void openResult(a);
                   }
                 }}
               >

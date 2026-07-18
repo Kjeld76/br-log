@@ -490,7 +490,14 @@ export default function App() {
         }
       }
       saveScheduledRefs(refs);
-      scheduledKeysRef.current = new Set(refs.map((r) => r.key));
+      // Union aus alten und neuen Schlüsseln: ein bereits zugestellter
+      // Kandidat, dessen dueMs noch im Live-Fenster liegt, wird nicht neu
+      // geplant -- ohne seinen alten Schlüssel verlöre er den Doppel-
+      // Zustellungs-Schutz und erschiene zusätzlich als In-App-Notification.
+      scheduledKeysRef.current = new Set([
+        ...old.map((r) => r.key),
+        ...refs.map((r) => r.key),
+      ]);
     } catch (e) {
       console.warn("Planung der Android-Erinnerungen fehlgeschlagen.", e);
     }
@@ -535,7 +542,14 @@ export default function App() {
         ]);
         if (!active) return;
         reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
-        firedKeysRef.current = firedKeySetFrom(fired);
+        // MERGEN statt ersetzen: der 30-s-Loop kann zwischen dem DB-Read und
+        // dieser Zuweisung gefeuert haben (recordFired schreibt die DB nur
+        // fire-and-forget) -- ein komplett ersetztes Set verlöre den frischen
+        // Key und die Notification erschiene beim nächsten Tick doppelt.
+        firedKeysRef.current = new Set([
+          ...firedKeySetFrom(fired),
+          ...firedKeysRef.current,
+        ]);
         snapshotLoadedAtRef.current = Date.now();
         const missedAll = selectMissed(
           reminderCandidatesRef.current,
