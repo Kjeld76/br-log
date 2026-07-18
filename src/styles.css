@@ -79,6 +79,49 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
+   Termin-Farbchips (AppointmentColor): Chip-Fläche/-Text und Farbpunkt.
+   Bestandswerte aus tokens.css (--color-appt-*), s. lib/appointmentUi.ts --
+   dieselbe Zuordnung Farbschlüssel -> Ton wie zuvor, jetzt themeunabhängig
+   (die Tokens tragen die Light/Dark-Unterscheidung, nicht die Klasse hier).
+---------------------------------------------------------------------------- */
+.appt-chip-sky {
+  background: var(--color-appt-sky-bg);
+  color: var(--color-appt-sky-ink);
+}
+.appt-chip-emerald {
+  background: var(--color-appt-emerald-bg);
+  color: var(--color-appt-emerald-ink);
+}
+.appt-chip-amber {
+  background: var(--color-appt-amber-bg);
+  color: var(--color-appt-amber-ink);
+}
+.appt-chip-rose {
+  background: var(--color-appt-rose-bg);
+  color: var(--color-appt-rose-ink);
+}
+.appt-chip-violet {
+  background: var(--color-appt-violet-bg);
+  color: var(--color-appt-violet-ink);
+}
+
+.appt-dot-sky {
+  background: var(--color-appt-sky-dot);
+}
+.appt-dot-emerald {
+  background: var(--color-appt-emerald-dot);
+}
+.appt-dot-amber {
+  background: var(--color-appt-amber-dot);
+}
+.appt-dot-rose {
+  background: var(--color-appt-rose-dot);
+}
+.appt-dot-violet {
+  background: var(--color-appt-violet-dot);
+}
+
+/* ----------------------------------------------------------------------------
    Nachweis-Vorschau (Finding 13, PrintReportPanel; Linux-Portierung L5).
    War zuvor auf dem Bildschirm komplett ausgeblendet (window.print() war der
    einzige Weg, den Inhalt zu sehen). Jetzt eine immer sichtbare Vorschau im

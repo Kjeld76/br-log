@@ -59,6 +59,15 @@
   --color-appt-rose-bg: #ffe4e6;   --color-appt-rose-ink: #9f1239;
   --color-appt-violet-bg: #ede9fe; --color-appt-violet-ink: #5b21b6;
 
+  /* --- Termin-Farbpunkte (Farbauswahl/Legende): kräftige Bestandswerte,
+     modusunabhängig -- die bisherigen bg-{color}-500-Klassen hatten keinen
+     dark:-Zweig, daher hier nur EIN Wert statt Light/Dark-Paar. --- */
+  --color-appt-sky-dot: #0ea5e9;
+  --color-appt-emerald-dot: #10b981;
+  --color-appt-amber-dot: #f59e0b;
+  --color-appt-rose-dot: #f43f5e;
+  --color-appt-violet-dot: #8b5cf6;
+
   /* --- Schatten --- */
   --shadow-1: 0 1px 2px rgba(15, 23, 42, .08);
   --shadow-2: 0 4px 12px rgba(15, 23, 42, .12);
