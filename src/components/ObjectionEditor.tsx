@@ -16,14 +16,14 @@ export default function ObjectionEditor({ objections, onChange }: Props) {
   return (
     <div className="space-y-2">
       {objections.length === 0 && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-secondary-ink">
           Kein Widerspruch der Geschäftsleitung erfasst.
         </p>
       )}
       {objections.map((o) => (
         <div
           key={o.id}
-          className="space-y-2 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50"
+          className="space-y-2 rounded border border-border bg-surface-dim p-3"
         >
           <textarea
             className={inputCls + " w-full"}

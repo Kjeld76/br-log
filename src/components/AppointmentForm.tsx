@@ -222,7 +222,7 @@ export default function AppointmentForm({
 
       {/* Block 1: Termin */}
       <div className={formBlockCls}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <h3 className="text-sm font-semibold text-primary-ink">
           Termin
         </h3>
         <div>
@@ -252,7 +252,7 @@ export default function AppointmentForm({
             placeholder="z. B. Besprechungsraum 2"
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+        <label className="flex items-center gap-2 text-sm text-primary-ink">
           <input
             type="checkbox"
             checked={draft.isAllDay}
@@ -316,7 +316,7 @@ export default function AppointmentForm({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-primary-ink">
             <input
               type="checkbox"
               checked={draft.isImportant}
@@ -342,7 +342,7 @@ export default function AppointmentForm({
                   className={
                     `h-6 w-6 rounded-full ${c.dotCls} transition ` +
                     (active
-                      ? "ring-2 ring-slate-700 ring-offset-1 dark:ring-slate-200"
+                      ? "ring-2 ring-primary-ink ring-offset-1"
                       : "opacity-60 hover:opacity-100")
                   }
                 />
@@ -356,16 +356,16 @@ export default function AppointmentForm({
           Instanz hat nie eine eigene Regel, siehe Migration-3-CHECK). */}
       {draft.parentId === null && (
         <div className={formBlockCls}>
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <h3 className="text-sm font-semibold text-primary-ink">
             Wiederholung
           </h3>
           {isCustomRule ? (
             <div className="space-y-2">
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-secondary-ink">
                 Benutzerdefinierte Serienregel (z. B. aus einem ICS-Import) –
                 bleibt beim Speichern unverändert erhalten.
               </p>
-              <code className="block break-all rounded bg-slate-100 p-2 text-xs text-slate-600 dark:bg-slate-900/50 dark:text-slate-300">
+              <code className="block break-all rounded bg-slate-100 p-2 text-xs text-secondary-ink dark:bg-slate-900/50">
                 {draft.rrule}
               </code>
               <button
@@ -416,7 +416,7 @@ export default function AppointmentForm({
                           })
                         }
                       />
-                      <span className="text-sm text-slate-600 dark:text-slate-300">
+                      <span className="text-sm text-secondary-ink">
                         {seriesPreset.freq === "DAILY" && "Tage"}
                         {seriesPreset.freq === "WEEKLY" && "Wochen"}
                         {seriesPreset.freq === "MONTHLY" && "Monate"}
@@ -442,7 +442,7 @@ export default function AppointmentForm({
                     ))}
                   </div>
                   {seriesPreset.byWeekdays.length === 0 && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    <p className="mt-1 text-xs text-secondary-ink">
                       Ohne Auswahl gilt der Wochentag des ersten Termins.
                     </p>
                   )}
@@ -452,7 +452,7 @@ export default function AppointmentForm({
               {seriesPreset && (
                 <div className="space-y-2">
                   <span className={labelCls}>Ende der Serie</span>
-                  <div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <div className="flex flex-col gap-2 text-sm text-primary-ink">
                     <label className="flex items-center gap-2">
                       <input
                         type="radio"
@@ -535,7 +535,7 @@ export default function AppointmentForm({
           und zeigen die Blöcke deshalb gar nicht erst an. */}
       {draft.parentId === null && (
       <div className={formBlockCls}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <h3 className="text-sm font-semibold text-primary-ink">
           Erinnerungen
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -550,7 +550,7 @@ export default function AppointmentForm({
           ))}
         </div>
         {draft.reminders.length > 0 && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-secondary-ink">
             {draft.reminders
               .map((r) => reminderLabel(r.minutesBefore))
               .join(" · ")}
@@ -564,12 +564,12 @@ export default function AppointmentForm({
       {draft.parentId === null && (
       <div className={formBlockCls}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <h3 className="text-sm font-semibold text-primary-ink">
             Schlagwörter
           </h3>
           <button
             type="button"
-            className="text-sm text-sky-700 hover:underline dark:text-sky-400"
+            className="text-sm text-link hover:underline"
             onClick={() => setTagPickerOpen((o) => !o)}
           >
             {tagPickerOpen ? "Fertig" : "Auswählen"}
@@ -656,7 +656,7 @@ export default function AppointmentForm({
         )}
         <button
           type="button"
-          className="rounded bg-sky-600 px-6 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+          className="rounded bg-primary px-6 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-60"
           onClick={() => void handleSave()}
           disabled={saving}
         >

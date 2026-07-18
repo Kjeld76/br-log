@@ -24,7 +24,7 @@ export default function TagChip({
 }: Props) {
   if (variant === "readonly") {
     return (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+      <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-primary-ink">
         {label}
       </span>
     );
@@ -34,15 +34,15 @@ export default function TagChip({
     return (
       <span
         className={
-          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-white " +
-          (archived ? "bg-slate-400 dark:bg-slate-600" : "bg-sky-600")
+          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-on-primary " +
+          (archived ? "bg-slate-400 dark:bg-slate-600" : "bg-primary")
         }
       >
         {label}
         {archived && <span className="opacity-80">(archiviert)</span>}
         <button
           type="button"
-          className="text-white/80 hover:text-white"
+          className="text-on-primary/80 hover:text-on-primary"
           onClick={onClick}
           aria-label="Entfernen"
           disabled={disabled}
@@ -60,8 +60,8 @@ export default function TagChip({
       className={
         "rounded-full border px-3 py-1 text-xs transition " +
         (active
-          ? "border-sky-600 bg-sky-600 text-white"
-          : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
+          ? "border-primary bg-primary text-on-primary"
+          : "border-border-strong bg-surface text-secondary-ink hover:bg-surface-2")
       }
     >
       {label}
