@@ -365,7 +365,7 @@ export default function AppointmentForm({
                 Benutzerdefinierte Serienregel (z. B. aus einem ICS-Import) –
                 bleibt beim Speichern unverändert erhalten.
               </p>
-              <code className="block break-all rounded bg-surface-dim p-2 text-xs text-secondary-ink">
+              <code className="block break-all rounded bg-code-surface p-2 text-xs text-secondary-ink">
                 {draft.rrule}
               </code>
               <button

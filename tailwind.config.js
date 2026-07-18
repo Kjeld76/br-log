@@ -40,6 +40,7 @@ export default {
         "danger-hover": "var(--color-danger-hover)",
         "surface-inverse": "var(--color-surface-inverse)",
         "surface-dim": "var(--color-surface-dim)",
+        "code-surface": "var(--color-code-surface)",
         "selected-surface": "var(--color-selected-surface)",
         "info-ink": "var(--color-info-ink)",
         "warning-strong-ink": "var(--color-warning-strong-ink)",

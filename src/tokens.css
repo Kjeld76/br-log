@@ -61,6 +61,7 @@
   --color-danger-hover: #b91c1c;
   --color-surface-inverse: #1e293b;   /* Toast: invertierte Fläche */
   --color-surface-dim: #f8fafc;       /* gedämpfte Hinweisflächen */
+  --color-code-surface: #f1f5f9;      /* Code-/Regel-Anzeige (RRULE-Block) */
   --color-selected-surface: #f0f9ff;  /* aktive Auswahl (Nav) */
   --color-info-ink: #075985;          /* Text auf Info-/Auswahlflächen */
   --color-warning-strong-ink: #b45309; /* betonte Warn-Textzeile */
@@ -179,6 +180,7 @@
     /* --- Ergänzungs-Tokens (Fix-Runde, letzte Task-6-Restfälle) --- */
     --color-surface-inverse: #334155;
     --color-surface-dim: rgba(15, 23, 42, .5);
+    --color-code-surface: rgba(15, 23, 42, .5);
     --color-selected-surface: rgba(12, 74, 110, .4);
     --color-info-ink: #bae6fd;
     --color-warning-strong-ink: #fbbf24;
@@ -251,6 +253,7 @@
   /* --- Ergänzungs-Tokens (Fix-Runde, letzte Task-6-Restfälle) --- */
   --color-surface-inverse: #334155;
   --color-surface-dim: rgba(15, 23, 42, .5);
+  --color-code-surface: rgba(15, 23, 42, .5);
   --color-selected-surface: rgba(12, 74, 110, .4);
   --color-info-ink: #bae6fd;
   --color-warning-strong-ink: #fbbf24;
