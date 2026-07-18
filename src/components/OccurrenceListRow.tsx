@@ -26,9 +26,9 @@ interface Props {
 }
 
 const FRAME = {
-  card: "cursor-pointer rounded border border-slate-200 bg-white p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700",
+  card: "cursor-pointer rounded border border-border bg-surface p-2 text-sm hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
   panel:
-    "cursor-pointer rounded border border-slate-100 p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:hover:bg-slate-700",
+    "cursor-pointer rounded border border-border p-2 text-sm hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
 };
 
 export default function OccurrenceListRow({
@@ -62,7 +62,7 @@ export default function OccurrenceListRow({
           >
             {chipText}
           </span>
-          <span className="truncate text-slate-700 dark:text-slate-200">
+          <span className="truncate text-primary-ink">
             {isImportant && (
               <span className="font-semibold" title="Wichtig">
                 !{" "}
@@ -70,7 +70,7 @@ export default function OccurrenceListRow({
             )}
             {title || "(ohne Titel)"}
             {titleSuffix && (
-              <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+              <span className="ml-1 text-xs text-secondary-ink">
                 {titleSuffix}
               </span>
             )}
@@ -86,7 +86,7 @@ export default function OccurrenceListRow({
           </span>
         )}
         {!secretHit && location && (
-          <span className="ml-2 hidden shrink-0 text-xs text-slate-500 dark:text-slate-400 sm:inline">
+          <span className="ml-2 hidden shrink-0 text-xs text-secondary-ink sm:inline">
             {location}
           </span>
         )}

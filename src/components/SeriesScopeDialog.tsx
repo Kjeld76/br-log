@@ -35,11 +35,11 @@ export default function SeriesScopeDialog({ mode, onSelect, onCancel }: Props) {
 
   const verb = mode === "edit" ? "bearbeiten" : "löschen";
   const actionCls =
-    "w-full rounded border border-slate-300 px-4 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+    "w-full rounded border border-border-strong px-4 py-2 text-left text-sm text-primary-ink hover:bg-surface-2";
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4"
       onClick={onCancel}
     >
       <div
@@ -48,10 +48,10 @@ export default function SeriesScopeDialog({ mode, onSelect, onCancel }: Props) {
         aria-modal="true"
         aria-label={`Serientermin ${verb}`}
         tabIndex={-1}
-        className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+        className="w-full max-w-sm rounded-lg bg-surface p-4 shadow-xl outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        <p className="text-sm font-medium text-primary-ink">
           Dies ist ein Serientermin. Was möchtest du {verb}?
         </p>
         <div className="mt-3 space-y-2">

@@ -126,41 +126,41 @@ export default function QuickEntryView({
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <header>
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+        <h2 className="text-lg font-bold text-primary-ink">
           Zeit erfassen
         </h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-secondary-ink">
           Neuer Eintrag für deine Betriebsratszeit.
         </p>
       </header>
 
       {/* Wochensumme + letzte Einträge (Finding 25) */}
-      <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+      <div className="rounded-lg border border-border bg-surface p-3">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-600 dark:text-slate-300">Diese Woche</span>
-          <span className="font-semibold text-slate-800 dark:text-slate-100">
+          <span className="text-secondary-ink">Diese Woche</span>
+          <span className="font-semibold text-primary-ink">
             {minutesToHhmm(weekMinutes)} Std
             {weekCompensationMinutes > 0 && (
-              <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">
+              <span className="ml-1 font-normal text-secondary-ink">
                 (+ {minutesToHhmm(weekCompensationMinutes)} Std Freizeitausgleich)
               </span>
             )}
           </span>
         </div>
         {statsError && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{statsError}</p>
+          <p className="mt-2 text-xs text-danger-ink">{statsError}</p>
         )}
         {recent.length > 0 && (
-          <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 dark:border-slate-700">
+          <ul className="mt-2 space-y-1 border-t border-border pt-2">
             {recent.map((e) => (
               <li
                 key={e.id}
                 role={onOpenEntry ? "button" : undefined}
                 tabIndex={onOpenEntry ? 0 : undefined}
                 className={
-                  "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs text-slate-600 dark:text-slate-300" +
+                  "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs text-secondary-ink" +
                   (onOpenEntry
-                    ? " cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:hover:bg-slate-700"
+                    ? " cursor-pointer hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                     : "")
                 }
                 onClick={onOpenEntry ? () => onOpenEntry(e) : undefined}
