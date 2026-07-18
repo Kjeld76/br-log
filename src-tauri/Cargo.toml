@@ -22,6 +22,9 @@ tauri = { version = "2", features = [] }
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Termin-Erinnerungen: System-Notifications (Desktop sofort; Android
+# zusätzlich geplante Notifications via Schedule-API, s. reminderScheduler.ts).
+tauri-plugin-notification = "2"
 # Plattform-Erkennung (Linux-Portierung): Frontend fragt darüber synchron
 # ab, ob Windows/Linux/Android läuft (src/lib/platform.ts). Rust selbst
 # braucht die Plattform aktuell nicht, das Plugin muss aber registriert sein

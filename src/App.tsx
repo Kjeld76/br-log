@@ -28,7 +28,27 @@ import {
   deleteOccurrence,
   splitSeries,
   truncateSeries,
+  listAppointmentsRange,
+  listFiredReminders,
+  markReminderFired,
+  cleanupFiredBefore,
 } from "./db/repository";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+import {
+  buildReminderCandidates,
+  firedKey,
+  firedKeySetFrom,
+  reminderBody,
+  selectDue,
+  selectMissed,
+  MISSED_LOOKBACK_DAYS,
+  type ReminderCandidate,
+} from "./lib/reminderScheduler";
+import type { ReminderFired } from "./types";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
@@ -191,6 +211,18 @@ export default function App() {
   const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
+  // ---------- Termin-Erinnerungen (Snapshot-Scheduler, s. reminderScheduler.ts) ----------
+  // Refs statt State: der Snapshot muss den Auto-Lock ÜBERLEBEN (App zeigt
+  // dann den LockScreen, bleibt aber gemountet) und darf keine Re-Renders
+  // auslösen. Enthält nur öffentliche Felder (Titel/Zeit), nie BR-Geheimnis.
+  const reminderCandidatesRef = useRef<ReminderCandidate[]>([]);
+  const firedKeysRef = useRef<Set<string>>(new Set());
+  // Feuer-Markierungen, die bei gesperrter DB anfielen -> Flush nach Unlock.
+  const pendingFiredRef = useRef<ReminderFired[]>([]);
+  const readyRef = useRef(false);
+  const firedCleanupDoneRef = useRef(false);
+  const [missedReminders, setMissedReminders] = useState<ReminderCandidate[]>([]);
+
   const bump = () => setReloadKey((k) => k + 1);
   // Finding 22: loadTags/loadAllTags wurden an mehreren Stellen ohne catch
   // aufgerufen (u. a. aus DataView.onChanged nach Import/Tag-Änderung) --
@@ -338,6 +370,122 @@ export default function App() {
       active = false;
     };
   }, [ready, reloadKey]);
+
+  // ---------- Termin-Erinnerungen: Laden, Feuern, Nachholen ----------
+
+  const ensureNotificationPermission = async (): Promise<boolean> => {
+    try {
+      if (await isPermissionGranted()) return true;
+      return (await requestPermission()) === "granted";
+    } catch {
+      return false; // Plugin nicht verfügbar -> Erinnerungen bleiben stumm
+    }
+  };
+
+  // Feuer-Markierung persistieren; bei gesperrter DB in den Pending-Puffer.
+  const recordFired = (c: ReminderCandidate) => {
+    firedKeysRef.current.add(firedKey(c));
+    const f: ReminderFired = {
+      appointmentId: c.appointmentId,
+      reminderId: c.reminderId,
+      occurrenceAnchor: c.anchor,
+      firedAt: new Date().toISOString(),
+    };
+    if (readyRef.current) {
+      void markReminderFired(f).catch(() => pendingFiredRef.current.push(f));
+    } else {
+      pendingFiredRef.current.push(f);
+    }
+  };
+
+  const notifyReminder = async (c: ReminderCandidate) => {
+    try {
+      if (!(await ensureNotificationPermission())) return;
+      sendNotification({
+        title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
+        body: reminderBody(c, todayIso()),
+      });
+    } catch (e) {
+      console.warn("Termin-Erinnerung konnte nicht angezeigt werden.", e);
+    }
+  };
+
+  // readyRef spiegelt `ready` für den Intervall-Callback (der läuft auch
+  // während der Sperre weiter und darf dann nicht in die DB schreiben).
+  useEffect(() => {
+    readyRef.current = ready;
+  }, [ready]);
+
+  // Snapshot laden: nächste ~8 Tage als Kandidaten + Feuer-Protokoll; dabei
+  // Pending-Markierungen aus einer Sperr-Phase nachtragen und Verpasste für
+  // den Nachhol-Banner einsammeln.
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    (async () => {
+      try {
+        const pending = pendingFiredRef.current;
+        pendingFiredRef.current = [];
+        for (const f of pending) {
+          await markReminderFired(f);
+        }
+        const from = format(addDays(new Date(), -MISSED_LOOKBACK_DAYS), "yyyy-MM-dd");
+        const to = format(addDays(new Date(), 8), "yyyy-MM-dd");
+        const [items, fired] = await Promise.all([
+          listAppointmentsRange(from, to),
+          listFiredReminders(from),
+        ]);
+        if (!active) return;
+        reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
+        firedKeysRef.current = firedKeySetFrom(fired);
+        setMissedReminders(
+          selectMissed(reminderCandidatesRef.current, firedKeysRef.current, Date.now())
+        );
+        if (!firedCleanupDoneRef.current) {
+          firedCleanupDoneRef.current = true;
+          void cleanupFiredBefore(
+            format(addDays(new Date(), -90), "yyyy-MM-dd")
+          ).catch(() => {
+            /* Aufräumen ist Best-effort. */
+          });
+        }
+        if (reminderCandidatesRef.current.length > 0) {
+          void ensureNotificationPermission();
+        }
+      } catch (e) {
+        console.warn("Termin-Erinnerungen konnten nicht geladen werden.", e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [ready, reloadKey]);
+
+  // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
+  // dem In-Memory-Snapshot). Fällige feuern genau einmal (firedKeys sofort).
+  useEffect(() => {
+    const check = () => {
+      const due = selectDue(
+        reminderCandidatesRef.current,
+        firedKeysRef.current,
+        Date.now()
+      );
+      for (const c of due) {
+        recordFired(c);
+        void notifyReminder(c);
+      }
+    };
+    const id = window.setInterval(check, 30_000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Nachhol-Banner schließen = alle als behandelt markieren.
+  const dismissMissedReminders = () => {
+    const items = missedReminders;
+    setMissedReminders([]);
+    for (const c of items) recordFired(c);
+  };
 
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
   const doLock = () => {
@@ -919,6 +1067,31 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Verpasste Termin-Erinnerungen (App war zu / DB gesperrt, als sie
+          fällig wurden) -- Banner-Muster des Erfassungs-Hinweises darunter. */}
+      {missedReminders.length > 0 && (
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+          <div>
+            <span className="font-medium">
+              {missedReminders.length === 1
+                ? "1 verpasste Termin-Erinnerung:"
+                : `${missedReminders.length} verpasste Termin-Erinnerungen:`}
+            </span>{" "}
+            {missedReminders
+              .slice(0, 3)
+              .map((c) => `${c.title} (${reminderBody(c, todayIso())})`)
+              .join(" · ")}
+            {missedReminders.length > 3 && " · …"}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            onClick={dismissMissedReminders}
+          >
+            Ausblenden
+          </button>
+        </div>
+      )}
       {showReminder && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
           <span>

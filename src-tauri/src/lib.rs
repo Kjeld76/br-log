@@ -1166,6 +1166,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // DB wird NICHT mehr beim Start geöffnet (Schlüssel liegt erst nach
             // dem Entsperren vor). Nur Pfad/Modus ermitteln und State anlegen.
