@@ -2,12 +2,16 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <!-- Bewusst OHNE viewport-fit=cover: Die System-Insets (Status-/Gesten-
-         leiste, Tastatur) verwaltet auf Android die native Seite (MainActivity
-         paddet den WebView-Inhalt per Insets-Listener) -- env(safe-area-inset-*)
-         liefert in der Android-WebView ohnehin konstant 0px und wird im
-         Frontend nirgends verwendet. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: erlaubt CSS-Zugriff auf env(safe-area-inset-*).
+         Die System-Insets (Status-/Gestenleiste, Tastatur) verwaltet auf
+         Android weiterhin die native Seite (MainActivity paddet den
+         WebView-Inhalt per Insets-Listener) -- env(safe-area-inset-*)
+         liefert dort ohnehin konstant 0px und wird im Frontend nirgends
+         verwendet. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>BR-Log</title>
     <!-- Theme VOR dem ersten Paint setzen -> kein Flackern (FOUC). -->
     <script>
@@ -20,6 +24,7 @@
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           var root = document.documentElement;
           if (dark) root.classList.add("dark");
+          root.dataset.theme = dark ? "dark" : "light";
           root.style.backgroundColor = dark ? "#0f172a" : "#f8fafc";
         } catch (e) {}
       })();

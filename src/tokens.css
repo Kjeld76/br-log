@@ -1,0 +1,157 @@
+/* ============================================================================
+   BR-Log Design-Tokens — SINGLE SOURCE OF TRUTH (Direktive 2026.1).
+   Komponenten konsumieren AUSSCHLIESSLICH diese semantischen Tokens (direkt
+   oder über die Tailwind-Utilities aus tailwind.config.js). Rohwerte (Hex,
+   rgba, px-Sonderwerte) existieren nur hier und in src/lib/tokens.ts (PDF/
+   FOUC). Werte = tokenisierte BESTANDSFARBEN der App (kein Rebrand).
+   ========================================================================= */
+:root {
+  color-scheme: light dark;
+
+  /* --- Flächen & Struktur (Light Default) --- */
+  --color-background: #f8fafc;        /* App-Grund (slate-50) */
+  --color-surface: #ffffff;           /* Karten, Modals, Inputs */
+  --color-surface-2: #f1f5f9;         /* Zeilen, Chips, Wells (slate-100) */
+  --color-overlay: rgba(15, 23, 42, .55);
+  --color-border: #e2e8f0;            /* Struktur-Linien (slate-200) */
+  --color-border-strong: #cbd5e1;     /* Inputs, Buttons (slate-300) */
+
+  /* --- Text --- */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-disabled: #94a3b8;
+  --color-on-primary: #ffffff;
+
+  /* --- Marke & Interaktion (Sky-Bestand) --- */
+  --color-primary: #0284c7;
+  --color-primary-hover: #0369a1;
+  --color-link: #0369a1;
+  --color-focus-ring: #0ea5e9;
+  --color-info-surface: #f0f9ff;
+
+  /* --- Status: Fläche / Text / Rahmen --- */
+  --color-success-surface: #d1fae5;
+  --color-success-ink: #065f46;
+  --color-success: #059669;
+  --color-warning-surface: #fffbeb;
+  --color-warning-ink: #92400e;
+  --color-warning: #f59e0b;
+  --color-error-surface: #fef2f2;
+  --color-error-ink: #b91c1c;
+  --color-error: #fca5a5;
+
+  /* --- Vertraulich (BR-Geheimnis) — eigene semantische Gruppe --- */
+  --color-confidential-surface: #fef2f2;
+  --color-confidential-border: #fecaca;
+  --color-confidential-ink: #991b1b;
+  --color-confidential-placeholder: #fca5a5;
+  --color-confidential-input-bg: #ffffff;
+  --color-confidential-input-ink: #7f1d1d;
+
+  /* --- Termin-Farbchips (geschlossene Wahlliste, appointmentUi.ts) --- */
+  --color-appt-sky-bg: #e0f2fe;    --color-appt-sky-ink: #075985;
+  --color-appt-emerald-bg: #d1fae5; --color-appt-emerald-ink: #065f46;
+  --color-appt-amber-bg: #fef3c7;  --color-appt-amber-ink: #92400e;
+  --color-appt-rose-bg: #ffe4e6;   --color-appt-rose-ink: #9f1239;
+  --color-appt-violet-bg: #ede9fe; --color-appt-violet-ink: #5b21b6;
+
+  /* --- Schatten --- */
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, .08);
+  --shadow-2: 0 4px 12px rgba(15, 23, 42, .12);
+  --shadow-3: 0 12px 32px rgba(15, 23, 42, .16);
+
+  /* --- Modusunabhängig --- */
+  --font-system: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 32px; --space-xl: 64px;
+  --touch-min: 48px; --touch-comfortable: 56px; --touch-pointer: 44px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-full: 9999px;
+  --border-thin: 1px; --border-thick: 2px;
+  --state-hover: .08; --state-pressed: .12; --state-disabled: .38;
+  --focus-width: 2px; --focus-offset: 2px;
+  --z-dropdown: 1000; --z-sticky: 1100; --z-overlay: 1200;
+  --z-modal: 1300; --z-toast: 1400; --z-tooltip: 1500;
+  --motion-fast: 150ms; --motion-normal: 300ms; --motion-slow: 500ms;
+  --ease-standard: cubic-bezier(.4, 0, .2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, .2, 1);
+}
+
+/* Dark: System-Default, solange kein manueller Light-Toggle gesetzt ist. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface-2: #334155;
+    --color-overlay: rgba(0, 0, 0, .65);
+    --color-border: #334155;
+    --color-border-strong: #475569;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-disabled: #64748b;
+    --color-link: #38bdf8;
+    --color-focus-ring: #38bdf8;
+    --color-info-surface: rgba(12, 74, 110, .3);
+    --color-success-surface: rgba(6, 78, 59, .4);
+    --color-success-ink: #6ee7b7;
+    --color-success: #34d399;
+    --color-warning-surface: rgba(120, 53, 15, .4);
+    --color-warning-ink: #fcd34d;
+    --color-warning: #fbbf24;
+    --color-error-surface: rgba(127, 29, 29, .25);
+    --color-error-ink: #fca5a5;
+    --color-error: #991b1b;
+    --color-confidential-surface: rgba(190, 18, 60, .16);
+    --color-confidential-border: #be123c;
+    --color-confidential-ink: #fecdd3;
+    --color-confidential-placeholder: #9f6b76;
+    --color-confidential-input-bg: #1c1117;
+    --color-confidential-input-ink: #fecdd3;
+    --color-appt-sky-bg: rgba(7, 89, 133, .45);    --color-appt-sky-ink: #7dd3fc;
+    --color-appt-emerald-bg: rgba(6, 78, 59, .45); --color-appt-emerald-ink: #6ee7b7;
+    --color-appt-amber-bg: rgba(120, 53, 15, .45); --color-appt-amber-ink: #fcd34d;
+    --color-appt-rose-bg: rgba(159, 18, 57, .40);  --color-appt-rose-ink: #fda4af;
+    --color-appt-violet-bg: rgba(91, 33, 182, .40);--color-appt-violet-ink: #c4b5fd;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .40);
+    --shadow-2: 0 4px 12px rgba(0, 0, 0, .50);
+    --shadow-3: 0 12px 32px rgba(0, 0, 0, .60);
+  }
+}
+
+/* Manueller Dark-Toggle übersteuert das System (identischer Block). */
+[data-theme="dark"] {
+  --color-background: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-2: #334155;
+  --color-overlay: rgba(0, 0, 0, .65);
+  --color-border: #334155;
+  --color-border-strong: #475569;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-link: #38bdf8;
+  --color-focus-ring: #38bdf8;
+  --color-info-surface: rgba(12, 74, 110, .3);
+  --color-success-surface: rgba(6, 78, 59, .4);
+  --color-success-ink: #6ee7b7;
+  --color-success: #34d399;
+  --color-warning-surface: rgba(120, 53, 15, .4);
+  --color-warning-ink: #fcd34d;
+  --color-warning: #fbbf24;
+  --color-error-surface: rgba(127, 29, 29, .25);
+  --color-error-ink: #fca5a5;
+  --color-error: #991b1b;
+  --color-confidential-surface: rgba(190, 18, 60, .16);
+  --color-confidential-border: #be123c;
+  --color-confidential-ink: #fecdd3;
+  --color-confidential-placeholder: #9f6b76;
+  --color-confidential-input-bg: #1c1117;
+  --color-confidential-input-ink: #fecdd3;
+  --color-appt-sky-bg: rgba(7, 89, 133, .45);    --color-appt-sky-ink: #7dd3fc;
+  --color-appt-emerald-bg: rgba(6, 78, 59, .45); --color-appt-emerald-ink: #6ee7b7;
+  --color-appt-amber-bg: rgba(120, 53, 15, .45); --color-appt-amber-ink: #fcd34d;
+  --color-appt-rose-bg: rgba(159, 18, 57, .40);  --color-appt-rose-ink: #fda4af;
+  --color-appt-violet-bg: rgba(91, 33, 182, .40);--color-appt-violet-ink: #c4b5fd;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .40);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, .50);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, .60);
+}
