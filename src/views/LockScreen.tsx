@@ -223,7 +223,7 @@ export default function LockScreen({
     return shell(
       <div className="space-y-2 text-center">
         <h1 className="text-lg font-bold text-primary-ink">BR-Log</h1>
-        <p className="font-medium text-red-600 dark:text-red-400">
+        <p className="font-medium text-danger-ink">
           Start nicht möglich
         </p>
         <p className="break-all text-sm text-secondary-ink">
@@ -366,7 +366,7 @@ export default function LockScreen({
             <p
               role="status"
               aria-live="polite"
-              className="text-center text-sm text-red-600 dark:text-red-400"
+              className="text-center text-sm text-danger-ink"
             >
               {bioError}
             </p>
@@ -460,7 +460,7 @@ export default function LockScreen({
       )}
 
       {error && (
-        <p className="text-center text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-center text-sm text-danger-ink">{error}</p>
       )}
     </form>
   );

@@ -1013,7 +1013,7 @@ export default function App() {
       <div className="flex h-full items-center justify-center text-secondary-ink">
         <div className="max-w-md space-y-4 p-4 text-center">
           <div>
-            <p className="font-medium text-red-600 dark:text-red-400">
+            <p className="font-medium text-danger-ink">
               Fehler beim Start
             </p>
             <p className="mt-1 break-all text-sm">{initError}</p>
@@ -1029,7 +1029,7 @@ export default function App() {
           </button>
 
           {initDbPath && (
-            <div className="rounded bg-slate-100 p-2 text-left text-xs text-secondary-ink dark:bg-slate-800">
+            <div className="rounded bg-surface-inset p-2 text-left text-xs text-secondary-ink">
               <div className="font-medium">Datenbank-Datei:</div>
               <div className="mt-1 break-all">{initDbPath}</div>
             </div>
@@ -1068,7 +1068,7 @@ export default function App() {
       {/* Verpasste Termin-Erinnerungen (App war zu / DB gesperrt, als sie
           fällig wurden) -- Banner-Muster des Erfassungs-Hinweises darunter. */}
       {missedReminders.length > 0 && (
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-warning-banner-line bg-warning-banner px-4 py-2 text-sm text-warning-banner-ink">
           <div>
             <span className="font-medium">
               {missedReminders.length === 1
@@ -1083,7 +1083,7 @@ export default function App() {
           </div>
           <button
             type="button"
-            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-warning-banner-hover"
             onClick={dismissMissedReminders}
           >
             Ausblenden
@@ -1091,14 +1091,14 @@ export default function App() {
         </div>
       )}
       {showReminder && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-warning-banner-line bg-warning-banner px-4 py-2 text-sm text-warning-banner-ink">
           <span>
             Letzter Eintrag vor {daysSinceLastEntry} Tagen ({formatDateDe(lastEntryDate!)}
             ). Zeitnahe Erfassung stärkt den Nachweis.
           </span>
           <button
             type="button"
-            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-warning-banner-hover"
             onClick={() => setReminderDismissed(true)}
           >
             Ausblenden

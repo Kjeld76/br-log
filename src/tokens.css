@@ -44,6 +44,18 @@
   --color-error-ink: #b91c1c;
   --color-error: #fca5a5;
 
+  /* --- Warn-Banner (auffällige Hinweis-Banner, z. B. verpasste Erinnerungen) --- */
+  --color-warning-banner-surface: #fffbeb;
+  --color-warning-banner-border: #fde68a;
+  --color-warning-banner-ink: #78350f;
+  --color-warning-banner-hover: #fef3c7;
+
+  /* --- Destruktive Aktionen (Text, z. B. Löschen-Hinweise) --- */
+  --color-danger-ink: #dc2626;
+
+  /* --- Eingelassene Fläche (gemischtes Bestandspaar slate-100/slate-800) --- */
+  --color-surface-inset: #f1f5f9;
+
   /* --- Vertraulich (BR-Geheimnis) — eigene semantische Gruppe --- */
   --color-confidential-surface: #fef2f2;
   --color-confidential-border: #fecaca;
@@ -121,6 +133,12 @@
     --color-error-surface: rgba(127, 29, 29, .25);
     --color-error-ink: #fca5a5;
     --color-error: #991b1b;
+    --color-warning-banner-surface: rgba(120, 53, 15, .2);
+    --color-warning-banner-border: #92400e;
+    --color-warning-banner-ink: #fde68a;
+    --color-warning-banner-hover: rgba(120, 53, 15, .4);
+    --color-danger-ink: #f87171;
+    --color-surface-inset: #1e293b;
     --color-confidential-surface: rgba(190, 18, 60, .16);
     --color-confidential-border: #be123c;
     --color-confidential-ink: #fecdd3;
@@ -164,6 +182,12 @@
   --color-error-surface: rgba(127, 29, 29, .25);
   --color-error-ink: #fca5a5;
   --color-error: #991b1b;
+  --color-warning-banner-surface: rgba(120, 53, 15, .2);
+  --color-warning-banner-border: #92400e;
+  --color-warning-banner-ink: #fde68a;
+  --color-warning-banner-hover: rgba(120, 53, 15, .4);
+  --color-danger-ink: #f87171;
+  --color-surface-inset: #1e293b;
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;
