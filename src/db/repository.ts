@@ -536,6 +536,36 @@ export async function renameTag(id: string, label: string): Promise<void> {
         );
       }
     }
+    // Termin-FTS ebenso nachziehen: Tag-Labels sind Teil des public_content
+    // der Termine -- sonst findet die Terminsuche den alten Namen dauerhaft,
+    // den neuen nie (reconcileFts gleicht nur IDs ab, keinen Inhalt).
+    const affectedAppts = await db.select<{ appointment_id: string }[]>(
+      "SELECT appointment_id FROM appointment_tags WHERE tag_id = ?",
+      [id]
+    );
+    if (affectedAppts.length > 0) {
+      const rows = await selectByIdChunks<AppointmentRow>(
+        db,
+        affectedAppts.map((a) => a.appointment_id),
+        (ph) => `SELECT * FROM appointments WHERE id IN (${ph})`
+      );
+      const items = await hydrateFullAppointments(rows);
+      for (const it of items) {
+        const tagLabels = it.tagIds.map((tid, i) =>
+          tid === id ? trimmed : it.tagLabels[i]
+        );
+        statements.push(
+          ...apptFtsUpsertStatements({
+            appointmentId: it.id,
+            title: it.title,
+            location: it.location,
+            description: it.description,
+            tagLabels,
+            secretDetails: it.secretDetails,
+          })
+        );
+      }
+    }
   }
   await db.batch(statements);
 }
@@ -1212,24 +1242,34 @@ export async function listAppointmentsRange(
   to: string
 ): Promise<AppointmentListItem[]> {
   const db = await getDb();
+  // Die EXISTS-Bedingungen fangen Overrides, deren EIGENE Daten im Fenster
+  // liegen, obwohl der Master es nicht berührt (Instanz vor den Serienstart
+  // verlegt; Master ohne Regel nach "Serie -> Nie"). Ohne sie wäre so ein
+  // Termin nirgends sichtbar -- auch nicht im Erinnerungs-Snapshot.
   const singles = await db.select<AppointmentListRow[]>(
     `SELECT ${LIST_APPT_COLUMNS} FROM appointments a
       WHERE a.rrule IS NULL AND a.parent_id IS NULL
-        AND a.start_date <= ? AND a.end_date >= ?`,
-    [to, from]
+        AND (a.start_date <= ? AND a.end_date >= ?
+             OR EXISTS (SELECT 1 FROM appointments o WHERE o.parent_id = a.id
+                          AND o.start_date <= ? AND o.end_date >= ?))`,
+    [to, from, to, from]
   );
   const masters = await db.select<AppointmentListRow[]>(
     `SELECT ${LIST_APPT_COLUMNS} FROM appointments a
-      WHERE a.rrule IS NOT NULL AND a.parent_id IS NULL AND a.start_date <= ?`,
-    [to]
+      WHERE a.rrule IS NOT NULL AND a.parent_id IS NULL
+        AND (a.start_date <= ?
+             OR EXISTS (SELECT 1 FROM appointments o WHERE o.parent_id = a.id
+                          AND o.start_date <= ? AND o.end_date >= ?))`,
+    [to, to, from]
   );
-  const masterIds = masters.map((m) => m.id);
+  // Overrides für ALLE geladenen Master (auch regel-lose, s. expandOccurrences).
+  const parentIds = [...singles, ...masters].map((m) => m.id);
   const overrides =
-    masterIds.length === 0
+    parentIds.length === 0
       ? []
       : await selectByIdChunks<AppointmentListRow>(
           db,
-          masterIds,
+          parentIds,
           (ph) =>
             `SELECT ${LIST_APPT_COLUMNS} FROM appointments a WHERE a.parent_id IN (${ph})`
         );
@@ -1937,12 +1977,31 @@ export async function applyImport(
           { id: string; appointment_id: string; minutes_before: number }[]
         >("SELECT id, appointment_id, minutes_before FROM appointment_reminders")
       : [];
+  const deletedConflictIds = new Set<string>();
   if (payloadAppts.length > 0) {
     const localAppts = await db.select<{ id: string; updated_at: string }[]>(
       "SELECT id, updated_at FROM appointments"
     );
     const localApptMap = new Map(localAppts.map((a) => [a.id, a.updated_at]));
     const payloadApptIds = new Set(payloadAppts.map((a) => a.id));
+    // Lokale Overrides nach (parent_id, anchor): Haben zwei Geräte dieselbe
+    // Instanz unabhängig bearbeitet, kollidieren zwei UUIDs am selben Anker --
+    // ein plain INSERT scheitert dann am UNIQUE-Index idx_appointments_override
+    // und reißt die gesamte Import-Transaktion. Stattdessen LWW wie überall.
+    const localOverrideRows = await db.select<
+      {
+        id: string;
+        parent_id: string;
+        recurrence_anchor: string | null;
+        updated_at: string;
+      }[]
+    >(
+      "SELECT id, parent_id, recurrence_anchor, updated_at FROM appointments WHERE parent_id IS NOT NULL"
+    );
+    const localOverrideByAnchor = new Map(
+      localOverrideRows.map((o) => [`${o.parent_id}|${o.recurrence_anchor}`, o])
+    );
+    const writtenAnchorKeys = new Set<string>();
     const remindersByAppt = new Map<string, AppointmentReminder[]>();
     for (const r of localReminderRows) {
       const arr = remindersByAppt.get(r.appointment_id) || [];
@@ -1966,6 +2025,40 @@ export async function applyImport(
       const localUpdated = localApptMap.get(a.id);
       const isNew = localUpdated === undefined;
       if (!importerWins(localUpdated, a.updatedAt)) continue;
+      if (a.parentId != null && a.recurrenceAnchor != null) {
+        const key = `${a.parentId}|${a.recurrenceAnchor}`;
+        if (writtenAnchorKeys.has(key)) continue; // Payload-interne Dublette
+        const conflict = localOverrideByAnchor.get(key);
+        if (conflict && conflict.id !== a.id) {
+          if (!importerWins(conflict.updated_at, a.updatedAt)) continue; // lokaler Override bleibt
+          statements.push(
+            {
+              sql: "DELETE FROM reminder_fired WHERE appointment_id = ?",
+              params: [conflict.id],
+            },
+            {
+              sql: "DELETE FROM appointment_reminders WHERE appointment_id = ?",
+              params: [conflict.id],
+            },
+            {
+              sql: "DELETE FROM appointment_tags WHERE appointment_id = ?",
+              params: [conflict.id],
+            },
+            {
+              sql: "DELETE FROM appointments WHERE id = ?",
+              params: [conflict.id],
+            }
+          );
+          if (isFtsAvailable()) {
+            statements.push({
+              sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
+              params: [conflict.id],
+            });
+          }
+          deletedConflictIds.add(conflict.id);
+        }
+        writtenAnchorKeys.add(key);
+      }
       const appt: Appointment = {
         ...a,
         exdates: a.exdates ?? [],
@@ -2003,6 +2096,9 @@ export async function applyImport(
       localReminderRows.map((r) => `${r.appointment_id}|${r.id}`)
     );
     const pairValid = (apptId: string, remId: string): boolean => {
+      // Per Anker-Kollision entfernte lokale Overrides existieren nach dem
+      // Merge nicht mehr -- ihre Markierungen wären FK-Verletzungen.
+      if (deletedConflictIds.has(apptId)) return false;
       const written = writtenApptReminders.get(apptId);
       if (written) return written.some((r) => r.id === remId);
       return localPairs.has(`${apptId}|${remId}`);
