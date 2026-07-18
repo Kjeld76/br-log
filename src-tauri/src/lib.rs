@@ -7,9 +7,12 @@ use serde_json::{json, Map, Number, Value as JsonValue};
 use tauri::{Manager, State};
 use zeroize::Zeroizing;
 
+mod app_settings;
 mod crypto;
 mod db_location;
 mod file_io;
+#[cfg(desktop)]
+mod tray;
 use db_location::DbLocation;
 
 /// Entsperrter DB-Zustand: offene (verschlüsselte) Connection + die DEK im
@@ -23,8 +26,9 @@ struct KeyedConn {
 }
 type DbState = Mutex<Option<KeyedConn>>;
 
-/// Aufgelöster DB-Pfad + Modus (portabel/installiert) – nur für die Anzeige.
-struct AppDbLocation(DbLocation);
+/// Aufgelöster DB-Pfad + Modus (portabel/installiert) – Anzeige (DbInfoPanel)
+/// und Ablageort der Klartext-App-Einstellungen (app_settings.rs).
+pub(crate) struct AppDbLocation(pub(crate) DbLocation);
 
 /// Strukturierter Entsperr-/Krypto-Fehler: falsches Geheimnis (Retry+Backoff)
 /// strikt getrennt von echten DB-/Keyfile-Fehlern (kein Backoff).
@@ -1145,10 +1149,20 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
+                // show(): das Fenster kann im Tray-Betrieb versteckt sein --
+                // ein Zweitstart soll es dann sichtbar machen, nicht nur
+                // fokussieren.
+                let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
         }));
+        // Autostart (opt-in, Einstellungen): zusammen mit close_to_tray läuft
+        // die App damit ab Anmeldung im Hintergrund -> Erinnerungen feuern.
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
     }
     // Android-Portierung (A-Core): Storage-Access-Framework-Plugin nur auf
     // Android registrieren -- braucht der echte Android-Arm der drei
@@ -1180,9 +1194,28 @@ pub fn run() {
             };
             app.manage(AppDbLocation(loc));
             app.manage::<DbState>(Mutex::new(None));
+            // System-Tray (Desktop): Voraussetzung für close_to_tray.
+            #[cfg(desktop)]
+            tray::setup(app)?;
             Ok(())
         })
+        .on_window_event(|_window, _event| {
+            // Desktop + aktivierte Einstellung: Fenster-Schließen versteckt ins
+            // Tray statt zu beenden (Erinnerungen laufen weiter). "Beenden"
+            // im Tray-Menü geht über app.exit() an diesem Handler vorbei.
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
+                if _window.label() == "main"
+                    && app_settings::load(_window.app_handle()).close_to_tray
+                {
+                    let _ = _window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            app_settings::app_settings_get,
+            app_settings::app_settings_set,
             file_io::export_text_file,
             file_io::export_binary_file,
             file_io::import_text_file,

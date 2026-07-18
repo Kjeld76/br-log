@@ -148,3 +148,70 @@ export function reminderBody(c: ReminderCandidate, todayIso: string): string {
     c.occStartDate === todayIso ? "Heute" : c.occStartDate.split("-").reverse().join(".");
   return c.occStartTime ? `${dayLabel} ${c.occStartTime} Uhr` : `${dayLabel} (ganztägig)`;
 }
+
+// ---------- Android: geplante System-Notifications (Rolling Window) ----------
+//
+// Auf Android plant App.tsx die nächsten Erinnerungen als ECHTE System-
+// Notifications (Schedule.at) -- sie feuern auch bei geschlossener App. Bei
+// jedem Start/Reload wird neu geplant (alte Planungen storniert); ein Reboot
+// löscht AlarmManager-Planungen, das Nachhol-Banner ist das Sicherheitsnetz.
+// Die localStorage-Liste der geplanten Schlüssel verhindert Doppel-Zustellung
+// (In-App-Loop überspringt system-geplante Kandidaten) und lässt beim
+// nächsten Start vergangene system-geplante als "zugestellt" gelten.
+
+/** Maximal parallel geplante System-Notifications (Rolling Window). */
+export const ANDROID_SCHEDULE_LIMIT = 32;
+
+const SCHEDULED_KEY = "brlog.androidScheduled";
+
+export interface ScheduledRef {
+  key: string; // firedKey des Kandidaten
+  id: number; // numerische Notification-ID (für cancel())
+}
+
+/** Stabile i32-Notification-ID aus dem Feuer-Schlüssel (String-Hash). */
+export function notificationIdFor(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) {
+    h = (h * 31 + key.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+export function loadScheduledRefs(): ScheduledRef[] {
+  try {
+    const raw = localStorage.getItem(SCHEDULED_KEY);
+    if (!raw) return [];
+    const v: unknown = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v.filter(
+      (x): x is ScheduledRef =>
+        typeof x === "object" &&
+        x !== null &&
+        typeof (x as ScheduledRef).key === "string" &&
+        typeof (x as ScheduledRef).id === "number"
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveScheduledRefs(refs: ScheduledRef[]): void {
+  try {
+    localStorage.setItem(SCHEDULED_KEY, JSON.stringify(refs));
+  } catch {
+    // Nur Komfort (Doppel-Zustellungs-Schutz) -- kein Pflichtpfad.
+  }
+}
+
+/** Zukünftige, ungefeuerte Kandidaten fürs Rolling Window (chronologisch). */
+export function selectToSchedule(
+  candidates: ReminderCandidate[],
+  firedKeys: Set<string>,
+  nowMs: number,
+  limit: number = ANDROID_SCHEDULE_LIMIT
+): ReminderCandidate[] {
+  return candidates
+    .filter((c) => c.dueMs > nowMs && !firedKeys.has(firedKey(c)))
+    .slice(0, limit);
+}

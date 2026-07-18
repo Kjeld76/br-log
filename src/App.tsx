@@ -34,19 +34,28 @@ import {
   cleanupFiredBefore,
 } from "./db/repository";
 import {
+  cancel as cancelNotifications,
+  createChannel,
+  Importance,
   isPermissionGranted,
   requestPermission,
+  Schedule,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import {
   buildReminderCandidates,
   firedKey,
   firedKeySetFrom,
+  loadScheduledRefs,
+  notificationIdFor,
   reminderBody,
+  saveScheduledRefs,
   selectDue,
   selectMissed,
+  selectToSchedule,
   MISSED_LOOKBACK_DAYS,
   type ReminderCandidate,
+  type ScheduledRef,
 } from "./lib/reminderScheduler";
 import type { ReminderFired } from "./types";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
@@ -221,6 +230,12 @@ export default function App() {
   const pendingFiredRef = useRef<ReminderFired[]>([]);
   const readyRef = useRef(false);
   const firedCleanupDoneRef = useRef(false);
+  // Android: Schlüssel der system-geplanten Notifications (Rolling Window).
+  // Der In-App-Loop überspringt sie (Doppel-Zustellungs-Schutz), und beim
+  // Start gelten vergangene system-geplante als zugestellt (kein Banner).
+  const scheduledKeysRef = useRef<Set<string>>(
+    new Set(loadScheduledRefs().map((r) => r.key))
+  );
   const [missedReminders, setMissedReminders] = useState<ReminderCandidate[]>([]);
 
   const bump = () => setReloadKey((k) => k + 1);
@@ -403,10 +418,69 @@ export default function App() {
       if (!(await ensureNotificationPermission())) return;
       sendNotification({
         title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
-        body: reminderBody(c, todayIso()),
+        // "Heute" relativ zum FEUER-Tag (bei Live-Feuern = jetzt).
+        body: reminderBody(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
       });
     } catch (e) {
       console.warn("Termin-Erinnerung konnte nicht angezeigt werden.", e);
+    }
+  };
+
+  // Android: die nächsten Erinnerungen als ECHTE System-Notifications planen
+  // (feuern auch bei geschlossener App). Alte Planungen werden storniert,
+  // dann das Rolling Window neu aufgebaut (Neuplanung bei jedem Laden).
+  const planAndroidNotifications = async () => {
+    try {
+      if (!(await ensureNotificationPermission())) {
+        saveScheduledRefs([]);
+        scheduledKeysRef.current = new Set();
+        return;
+      }
+      try {
+        await createChannel({
+          id: "termine",
+          name: "Termin-Erinnerungen",
+          importance: Importance.High,
+        });
+      } catch {
+        // Channel existiert bereits o. ä. -- unkritisch.
+      }
+      const old = loadScheduledRefs();
+      if (old.length > 0) {
+        try {
+          await cancelNotifications(old.map((r) => r.id));
+        } catch {
+          // Bereits zugestellte/abgelaufene IDs lassen sich nicht stornieren.
+        }
+      }
+      const toSchedule = selectToSchedule(
+        reminderCandidatesRef.current,
+        firedKeysRef.current,
+        Date.now()
+      );
+      const refs: ScheduledRef[] = [];
+      for (const c of toSchedule) {
+        const key = firedKey(c);
+        const id = notificationIdFor(key);
+        try {
+          sendNotification({
+            id,
+            channelId: "termine",
+            title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
+            body: reminderBody(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
+            // allowWhileIdle: auch im Doze-Modus zustellen (Minuten-Toleranz
+            // bleibt möglich, exakte Alarme sind ab API 31 restriktiv).
+            schedule: Schedule.at(new Date(c.dueMs), false, true),
+          });
+          refs.push({ key, id });
+        } catch (e) {
+          console.warn("Erinnerung konnte nicht geplant werden.", e);
+        }
+      }
+      saveScheduledRefs(refs);
+      scheduledKeysRef.current = new Set(refs.map((r) => r.key));
+    } catch (e) {
+      console.warn("Planung der Android-Erinnerungen fehlgeschlagen.", e);
     }
   };
 
@@ -438,8 +512,22 @@ export default function App() {
         if (!active) return;
         reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
         firedKeysRef.current = firedKeySetFrom(fired);
+        const missedAll = selectMissed(
+          reminderCandidatesRef.current,
+          firedKeysRef.current,
+          Date.now()
+        );
+        // Android: was system-geplant war und inzwischen fällig ist, hat das
+        // System zugestellt -> still als gefeuert markieren, kein Banner.
+        if (mobile) {
+          for (const c of missedAll) {
+            if (scheduledKeysRef.current.has(firedKey(c))) recordFired(c);
+          }
+        }
         setMissedReminders(
-          selectMissed(reminderCandidatesRef.current, firedKeysRef.current, Date.now())
+          mobile
+            ? missedAll.filter((c) => !scheduledKeysRef.current.has(firedKey(c)))
+            : missedAll
         );
         if (!firedCleanupDoneRef.current) {
           firedCleanupDoneRef.current = true;
@@ -449,7 +537,9 @@ export default function App() {
             /* Aufräumen ist Best-effort. */
           });
         }
-        if (reminderCandidatesRef.current.length > 0) {
+        if (mobile) {
+          await planAndroidNotifications();
+        } else if (reminderCandidatesRef.current.length > 0) {
           void ensureNotificationPermission();
         }
       } catch (e) {
@@ -459,6 +549,9 @@ export default function App() {
     return () => {
       active = false;
     };
+    // mobile ist konstant (lazy useState), planAndroidNotifications arbeitet
+    // nur auf Refs -- bewusst nicht in den Deps (Muster der übrigen Effekte).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, reloadKey]);
 
   // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
@@ -471,8 +564,12 @@ export default function App() {
         Date.now()
       );
       for (const c of due) {
+        // Android: system-geplante Kandidaten zeigt das System selbst an --
+        // hier nur als gefeuert markieren (Doppel-Zustellungs-Schutz).
+        const systemScheduled =
+          mobile && scheduledKeysRef.current.has(firedKey(c));
         recordFired(c);
-        void notifyReminder(c);
+        if (!systemScheduled) void notifyReminder(c);
       }
     };
     const id = window.setInterval(check, 30_000);
