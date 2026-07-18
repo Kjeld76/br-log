@@ -3,6 +3,7 @@ import { addDays, format, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry, listEntries } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
+import { useSaveShortcuts } from "../lib/useSaveShortcuts";
 import {
   computeDuration,
   durationInputToMinutes,
@@ -327,20 +328,7 @@ export default function EntryForm({
 
   // Tastaturkürzel: Strg/Cmd+Enter speichert, Escape bricht ab (Dirty-Check
   // übernimmt der Aufrufer über onCancel, siehe App.tsx/QuickEntryView).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (!saving) void handleSave();
-      } else if (e.key === "Escape" && onCancel) {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, mode, durationText, saving, onCancel]);
+  useSaveShortcuts({ save: () => void handleSave(), cancel: onCancel, saving });
 
   const field = inputCls + " w-full";
 

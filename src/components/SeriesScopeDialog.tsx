@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { secondaryBtnCls } from "../lib/ui";
+import { useModalFocusTrap } from "../lib/useModalFocusTrap";
 
 export type SeriesScope = "single" | "following" | "all";
 
@@ -13,15 +14,15 @@ interface Props {
 /**
  * Drei-Optionen-Dialog für Serientermine ("Nur dieser / Dieser und folgende /
  * Alle") -- Optik des Bestätigungsdialogs in App.tsx, aber mit gestapelten
- * Aktions-Buttons, da drei gleichrangige Wege zur Wahl stehen. Eigene, kleine
- * Fokus-Logik (Autofokus + Escape) statt useModalFocusTrap: der Dialog liegt
- * wie der Bestätigungsdialog ÜBER einem evtl. offenen Modal.
+ * Aktions-Buttons, da drei gleichrangige Wege zur Wahl stehen. Nutzt die
+ * geteilte Fokusfalle: auch als oberste Dialog-Ebene über einem Modal darf
+ * Tab nicht in das darunterliegende Detail-Modal springen.
  */
 export default function SeriesScopeDialog({ mode, onSelect, onCancel }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(ref, true);
 
   useEffect(() => {
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();

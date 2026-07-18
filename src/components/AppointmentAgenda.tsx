@@ -11,8 +11,7 @@ import {
   formatOccurrenceTime,
   type Occurrence,
 } from "../lib/appointments";
-import { chipClsFor } from "../lib/appointmentUi";
-import { Icon } from "./Icon";
+import OccurrenceListRow from "./OccurrenceListRow";
 
 /** Fenstergröße der Agenda in Tagen; "Mehr laden" verlängert um denselben Wert. */
 const WINDOW_DAYS = 60;
@@ -34,6 +33,13 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   // Volltextsuche über ALLE Termine (nicht nur das Agenda-Fenster) --
   // spaltengebundene Trefferherkunft wie die Eintragssuche (SearchHit).
   const [term, setTerm] = useState("");
+  // 300-ms-Entprellung (Muster EntryList): eine Abfrage pro Eingabepause
+  // statt zwei FTS-/LIKE-Durchläufen pro Tastenanschlag.
+  const [debouncedTerm, setDebouncedTerm] = useState("");
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedTerm(term), 300);
+    return () => window.clearTimeout(t);
+  }, [term]);
   const [results, setResults] = useState<AppointmentListItem[]>([]);
   // GETRENNTE Generationszähler für Fenster-Ladung und Suche: mit einem
   // geteilten Zähler verwarf eine Sucheingabe die noch laufende Range-Antwort
@@ -63,7 +69,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
 
   // Suche: eigene Generation je Termwechsel (Race-Guard-Muster).
   useEffect(() => {
-    const t = term.trim();
+    const t = debouncedTerm.trim();
     if (!t) {
       setResults([]);
       return;
@@ -80,7 +86,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
     return () => {
       active = false;
     };
-  }, [term, reloadKey]);
+  }, [debouncedTerm, reloadKey]);
 
   // Nur Tage mit Terminen rendern (mehrtägige erscheinen an jedem berührten Tag).
   const groups = useMemo(() => {
@@ -94,7 +100,9 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   }, [occurrences, from, to]);
 
   const today = todayIso();
-  const searching = term.trim().length > 0;
+  // An debouncedTerm gekoppelt, damit "Keine Termine gefunden" nicht schon
+  // während der Eingabepause aufblinkt, bevor die Suche gelaufen ist.
+  const searching = debouncedTerm.trim().length > 0;
 
   // Suchtreffer öffnen. Einzeltermine und Overrides sind selbst die Instanz;
   // ein Serien-MASTER wird dagegen als real existierende Instanz geöffnet
@@ -155,53 +163,16 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
           )}
           <ul className="space-y-1">
             {results.map((a) => (
-              <li
+              <OccurrenceListRow
                 key={a.id}
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer rounded border border-slate-200 bg-white p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
-                onClick={() => void openResult(a)}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                    void openResult(a);
-                  }
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span
-                      className={
-                        "shrink-0 rounded px-1.5 py-0.5 text-xs " + chipClsFor(a.color)
-                      }
-                    >
-                      {formatDateDe(a.startDate)}
-                    </span>
-                    <span className="truncate text-slate-700 dark:text-slate-200">
-                      {a.isImportant && (
-                        <span className="font-semibold" title="Wichtig">
-                          !{" "}
-                        </span>
-                      )}
-                      {a.title || "(ohne Titel)"}
-                      {a.rrule && (
-                        <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                          (Serie)
-                        </span>
-                      )}
-                    </span>
-                  </span>
-                  {a.search?.hasSecretHit && (
-                    <span
-                      className="flex shrink-0 items-center gap-1 text-xs font-medium text-confidential"
-                      title="Treffer im vertraulichen Feld"
-                    >
-                      <Icon name="lock" size={12} />
-                      vertraulich
-                    </span>
-                  )}
-                </div>
-              </li>
+                chipText={formatDateDe(a.startDate)}
+                color={a.color}
+                title={a.title}
+                isImportant={a.isImportant}
+                titleSuffix={a.rrule ? "(Serie)" : undefined}
+                secretHit={a.search?.hasSecretHit}
+                onOpen={() => void openResult(a)}
+              />
             ))}
           </ul>
         </>
@@ -229,45 +200,15 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
           </h4>
           <ul className="space-y-1">
             {g.occs.map((o) => (
-              <li
+              <OccurrenceListRow
                 key={`${o.appointment.id}-${o.anchor}-${g.iso}`}
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer rounded border border-slate-200 bg-white p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
-                onClick={() => onOpenOccurrence(o)}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                    onOpenOccurrence(o);
-                  }
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span
-                      className={
-                        "shrink-0 rounded px-1.5 py-0.5 text-xs " +
-                        chipClsFor(o.appointment.color)
-                      }
-                    >
-                      {formatOccurrenceTime(o) || "Termin"}
-                    </span>
-                    <span className="truncate text-slate-700 dark:text-slate-200">
-                      {o.appointment.isImportant && (
-                        <span className="font-semibold" title="Wichtig">
-                          !{" "}
-                        </span>
-                      )}
-                      {o.appointment.title || "(ohne Titel)"}
-                    </span>
-                  </span>
-                  {o.appointment.location && (
-                    <span className="ml-2 hidden shrink-0 text-xs text-slate-500 dark:text-slate-400 sm:inline">
-                      {o.appointment.location}
-                    </span>
-                  )}
-                </div>
-              </li>
+                chipText={formatOccurrenceTime(o) || "Termin"}
+                color={o.appointment.color}
+                title={o.appointment.title}
+                isImportant={o.appointment.isImportant}
+                location={o.appointment.location || undefined}
+                onOpen={() => onOpenOccurrence(o)}
+              />
             ))}
           </ul>
         </div>

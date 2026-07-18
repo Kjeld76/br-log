@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Appointment, TaskTag } from "../types";
 import { newReminder, saveAppointment } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
+import { useSaveShortcuts } from "../lib/useSaveShortcuts";
 import { toggleId } from "../lib/collections";
 import {
   errorBoxCls,
@@ -68,10 +69,13 @@ export default function AppointmentForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
-  // Serien-Preset aus der Regel rekonstruieren; nicht abbildbare (importierte)
-  // Regeln laufen als "custom" unverändert durch das Formular.
-  const [seriesPreset, setSeriesPreset] = useState<SeriesPreset | null>(() =>
-    appointment.rrule ? parseRruleToPreset(appointment.rrule) : null
+  // Aus draft.rrule ABGELEITET statt als eigener State: die Regel ist damit
+  // wirklich die einzige Quelle der Wahrheit und kein Codepfad kann die
+  // Serien-UI desynchronisieren. Nicht abbildbare (importierte) Regeln
+  // liefern null und laufen als "custom" unverändert durch das Formular.
+  const seriesPreset = useMemo(
+    () => (draft.rrule ? parseRruleToPreset(draft.rrule) : null),
+    [draft.rrule]
   );
   const isCustomRule = draft.rrule !== null && seriesPreset === null;
   const ownTitleInputRef = useRef<HTMLInputElement>(null);
@@ -120,9 +124,7 @@ export default function AppointmentForm({
     patch({ startDate: v, endDate: draft.endDate < v ? v : draft.endDate });
   };
 
-  // Preset-Änderungen halten draft.rrule als einzige Quelle der Wahrheit mit.
   const applyPreset = (p: SeriesPreset | null) => {
-    setSeriesPreset(p);
     patch({ rrule: p ? buildRrule(p) : null });
   };
   const setFreq = (freq: "" | SeriesPreset["freq"]) => {
@@ -206,20 +208,7 @@ export default function AppointmentForm({
   };
 
   // Tastaturkürzel wie EntryForm: Strg/Cmd+Enter speichert, Escape bricht ab.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (!saving) void handleSave();
-      } else if (e.key === "Escape" && onCancel) {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, saving, onCancel]);
+  useSaveShortcuts({ save: () => void handleSave(), cancel: onCancel, saving });
 
   const field = inputCls + " w-full";
 

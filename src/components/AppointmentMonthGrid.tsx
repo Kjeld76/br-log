@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EntryListItem } from "../types";
 import {
   daySums,
@@ -25,6 +25,7 @@ import {
   type Occurrence,
 } from "../lib/appointments";
 import { chipClsFor } from "../lib/appointmentUi";
+import OccurrenceListRow from "./OccurrenceListRow";
 
 /** Maximal angezeigte Termin-Chips je Tageszelle; Rest als "+n weitere". */
 const MAX_CHIPS_PER_DAY = 3;
@@ -56,7 +57,14 @@ export default function AppointmentMonthGrid({
   const [dayEntries, setDayEntries] = useState<EntryListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const cells = monthGrid(month);
+  const cells = useMemo(() => monthGrid(month), [month]);
+  // Ein Map-Lookup pro Zelle statt 42 × O(N)-Filter bei JEDEM Render
+  // (Tages-Klick, Lade-/Fehlerzustand); ändert sich nur mit den Daten.
+  const occsByDay = useMemo(() => {
+    const map = new Map<string, Occurrence[]>();
+    for (const c of cells) map.set(c.iso, occurrencesOnDay(occurrences, c.iso));
+    return map;
+  }, [cells, occurrences]);
 
   // Race-Guard-Muster der bisherigen CalendarView (Finding 53) -- aber mit
   // GETRENNTEN Zählern: Ein Tages-Klick während des Monats-Ladens darf die
@@ -104,7 +112,7 @@ export default function AppointmentMonthGrid({
     const minutes = sums[iso];
     if (!minutes) {
       dayRequestIdRef.current++; // laufende Tages-Abfragen invalidieren
-      if (occurrencesOnDay(occurrences, iso).length === 0) {
+      if ((occsByDay.get(iso) ?? []).length === 0) {
         // Komplett leerer Tag: direkt das vorbefüllte Eintragsformular --
         // der Ein-Klick-Nacherfassungs-Weg der alten CalendarView.
         onNewEntry(iso);
@@ -128,7 +136,7 @@ export default function AppointmentMonthGrid({
   };
 
   const navBtn = secondaryBtnSmCls + " min-h-[44px] sm:min-h-0";
-  const selectedOccs = selectedDay ? occurrencesOnDay(occurrences, selectedDay) : [];
+  const selectedOccs = selectedDay ? occsByDay.get(selectedDay) ?? [] : [];
 
   return (
     <div className="space-y-3">
@@ -169,7 +177,7 @@ export default function AppointmentMonthGrid({
         ))}
         {cells.map((c) => {
           const minutes = sums[c.iso];
-          const dayOccs = occurrencesOnDay(occurrences, c.iso);
+          const dayOccs = occsByDay.get(c.iso) ?? [];
           const shown = dayOccs.slice(0, MAX_CHIPS_PER_DAY);
           const more = dayOccs.length - shown.length;
           return (
@@ -262,45 +270,16 @@ export default function AppointmentMonthGrid({
           {selectedOccs.length > 0 && (
             <ul className="mb-2 space-y-1">
               {selectedOccs.map((o) => (
-                <li
+                <OccurrenceListRow
                   key={`${o.appointment.id}-${o.anchor}`}
-                  role="button"
-                  tabIndex={0}
-                  className="cursor-pointer rounded border border-slate-100 p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:hover:bg-slate-700"
-                  onClick={() => onOpenOccurrence(o)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
-                      ev.preventDefault();
-                      onOpenOccurrence(o);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        className={
-                          "shrink-0 rounded px-1.5 py-0.5 text-xs " +
-                          chipClsFor(o.appointment.color)
-                        }
-                      >
-                        {formatOccurrenceTime(o) || "Termin"}
-                      </span>
-                      <span className="truncate text-slate-700 dark:text-slate-200">
-                        {o.appointment.isImportant && (
-                          <span className="font-semibold" title="Wichtig">
-                            !{" "}
-                          </span>
-                        )}
-                        {o.appointment.title || "(ohne Titel)"}
-                      </span>
-                    </span>
-                    {o.appointment.location && (
-                      <span className="ml-2 hidden shrink-0 text-xs text-slate-500 dark:text-slate-400 sm:inline">
-                        {o.appointment.location}
-                      </span>
-                    )}
-                  </div>
-                </li>
+                  chipText={formatOccurrenceTime(o) || "Termin"}
+                  color={o.appointment.color}
+                  title={o.appointment.title}
+                  isImportant={o.appointment.isImportant}
+                  location={o.appointment.location || undefined}
+                  variant="panel"
+                  onOpen={() => onOpenOccurrence(o)}
+                />
               ))}
             </ul>
           )}
