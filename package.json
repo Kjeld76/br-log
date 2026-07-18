@@ -13,8 +13,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "lint": "eslint src",
-    "audit:colors": "rg -n --glob !src/tokens.css --glob !src/lib/tokens.ts --glob !src/assets -e \"#[0-9a-fA-F]{3,8}\\b\" -e \"rgba?\\(\" src/ ; exit 0",
-    "audit:palette": "rg -n --glob !src/tokens.css -e \"(bg|text|border|ring|outline|divide|placeholder)-(slate|sky|red|emerald|green|amber|rose|white|black)\" src/ ; exit 0"
+    "audit:colors": "node scripts/audit-tokens.mjs colors",
+    "audit:palette": "node scripts/audit-tokens.mjs palette"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
