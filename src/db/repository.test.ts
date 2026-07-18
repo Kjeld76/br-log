@@ -915,6 +915,60 @@ describe("saveAppointment", () => {
   });
 });
 
+describe("splitSeries", () => {
+  it("migriert das Feuer-Protokoll ab dem Anker auf die neue Serie (kein Doppelfeuern)", async () => {
+    // Der Split vergibt neue Termin- UND Reminder-IDs; ohne Migration greift
+    // der firedKey (appointmentId|reminderId|anchor) nicht mehr und bereits
+    // gezeigte Erinnerungen künftiger Instanzen feuern erneut.
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      if (sql.startsWith("SELECT id, minutes_before FROM appointment_reminders"))
+        return [{ id: "rem-old", minutes_before: 10080 }];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    await repo.splitSeries({
+      master: baseAppointment({
+        id: "master-1",
+        rrule: "FREQ=WEEKLY;UNTIL=20260726",
+        reminders: [{ id: "rem-old", minutesBefore: 10080 }],
+      }),
+      newSeries: baseAppointment({
+        id: "master-2",
+        rrule: "FREQ=WEEKLY",
+        startDate: "2026-07-27",
+        endDate: "2026-07-27",
+        reminders: [{ id: "rem-new", minutesBefore: 10080 }],
+      }),
+      anchor: "2026-07-27",
+    });
+
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    const mig = statements.find((s) => s.sql.includes("UPDATE reminder_fired"));
+    expect(mig).toBeDefined();
+    expect(mig!.params).toEqual([
+      "master-2",
+      "rem-new",
+      "master-1",
+      "rem-old",
+      "2026-07-27",
+    ]);
+    // Migration muss NACH dem Anlegen der neuen Erinnerungs-Zeilen laufen
+    // (FK reminder_id -> appointment_reminders).
+    const migIndex = statements.indexOf(mig!);
+    const newRemIndex = statements.findIndex(
+      (s) =>
+        s.sql.includes("INTO appointment_reminders") &&
+        s.params.includes("rem-new")
+    );
+    expect(newRemIndex).toBeGreaterThanOrEqual(0);
+    expect(migIndex).toBeGreaterThan(newRemIndex);
+  });
+});
+
 describe("listAppointmentsRange", () => {
   it("lädt secret_details in KEINEM Query (strukturelle Vertraulichkeits-Trennung)", async () => {
     selectMock.mockImplementation(async (sql: string) => {

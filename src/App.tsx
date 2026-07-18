@@ -54,6 +54,7 @@ import {
   selectMissed,
   selectToSchedule,
   MISSED_LOOKBACK_DAYS,
+  REMINDER_HORIZON_DAYS,
   type ReminderCandidate,
   type ScheduledRef,
 } from "./lib/reminderScheduler";
@@ -230,6 +231,11 @@ export default function App() {
   const pendingFiredRef = useRef<ReminderFired[]>([]);
   const readyRef = useRef(false);
   const firedCleanupDoneRef = useRef(false);
+  // Alter des Kandidaten-Snapshots: Der 30-s-Loop stößt bei entsperrter App
+  // periodisch einen Neuaufbau an, damit das Fenster im Dauerbetrieb mitrollt
+  // (ohne reloadKey-Bump veraltete es sonst unbegrenzt).
+  const snapshotLoadedAtRef = useRef(0);
+  const [snapshotRefresh, setSnapshotRefresh] = useState(0);
   // Android: Schlüssel der system-geplanten Notifications (Rolling Window).
   // Der In-App-Loop überspringt sie (Doppel-Zustellungs-Schutz), und beim
   // Start gelten vergangene system-geplante als zugestellt (kein Banner).
@@ -432,8 +438,14 @@ export default function App() {
   const planAndroidNotifications = async () => {
     try {
       if (!(await ensureNotificationPermission())) {
-        saveScheduledRefs([]);
-        scheduledKeysRef.current = new Set();
+        // Referenzen NICHT löschen: ensureNotificationPermission liefert auch
+        // bei transienten Plugin-Fehlern false. Ohne die gespeicherten IDs
+        // wären bereits system-geplante Alarme nie mehr stornierbar, und ohne
+        // die Schlüssel feuerte der In-App-Loop zusätzlich zur System-
+        // Notification (Doppel-Zustellung).
+        scheduledKeysRef.current = new Set(
+          loadScheduledRefs().map((r) => r.key)
+        );
         return;
       }
       try {
@@ -501,10 +513,22 @@ export default function App() {
         const pending = pendingFiredRef.current;
         pendingFiredRef.current = [];
         for (const f of pending) {
-          await markReminderFired(f);
+          try {
+            await markReminderFired(f);
+          } catch (e) {
+            // Nicht durchschreibbar (z. B. Termin inzwischen gelöscht -> die
+            // FK-Prüfung greift trotz INSERT OR IGNORE): Markierung verwerfen,
+            // aber den Snapshot-Aufbau nicht abbrechen -- sonst fällt das
+            // gesamte Erinnerungssystem für diesen Zyklus aus.
+            console.warn("Feuer-Markierung konnte nicht gespeichert werden.", e);
+          }
         }
         const from = format(addDays(new Date(), -MISSED_LOOKBACK_DAYS), "yyyy-MM-dd");
-        const to = format(addDays(new Date(), 8), "yyyy-MM-dd");
+        // Großzügiger Horizont: Der 30-s-Loop feuert im Tray-/Sperr-Betrieb
+        // nur aus diesem Snapshot -- mit +8 Tagen versiegten Erinnerungen,
+        // sobald die App länger als eine Woche nicht entsperrt wurde, und
+        // "1 Woche vorher"-Erinnerungen für fernere Termine fehlten ganz.
+        const to = format(addDays(new Date(), REMINDER_HORIZON_DAYS), "yyyy-MM-dd");
         const [items, fired] = await Promise.all([
           listAppointmentsRange(from, to),
           listFiredReminders(from),
@@ -512,6 +536,7 @@ export default function App() {
         if (!active) return;
         reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
         firedKeysRef.current = firedKeySetFrom(fired);
+        snapshotLoadedAtRef.current = Date.now();
         const missedAll = selectMissed(
           reminderCandidatesRef.current,
           firedKeysRef.current,
@@ -552,12 +577,24 @@ export default function App() {
     // mobile ist konstant (lazy useState), planAndroidNotifications arbeitet
     // nur auf Refs -- bewusst nicht in den Deps (Muster der übrigen Effekte).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, reloadKey]);
+  }, [ready, reloadKey, snapshotRefresh]);
 
   // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
   // dem In-Memory-Snapshot). Fällige feuern genau einmal (firedKeys sofort).
   useEffect(() => {
+    const SNAPSHOT_MAX_AGE_MS = 12 * 3600_000;
     const check = () => {
+      // Snapshot bei entsperrter App periodisch neu aufbauen (rollendes
+      // Fenster); bei gesperrter DB geht es nicht -- dafür ist der Horizont
+      // (REMINDER_HORIZON_DAYS) großzügig bemessen.
+      if (
+        readyRef.current &&
+        snapshotLoadedAtRef.current > 0 &&
+        Date.now() - snapshotLoadedAtRef.current > SNAPSHOT_MAX_AGE_MS
+      ) {
+        snapshotLoadedAtRef.current = Date.now(); // kein Doppel-Trigger
+        setSnapshotRefresh((n) => n + 1);
+      }
       const due = selectDue(
         reminderCandidatesRef.current,
         firedKeysRef.current,
@@ -848,9 +885,14 @@ export default function App() {
         bump();
         return;
       }
+      // "Diesen und alle folgenden" auf der ERSTEN Instanz umfasst die ganze
+      // Serie. Ein Split/Kürzen würde den Master mit UNTIL vor DTSTART
+      // zurücklassen: 0 sichtbare Instanzen, aber weiterhin in DB, Suche,
+      // Backup und ICS-Export -- eine nie mehr löschbare Datenleiche.
+      const coversWholeSeries = scope === "following" && anchor <= master.startDate;
       if (mode === "edit") {
         setFormDirty(false);
-        if (scope === "all") {
+        if (scope === "all" || coversWholeSeries) {
           setModal({
             type: "apptForm",
             appointment: plainAppointment(master),
@@ -889,6 +931,11 @@ export default function App() {
           setModal(null);
           bump();
           showToast("Termin gelöscht");
+        } else if (coversWholeSeries) {
+          await deleteAppointment(masterId);
+          setModal(null);
+          bump();
+          showToast("Serie gelöscht");
         } else {
           await truncateSeries({ master: truncatedMaster(master, anchor), anchor });
           setModal(null);

@@ -25,6 +25,15 @@ export const LIVE_WINDOW_MS = 90_000;
 /** Nachhol-Fenster beim Start/Entsperren. */
 export const MISSED_LOOKBACK_DAYS = 7;
 
+/**
+ * Vorausschau des Kandidaten-Snapshots. Muss großzügig sein: Im Tray-/Sperr-
+ * Betrieb feuert der 30-s-Loop NUR aus diesem Snapshot (die DB ist zu) --
+ * der Horizont bestimmt also, wie lange die App ohne Entsperren zuverlässig
+ * erinnert. Außerdem braucht "1 Woche vorher" Kandidaten für Termine, die
+ * deutlich hinter dem alten 8-Tage-Fenster lagen.
+ */
+export const REMINDER_HORIZON_DAYS = 60;
+
 /** Ein konkreter Feuer-Kandidat: (Termin-Instanz × Erinnerung). */
 export interface ReminderCandidate {
   /** Master- bzw. Einzeltermin-ID -- die Zeile, die die Erinnerung TRÄGT. */

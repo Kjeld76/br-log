@@ -1370,6 +1370,31 @@ export async function splitSeries(args: {
       params: [args.newSeries.id, args.master.id, args.anchor],
     },
   ];
+  // Feuer-Protokoll ab dem Anker auf die neue Serie umschreiben: der Split
+  // vergibt neue Termin- UND Reminder-IDs -- ohne Migration kennt der
+  // firedKey (appointmentId|reminderId|anchor) bereits gezeigte Erinnerungen
+  // künftiger Instanzen nicht mehr und sie feuern erneut. Das Mapping alte ->
+  // neue Reminder-ID läuft über die parallel aufgebauten reminders-Arrays
+  // (buildSplitDraft erzeugt sie 1:1 in gleicher Reihenfolge). Muss NACH dem
+  // newSeries-Write stehen (FK reminder_id -> appointment_reminders).
+  if (args.master.reminders.length === args.newSeries.reminders.length) {
+    for (let i = 0; i < args.master.reminders.length; i++) {
+      const oldRem = args.master.reminders[i];
+      const newRem = args.newSeries.reminders[i];
+      if (oldRem.minutesBefore !== newRem.minutesBefore) continue;
+      statements.push({
+        sql: `UPDATE reminder_fired SET appointment_id = ?, reminder_id = ?
+               WHERE appointment_id = ? AND reminder_id = ? AND occurrence_anchor >= ?`,
+        params: [
+          args.newSeries.id,
+          newRem.id,
+          args.master.id,
+          oldRem.id,
+          args.anchor,
+        ],
+      });
+    }
+  }
   await db.batch(statements);
 }
 
