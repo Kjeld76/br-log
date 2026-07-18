@@ -157,18 +157,17 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
     }
   };
 
-  const card =
-    "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
+  const card = "rounded border border-border bg-surface p-4";
   const input =
-    "w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
+    "w-full rounded border border-border-strong bg-login-input px-3 py-2 text-sm text-primary-ink outline-none focus:border-focus";
   const btn =
-    "rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
+    "rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50";
   const outlineBtn = secondaryBtnSmCls;
 
   return (
     <div className="space-y-5">
       <section className={card}>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h4 className="mb-2 text-sm font-semibold text-primary-ink">
           Passwort ändern
         </h4>
         <form onSubmit={submitPw} className="space-y-2">
@@ -203,9 +202,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
             <p
               className={
                 "text-sm " +
-                (msg.ok
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400")
+                (msg.ok ? "text-success" : "text-danger-ink")
               }
             >
               {msg.text}
@@ -215,7 +212,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
       </section>
 
       <section className={card}>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h4 className="mb-2 text-sm font-semibold text-primary-ink">
           Wiederherstellungs-Code
         </h4>
         {newCode ? (
@@ -226,7 +223,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
           />
         ) : (
           <form onSubmit={submitRegenerate} className="space-y-2">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-secondary-ink">
               Erzeugt einen neuen Code; der alte wird ungültig. Zur Bestätigung das
               aktuelle Passwort eingeben.
             </p>
@@ -242,18 +239,18 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
               {rcBusy ? "Wird erzeugt…" : "Neuen Code erzeugen"}
             </button>
             {rcError && (
-              <p className="text-sm text-red-600 dark:text-red-400">{rcError}</p>
+              <p className="text-sm text-danger-ink">{rcError}</p>
             )}
           </form>
         )}
       </section>
 
       <section className={card}>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h4 className="mb-2 text-sm font-semibold text-primary-ink">
           Automatische Sperre
         </h4>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-slate-600 dark:text-slate-300">
+          <label className="text-sm text-secondary-ink">
             Nach Inaktivität sperren:
           </label>
           <select
@@ -271,7 +268,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
             Jetzt sperren
           </button>
         </div>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mt-2 text-xs text-secondary-ink">
           Nach dieser Zeit ohne Aktivität sowie beim Minimieren des Fensters wird
           gesperrt. Beim Sperren wird der Entschlüsselungs-Schlüssel aus dem
           Speicher entfernt – die Datei ist dann wieder vollständig verschlüsselt.
@@ -284,23 +281,21 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
           ein kurzes Aufblitzen, bevor die Prüfung durch ist. */}
       {mobile && !bioLoading && bioAvail && (
         <section className={card}>
-          <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <h4 className="mb-2 text-sm font-semibold text-primary-ink">
             Fingerabdruck-Anmeldung
           </h4>
-          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mb-2 text-xs text-secondary-ink">
             Entsperrt die App mit deinem Fingerabdruck. Dein Passwort bleibt
             weiterhin gültig und wird für Änderungen an den
             Sicherheitseinstellungen benötigt.
           </p>
-          <p className="mb-3 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <p className="mb-3 flex items-center gap-2 text-sm text-secondary-ink">
             <Icon name="fingerprint" size={18} />
             Status:{" "}
             <span
               className={
                 "font-medium " +
-                (bioEnrolled
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-slate-500 dark:text-slate-400")
+                (bioEnrolled ? "text-success" : "text-secondary-ink")
               }
             >
               {bioEnrolled ? "Aktiviert" : "Nicht aktiviert"}
@@ -310,12 +305,12 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
           {bioEnrolled ? (
             confirmingBioDisable ? (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-slate-600 dark:text-slate-300">
+                <span className="text-sm text-secondary-ink">
                   Wirklich deaktivieren?
                 </span>
                 <button
                   type="button"
-                  className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  className="rounded bg-danger px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-danger-hover disabled:opacity-50"
                   onClick={submitBioDisable}
                   disabled={bioDisableBusy}
                 >
@@ -361,9 +356,7 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
               aria-live="polite"
               className={
                 "mt-2 text-sm " +
-                (bioMsg.ok
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400")
+                (bioMsg.ok ? "text-success" : "text-danger-ink")
               }
             >
               {bioMsg.text}

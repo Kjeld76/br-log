@@ -58,17 +58,17 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+        <h2 className="text-base font-semibold text-primary-ink">
           Wiederherstellungs-Code
         </h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-1 text-sm text-secondary-ink">
           Notieren oder speichern Sie diesen Code jetzt – er wird nur dieses eine
           Mal angezeigt. Mit ihm können Sie die Daten auch bei vergessenem
           Passwort entsperren.
         </p>
       </div>
 
-      <div className="select-all rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-center font-mono text-lg tracking-widest text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+      <div className="select-all rounded-lg border border-border-strong bg-background px-4 py-3 text-center font-mono text-lg tracking-widest text-primary-ink">
         {code}
       </div>
 
@@ -87,7 +87,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
         keine Hintertür. Bewahren Sie den Code getrennt von der Datenbank auf.
       </p>
 
-      <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+      <label className="flex items-start gap-2 text-sm text-primary-ink">
         <input
           type="checkbox"
           className="mt-0.5"
@@ -99,7 +99,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
 
       <button
         type="button"
-        className="w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
         disabled={!ack}
         onClick={onConfirmed}
       >
@@ -107,7 +107,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
       </button>
 
       {error && (
-        <p className="break-all text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p className="break-all text-sm text-danger-ink">{error}</p>
       )}
     </div>
   );

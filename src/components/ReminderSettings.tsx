@@ -81,16 +81,16 @@ export default function ReminderSettings({ mobile }: { mobile: boolean }) {
   };
 
   const rowCls = "flex flex-wrap items-center justify-between gap-3";
-  const labelCls = "text-slate-600 dark:text-slate-300";
+  const labelCls = "text-secondary-ink";
 
   return (
-    <div className="space-y-3 rounded border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800">
+    <div className="space-y-3 rounded border border-border bg-surface p-4 text-sm">
       <div className={rowCls}>
         <span className={labelCls}>System-Benachrichtigungen</span>
         {granted === null ? (
-          <span className="text-slate-400">…</span>
+          <span className="text-disabled-ink">…</span>
         ) : granted ? (
-          <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+          <span className="rounded bg-success-surface px-2 py-0.5 text-xs font-medium text-success-ink">
             Erlaubt
           </span>
         ) : (
@@ -125,7 +125,7 @@ export default function ReminderSettings({ mobile }: { mobile: boolean }) {
         </>
       )}
 
-      <p className="text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-xs text-secondary-ink">
         {mobile
           ? "Termin-Erinnerungen werden als Systembenachrichtigung geplant und erscheinen auch bei geschlossener App. Nach einem Neustart des Geräts werden sie beim nächsten Öffnen neu geplant; Verpasstes erscheint als Hinweis in der App."
           : "Termin-Erinnerungen erscheinen als Systembenachrichtigung, solange BR-Log läuft – auch minimiert, gesperrt oder im Tray. Mit beiden Schaltern oben kommen Erinnerungen praktisch immer; die Datenbank bleibt im Hintergrund selbstverständlich gesperrt. Ist die App beendet, erscheinen verpasste Erinnerungen beim nächsten Start als Hinweis."}
