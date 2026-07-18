@@ -28,6 +28,9 @@ const SRC_DIR = join(ROOT, "src");
 const SKIP_FILES = new Set([
   join(SRC_DIR, "tokens.css"),
   join(SRC_DIR, "lib", "tokens.ts"),
+  // Testet die Token-Werte gegen fixe erwartete Hex-Strings (TDD-Vorgabe) --
+  // das sind Prüf-Fixtures gegen die Quelle, keine unmigrierten Rohwerte.
+  join(SRC_DIR, "lib", "tokens.test.ts"),
 ]);
 const SKIP_DIRS = new Set([join(SRC_DIR, "assets")]);
 

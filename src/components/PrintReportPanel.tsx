@@ -9,6 +9,7 @@ import { isWindows } from "../lib/platform";
 // Haupt-Chunk landet und den App-Start nicht verlangsamt.
 import type { ReportModel } from "../export/reportPdf";
 import { Icon } from "./Icon";
+import { PRINT } from "../lib/tokens";
 
 // Finding 13: druckbarer Monats-/Zeitraumnachweis. Linux-Portierung (L5):
 // window.print() + Print-CSS (styles.css, #print-report-Regel) bleibt NUR
@@ -38,7 +39,7 @@ function saveName(v: string): void {
 }
 
 const cellStyle: React.CSSProperties = {
-  border: "1px solid #999",
+  border: `1px solid ${PRINT.tableBorder}`,
   padding: "3px 6px",
   textAlign: "left",
 };
@@ -291,7 +292,11 @@ export default function PrintReportPanel() {
             {model.signatureLabels.map((label) => (
               <div
                 key={label}
-                style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}
+                style={{
+                  width: "30%",
+                  borderTop: `1px solid ${PRINT.ink}`,
+                  paddingTop: 4,
+                }}
               >
                 {label}
               </div>
