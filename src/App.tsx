@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { differenceInCalendarDays, parseISO } from "date-fns";
-import type { TimeEntry, TaskTag, EntryListItem, EntryFullItem } from "./types";
+import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
+import type {
+  TimeEntry,
+  TaskTag,
+  EntryListItem,
+  EntryFullItem,
+  Appointment,
+  AppointmentFullItem,
+} from "./types";
 import {
   initSchema,
   initSearch,
@@ -14,13 +21,51 @@ import {
   deleteEntry,
   getEntry,
   getLastEntryDate,
+  newAppointment,
+  getAppointment,
+  deleteAppointment,
+  deleteOccurrence,
+  splitSeries,
+  truncateSeries,
+  listAppointmentsRange,
+  listFiredReminders,
+  markReminderFired,
+  cleanupFiredBefore,
 } from "./db/repository";
+import {
+  cancel as cancelNotifications,
+  createChannel,
+  Importance,
+  isPermissionGranted,
+  requestPermission,
+  Schedule,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+import {
+  buildReminderCandidates,
+  firedKey,
+  firedKeySetFrom,
+  loadScheduledRefs,
+  notificationContent,
+  notificationIdFor,
+  reminderBody,
+  saveScheduledRefs,
+  selectDue,
+  selectMissed,
+  selectToSchedule,
+  MISSED_LOOKBACK_DAYS,
+  REMINDER_HORIZON_DAYS,
+  type ReminderCandidate,
+  type ScheduledRef,
+} from "./lib/reminderScheduler";
+import type { ReminderFired } from "./types";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
 import { useBackClose } from "./lib/backClose";
+import { useModalFocusTrap } from "./lib/useModalFocusTrap";
 import {
   type StartMode,
   getStartStatus,
@@ -33,18 +78,44 @@ import BottomNav from "./components/BottomNav";
 import TopBar from "./components/TopBar";
 import QuickEntryView, { clearQuickEntryDraft } from "./views/QuickEntryView";
 import HistoryView from "./views/HistoryView";
+import CalendarPage from "./views/CalendarPage";
 import StatsView from "./views/StatsView";
 import DataView from "./views/DataView";
 import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
+import AppointmentForm from "./components/AppointmentForm";
+import AppointmentDetail from "./components/AppointmentDetail";
+import SeriesScopeDialog, {
+  type SeriesScope,
+} from "./components/SeriesScopeDialog";
 import SettingsPanel from "./components/SettingsPanel";
 import AboutPanel from "./components/AboutPanel";
 import { Icon } from "./components/Icon";
+import {
+  buildOverrideDraft,
+  buildSplitDraft,
+  duplicateAppointment,
+  plainAppointment,
+  truncatedMaster,
+  type Occurrence,
+  type OccurrenceRef,
+} from "./lib/appointments";
 
 type Modal =
   | { type: "form"; entry: TimeEntry }
   | { type: "detail"; entry: EntryFullItem }
+  // Terminkalender: Formular + Detailansicht laufen über denselben Modal-
+  // Mechanismus wie die Eintrags-Dialoge. `occ` ist die konkret angezeigte
+  // Instanz (bei Serien ≠ Master-Startdaten); `saveAction`/`contextHint`
+  // steuern die Serien-Sonderfälle des Formulars (Override, UNTIL-Split).
+  | {
+      type: "apptForm";
+      appointment: Appointment;
+      saveAction?: (appt: Appointment) => Promise<void>;
+      contextHint?: string;
+    }
+  | { type: "apptDetail"; appointment: AppointmentFullItem; occ: OccurrenceRef }
   // Einstellungen/Über BR-Log (aus dem neuen AppMenu, siehe Sidebar/TopBar):
   // laufen bewusst über denselben Modal-Mechanismus wie Bearbeiten/Detail
   // (gleiche Fokusfalle, gleiches mobil-/Desktop-Layout) statt einer
@@ -52,57 +123,6 @@ type Modal =
   | { type: "settings" }
   | { type: "about" }
   | null;
-
-/**
- * Fokussiert beim Öffnen das erste fokussierbare Element im Dialog-Container
- * und hält Tab/Shift+Tab innerhalb des Dialogs (Fokusfalle). Ohne das springt
- * der Tastaturfokus beim Tabben aus dem Modal in den verdeckten Hintergrund --
- * für Tastatur-/Screenreader-Nutzer ist der Dialog dann kaum bedienbar
- * (Finding 41: Modal ohne role="dialog"/aria-modal und ohne Fokusfalle).
- */
-function useModalFocusTrap(
-  ref: React.RefObject<HTMLElement | null>,
-  active: boolean,
-  // Finding B5: ohne explizite Zielangabe fokussiert die Falle blind das
-  // ERSTE fokussierbare Element im Container -- im Bearbeiten-Modal kann das
-  // z. B. der "Übernehmen"-Hinweis-Button (showLastDefaultsHint) VOR dem
-  // Datumsfeld sein und damit den seit W1 vorgesehenen Autofokus auf das
-  // Datumsfeld unterlaufen. initialFocusRef erlaubt es dem Aufrufer, das
-  // tatsächlich gewünschte Ziel vorzugeben; ohne Angabe bleibt das bisherige
-  // Verhalten (erstes fokussierbares Element) unverändert.
-  initialFocusRef?: React.RefObject<HTMLElement | null>
-) {
-  useEffect(() => {
-    if (!active || !ref.current) return;
-    const container = ref.current;
-    const focusables = () =>
-      Array.from(
-        container.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute("disabled"));
-
-    const first = initialFocusRef?.current ?? focusables()[0];
-    (first ?? container).focus();
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const els = focusables();
-      if (els.length === 0) return;
-      const firstEl = els[0];
-      const lastEl = els[els.length - 1];
-      if (e.shiftKey && document.activeElement === firstEl) {
-        e.preventDefault();
-        lastEl.focus();
-      } else if (!e.shiftKey && document.activeElement === lastEl) {
-        e.preventDefault();
-        firstEl.focus();
-      }
-    };
-    container.addEventListener("keydown", onKeyDown);
-    return () => container.removeEventListener("keydown", onKeyDown);
-  }, [ref, active, initialFocusRef]);
-}
 
 export default function App() {
   // Einzige Stelle, an der isAndroid() für das Layout abgefragt wird
@@ -139,12 +159,55 @@ export default function App() {
     confirmLabel?: string;
     onConfirm: () => void;
   } | null>(null);
+  // Drei-Optionen-Dialog "Nur dieser / Dieser und folgende / Alle" für das
+  // Bearbeiten/Löschen von Serieninstanzen (liegt wie confirmDiscard ÜBER dem
+  // Detail-Modal).
+  const [seriesScope, setSeriesScope] = useState<{
+    mode: "edit" | "delete";
+    appt: AppointmentFullItem;
+    occ: OccurrenceRef;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // Erinnerung bei fehlender Erfassung (Finding 31).
   const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
+  // ---------- Termin-Erinnerungen (Snapshot-Scheduler, s. reminderScheduler.ts) ----------
+  // Refs statt State: der Snapshot muss den Auto-Lock ÜBERLEBEN (App zeigt
+  // dann den LockScreen, bleibt aber gemountet) und darf keine Re-Renders
+  // auslösen. Enthält nur öffentliche Felder (Titel/Zeit), nie BR-Geheimnis.
+  const reminderCandidatesRef = useRef<ReminderCandidate[]>([]);
+  const firedKeysRef = useRef<Set<string>>(new Set());
+  // Feuer-Markierungen, die bei gesperrter DB anfielen -> Flush nach Unlock.
+  const pendingFiredRef = useRef<ReminderFired[]>([]);
+  const readyRef = useRef(false);
+  const firedCleanupDoneRef = useRef(false);
+  // Alter des Kandidaten-Snapshots: Der 30-s-Loop stößt bei entsperrter App
+  // periodisch einen Neuaufbau an, damit das Fenster im Dauerbetrieb mitrollt
+  // (ohne reloadKey-Bump veraltete es sonst unbegrenzt).
+  const snapshotLoadedAtRef = useRef(0);
+  const [snapshotRefresh, setSnapshotRefresh] = useState(0);
+  // Android: Schlüssel der system-geplanten Notifications (Rolling Window).
+  // Der In-App-Loop überspringt sie (Doppel-Zustellungs-Schutz), und beim
+  // Start gelten vergangene system-geplante als zugestellt (kein Banner).
+  // Lazy über useState initialisiert: ein useRef-Argument würde bei JEDEM
+  // Render von App localStorage lesen, parsen und das Set neu bauen.
+  const [initialScheduledKeys] = useState(
+    () => new Set(loadScheduledRefs().map((r) => r.key))
+  );
+  const scheduledKeysRef = useRef<Set<string>>(initialScheduledKeys);
+  const [missedReminders, setMissedReminders] = useState<ReminderCandidate[]>([]);
+
   const bump = () => setReloadKey((k) => k + 1);
+  // Eigener Zähler NUR für Termin-Mutationen (plus Backup-/ICS-Import): der
+  // Erinnerungs-Snapshot inkl. Android-Neuplanung hängt daran -- am globalen
+  // reloadKey würde jedes Speichern eines ZEITEINTRAGS (der häufigste Vorgang
+  // der App) den kompletten Termin-Reload samt RRULE-Expansion auslösen.
+  const [apptReloadKey, setApptReloadKey] = useState(0);
+  const bumpAppointments = () => {
+    setApptReloadKey((k) => k + 1);
+    bump();
+  };
   // Finding 22: loadTags/loadAllTags wurden an mehreren Stellen ohne catch
   // aufgerufen (u. a. aus DataView.onChanged nach Import/Tag-Änderung) --
   // der catch sitzt hier zentral, damit jeder Aufrufer automatisch geschützt ist.
@@ -187,7 +250,11 @@ export default function App() {
   useModalFocusTrap(
     modalRef,
     !!modal,
-    modal?.type === "form" ? dateFieldRef : undefined
+    // Eintragsformular: Datumsfeld; Terminformular: Titelfeld (gleiche Ref,
+    // es ist immer nur EIN Modal offen).
+    modal?.type === "form" || modal?.type === "apptForm"
+      ? dateFieldRef
+      : undefined
   );
   useModalFocusTrap(confirmRef, !!confirmDiscard);
 
@@ -288,6 +355,247 @@ export default function App() {
     };
   }, [ready, reloadKey]);
 
+  // ---------- Termin-Erinnerungen: Laden, Feuern, Nachholen ----------
+
+  const ensureNotificationPermission = async (): Promise<boolean> => {
+    try {
+      if (await isPermissionGranted()) return true;
+      return (await requestPermission()) === "granted";
+    } catch {
+      return false; // Plugin nicht verfügbar -> Erinnerungen bleiben stumm
+    }
+  };
+
+  // Feuer-Markierung persistieren; bei gesperrter DB in den Pending-Puffer.
+  const recordFired = (c: ReminderCandidate) => {
+    firedKeysRef.current.add(firedKey(c));
+    const f: ReminderFired = {
+      appointmentId: c.appointmentId,
+      reminderId: c.reminderId,
+      occurrenceAnchor: c.anchor,
+      firedAt: new Date().toISOString(),
+    };
+    if (readyRef.current) {
+      void markReminderFired(f).catch(() => pendingFiredRef.current.push(f));
+    } else {
+      pendingFiredRef.current.push(f);
+    }
+  };
+
+  const notifyReminder = async (c: ReminderCandidate) => {
+    try {
+      if (!(await ensureNotificationPermission())) return;
+      // "Heute" relativ zum FEUER-Tag (bei Live-Feuern = jetzt).
+      sendNotification(
+        notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd"))
+      );
+    } catch (e) {
+      console.warn("Termin-Erinnerung konnte nicht angezeigt werden.", e);
+    }
+  };
+
+  // Android: die nächsten Erinnerungen als ECHTE System-Notifications planen
+  // (feuern auch bei geschlossener App). Alte Planungen werden storniert,
+  // dann das Rolling Window neu aufgebaut (Neuplanung bei jedem Laden).
+  const planAndroidNotifications = async () => {
+    try {
+      if (!(await ensureNotificationPermission())) {
+        // Referenzen NICHT löschen: ensureNotificationPermission liefert auch
+        // bei transienten Plugin-Fehlern false. Ohne die gespeicherten IDs
+        // wären bereits system-geplante Alarme nie mehr stornierbar, und ohne
+        // die Schlüssel feuerte der In-App-Loop zusätzlich zur System-
+        // Notification (Doppel-Zustellung).
+        scheduledKeysRef.current = new Set(
+          loadScheduledRefs().map((r) => r.key)
+        );
+        return;
+      }
+      try {
+        await createChannel({
+          id: "termine",
+          name: "Termin-Erinnerungen",
+          importance: Importance.High,
+        });
+      } catch {
+        // Channel existiert bereits o. ä. -- unkritisch.
+      }
+      const old = loadScheduledRefs();
+      if (old.length > 0) {
+        try {
+          await cancelNotifications(old.map((r) => r.id));
+        } catch {
+          // Bereits zugestellte/abgelaufene IDs lassen sich nicht stornieren.
+        }
+      }
+      const toSchedule = selectToSchedule(
+        reminderCandidatesRef.current,
+        firedKeysRef.current,
+        Date.now()
+      );
+      const refs: ScheduledRef[] = [];
+      for (const c of toSchedule) {
+        const key = firedKey(c);
+        const id = notificationIdFor(key);
+        try {
+          sendNotification({
+            id,
+            channelId: "termine",
+            ...notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
+            // allowWhileIdle: auch im Doze-Modus zustellen (Minuten-Toleranz
+            // bleibt möglich, exakte Alarme sind ab API 31 restriktiv).
+            schedule: Schedule.at(new Date(c.dueMs), false, true),
+          });
+          refs.push({ key, id });
+        } catch (e) {
+          console.warn("Erinnerung konnte nicht geplant werden.", e);
+        }
+      }
+      saveScheduledRefs(refs);
+      // Union aus alten und neuen Schlüsseln: ein bereits zugestellter
+      // Kandidat, dessen dueMs noch im Live-Fenster liegt, wird nicht neu
+      // geplant -- ohne seinen alten Schlüssel verlöre er den Doppel-
+      // Zustellungs-Schutz und erschiene zusätzlich als In-App-Notification.
+      scheduledKeysRef.current = new Set([
+        ...old.map((r) => r.key),
+        ...refs.map((r) => r.key),
+      ]);
+    } catch (e) {
+      console.warn("Planung der Android-Erinnerungen fehlgeschlagen.", e);
+    }
+  };
+
+  // readyRef spiegelt `ready` für den Intervall-Callback (der läuft auch
+  // während der Sperre weiter und darf dann nicht in die DB schreiben).
+  useEffect(() => {
+    readyRef.current = ready;
+  }, [ready]);
+
+  // Snapshot laden: nächste ~8 Tage als Kandidaten + Feuer-Protokoll; dabei
+  // Pending-Markierungen aus einer Sperr-Phase nachtragen und Verpasste für
+  // den Nachhol-Banner einsammeln.
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    (async () => {
+      try {
+        const pending = pendingFiredRef.current;
+        pendingFiredRef.current = [];
+        for (const f of pending) {
+          try {
+            await markReminderFired(f);
+          } catch (e) {
+            // Nicht durchschreibbar (z. B. Termin inzwischen gelöscht -> die
+            // FK-Prüfung greift trotz INSERT OR IGNORE): Markierung verwerfen,
+            // aber den Snapshot-Aufbau nicht abbrechen -- sonst fällt das
+            // gesamte Erinnerungssystem für diesen Zyklus aus.
+            console.warn("Feuer-Markierung konnte nicht gespeichert werden.", e);
+          }
+        }
+        const from = format(addDays(new Date(), -MISSED_LOOKBACK_DAYS), "yyyy-MM-dd");
+        // Großzügiger Horizont: Der 30-s-Loop feuert im Tray-/Sperr-Betrieb
+        // nur aus diesem Snapshot -- mit +8 Tagen versiegten Erinnerungen,
+        // sobald die App länger als eine Woche nicht entsperrt wurde, und
+        // "1 Woche vorher"-Erinnerungen für fernere Termine fehlten ganz.
+        const to = format(addDays(new Date(), REMINDER_HORIZON_DAYS), "yyyy-MM-dd");
+        const [items, fired] = await Promise.all([
+          listAppointmentsRange(from, to),
+          listFiredReminders(from),
+        ]);
+        if (!active) return;
+        reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
+        // MERGEN statt ersetzen: der 30-s-Loop kann zwischen dem DB-Read und
+        // dieser Zuweisung gefeuert haben (recordFired schreibt die DB nur
+        // fire-and-forget) -- ein komplett ersetztes Set verlöre den frischen
+        // Key und die Notification erschiene beim nächsten Tick doppelt.
+        firedKeysRef.current = new Set([
+          ...firedKeySetFrom(fired),
+          ...firedKeysRef.current,
+        ]);
+        snapshotLoadedAtRef.current = Date.now();
+        const missedAll = selectMissed(
+          reminderCandidatesRef.current,
+          firedKeysRef.current,
+          Date.now()
+        );
+        // Android: was system-geplant war und inzwischen fällig ist, hat das
+        // System zugestellt -> still als gefeuert markieren, kein Banner.
+        if (mobile) {
+          for (const c of missedAll) {
+            if (scheduledKeysRef.current.has(firedKey(c))) recordFired(c);
+          }
+        }
+        setMissedReminders(
+          mobile
+            ? missedAll.filter((c) => !scheduledKeysRef.current.has(firedKey(c)))
+            : missedAll
+        );
+        if (!firedCleanupDoneRef.current) {
+          firedCleanupDoneRef.current = true;
+          void cleanupFiredBefore(
+            format(addDays(new Date(), -90), "yyyy-MM-dd")
+          ).catch(() => {
+            /* Aufräumen ist Best-effort. */
+          });
+        }
+        if (mobile) {
+          await planAndroidNotifications();
+        } else if (reminderCandidatesRef.current.length > 0) {
+          void ensureNotificationPermission();
+        }
+      } catch (e) {
+        console.warn("Termin-Erinnerungen konnten nicht geladen werden.", e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+    // mobile ist konstant (lazy useState), planAndroidNotifications arbeitet
+    // nur auf Refs -- bewusst nicht in den Deps (Muster der übrigen Effekte).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, apptReloadKey, snapshotRefresh]);
+
+  // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
+  // dem In-Memory-Snapshot). Fällige feuern genau einmal (firedKeys sofort).
+  useEffect(() => {
+    const SNAPSHOT_MAX_AGE_MS = 12 * 3600_000;
+    const check = () => {
+      // Snapshot bei entsperrter App periodisch neu aufbauen (rollendes
+      // Fenster); bei gesperrter DB geht es nicht -- dafür ist der Horizont
+      // (REMINDER_HORIZON_DAYS) großzügig bemessen.
+      if (
+        readyRef.current &&
+        snapshotLoadedAtRef.current > 0 &&
+        Date.now() - snapshotLoadedAtRef.current > SNAPSHOT_MAX_AGE_MS
+      ) {
+        snapshotLoadedAtRef.current = Date.now(); // kein Doppel-Trigger
+        setSnapshotRefresh((n) => n + 1);
+      }
+      const due = selectDue(
+        reminderCandidatesRef.current,
+        firedKeysRef.current,
+        Date.now()
+      );
+      for (const c of due) {
+        // Android: system-geplante Kandidaten zeigt das System selbst an --
+        // hier nur als gefeuert markieren (Doppel-Zustellungs-Schutz).
+        const systemScheduled =
+          mobile && scheduledKeysRef.current.has(firedKey(c));
+        recordFired(c);
+        if (!systemScheduled) void notifyReminder(c);
+      }
+    };
+    const id = window.setInterval(check, 30_000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Nachhol-Banner schließen = alle als behandelt markieren.
+  const dismissMissedReminders = () => {
+    const items = missedReminders;
+    setMissedReminders([]);
+    for (const c of items) recordFired(c);
+  };
+
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
   const doLock = () => {
     void lock().finally(() => {
@@ -350,6 +658,210 @@ export default function App() {
     setFormDirty(false);
     bump();
     showToast("Eintrag gespeichert");
+  };
+
+  // ---------- Termin-Dialoge (Muster der Eintrags-Dialoge) ----------
+
+  const openNewAppointment = (iso: string) => {
+    setFormDirty(false);
+    setModal({ type: "apptForm", appointment: newAppointment(iso) });
+  };
+  // Detailansicht lädt den Termin VOLLSTÄNDIG nach (inkl. secretDetails) --
+  // Kalender-/Agenda-Items tragen das vertrauliche Feld strukturell nicht.
+  // Bei Overrides werden Schlagwörter/Erinnerungen des Masters eingeblendet
+  // (Overrides erben sie, ihre eigene Zeile trägt keine).
+  const openOccurrence = async (occ: Occurrence) => {
+    try {
+      // Master parallel zum Override laden -- die parentId ist schon vor dem
+      // ersten Query bekannt, sequentiell zahlte jedes Öffnen einer
+      // bearbeiteten Instanz zwei hintereinander gereihte Roundtrips.
+      const [row, master] = await Promise.all([
+        getAppointment(occ.appointment.id),
+        occ.appointment.parentId
+          ? getAppointment(occ.appointment.parentId)
+          : Promise.resolve(null),
+      ]);
+      if (!row) {
+        showToast("Termin nicht gefunden");
+        bumpAppointments();
+        return;
+      }
+      const full =
+        row.parentId && master
+          ? {
+              ...row,
+              tagIds: master.tagIds,
+              tagLabels: master.tagLabels,
+              reminders: master.reminders,
+            }
+          : row;
+      setModal({
+        type: "apptDetail",
+        appointment: full,
+        occ: {
+          anchor: occ.anchor,
+          startDate: occ.startDate,
+          startTime: occ.startTime,
+          endDate: occ.endDate,
+          endTime: occ.endTime,
+        },
+      });
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const handleApptSaved = () => {
+    setModal(null);
+    setFormDirty(false);
+    bumpAppointments();
+    showToast("Termin gespeichert");
+  };
+  const editApptFromDetail = async (appt: AppointmentFullItem) => {
+    try {
+      const fresh = (await getAppointment(appt.id)) ?? appt;
+      setFormDirty(false);
+      setModal({ type: "apptForm", appointment: fresh });
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const requestApptDelete = (id: string, message?: string) => {
+    setConfirmDiscard({
+      message: message ?? "Diesen Termin unwiderruflich löschen?",
+      confirmLabel: "Löschen",
+      onConfirm: () => {
+        setConfirmDiscard(null);
+        void handleApptDelete(id);
+      },
+    });
+  };
+
+  // ---------- Serien-Bearbeitung/-Löschung (Scope-Dialog) ----------
+  // Die Termin-Builder (plainAppointment, buildOverrideDraft, buildSplitDraft,
+  // truncatedMaster, duplicateAppointment) leben als getestete pure Funktionen
+  // in lib/appointments.ts.
+
+  // Bearbeiten/Löschen aus der Detailansicht: Einzeltermine direkt, Serien-
+  // Instanzen (Master ODER Override) über den Scope-Dialog.
+  const requestApptEdit = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    if (appt.rrule === null && appt.parentId === null) {
+      void editApptFromDetail(appt);
+      return;
+    }
+    setSeriesScope({ mode: "edit", appt, occ });
+  };
+  const requestApptDeleteSmart = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    if (appt.rrule === null && appt.parentId === null) {
+      requestApptDelete(appt.id);
+      return;
+    }
+    setSeriesScope({ mode: "delete", appt, occ });
+  };
+
+  const handleSeriesScopeSelect = async (scope: SeriesScope) => {
+    const ctx = seriesScope;
+    if (!ctx) return;
+    setSeriesScope(null);
+    const { mode, appt, occ } = ctx;
+    const masterId = appt.parentId ?? appt.id;
+    const anchor = appt.parentId ? appt.recurrenceAnchor ?? occ.anchor : occ.anchor;
+    try {
+      const master = await getAppointment(masterId);
+      if (!master) {
+        showToast("Termin nicht gefunden");
+        bumpAppointments();
+        return;
+      }
+      // "Diesen und alle folgenden" auf der ERSTEN Instanz umfasst die ganze
+      // Serie. Ein Split/Kürzen würde den Master mit UNTIL vor DTSTART
+      // zurücklassen: 0 sichtbare Instanzen, aber weiterhin in DB, Suche,
+      // Backup und ICS-Export -- eine nie mehr löschbare Datenleiche.
+      const coversWholeSeries = scope === "following" && anchor <= master.startDate;
+      if (mode === "edit") {
+        setFormDirty(false);
+        if (scope === "all" || coversWholeSeries) {
+          setModal({
+            type: "apptForm",
+            appointment: plainAppointment(master),
+            contextHint:
+              "Änderungen gelten für ALLE Termine der Serie. Einzeln geänderte " +
+              "Instanzen behalten ihre Abweichungen, solange sich das Datumsraster " +
+              "der Serie nicht ändert.",
+          });
+        } else if (scope === "single") {
+          const isOverride = appt.parentId !== null;
+          setModal({
+            type: "apptForm",
+            appointment: isOverride
+              ? { ...plainAppointment(appt), tagIds: [], reminders: [] }
+              : buildOverrideDraft(master, occ),
+            contextHint: `Nur der Termin am ${formatDateDe(anchor)} wird geändert. Erinnerungen und Schlagwörter erbt er weiterhin von der Serie.`,
+          });
+        } else {
+          const oldMaster = truncatedMaster(master, anchor);
+          setModal({
+            type: "apptForm",
+            appointment: buildSplitDraft(master, occ),
+            contextHint: `Änderungen gelten ab dem ${formatDateDe(anchor)}. Frühere Termine der Serie bleiben unverändert.`,
+            saveAction: (a) =>
+              splitSeries({ master: oldMaster, newSeries: a, anchor }),
+          });
+        }
+      } else {
+        if (scope === "all") {
+          requestApptDelete(
+            masterId,
+            "Die GESAMTE Serie unwiderruflich löschen (alle Termine)?"
+          );
+        } else if (scope === "single") {
+          await deleteOccurrence(masterId, anchor);
+          setModal(null);
+          bumpAppointments();
+          showToast("Termin gelöscht");
+        } else if (coversWholeSeries) {
+          await deleteAppointment(masterId);
+          setModal(null);
+          bumpAppointments();
+          showToast("Serie gelöscht");
+        } else {
+          await truncateSeries({ master: truncatedMaster(master, anchor), anchor });
+          setModal(null);
+          bumpAppointments();
+          showToast("Termin und Folgetermine gelöscht");
+        }
+      }
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const handleApptDelete = async (id: string) => {
+    try {
+      await deleteAppointment(id);
+      setModal(null);
+      bumpAppointments();
+      showToast("Termin gelöscht");
+    } catch (e) {
+      showToast(toUserMessage(e));
+    }
+  };
+  const handleApptDuplicate = (appt: AppointmentFullItem) => {
+    setFormDirty(false);
+    setModal({
+      type: "apptForm",
+      appointment: duplicateAppointment(appt, todayIso()),
+    });
+  };
+  // "Zeit buchen": Eintragsformular vorbefüllt aus dem Termin -- Datum und
+  // Uhrzeiten der konkreten INSTANZ (bei ganztägig leer), Titel als GL-Info,
+  // Schlagwörter.
+  const bookTimeFromAppointment = (appt: AppointmentFullItem, occ: OccurrenceRef) => {
+    const entry = newEntry(occ.startDate);
+    entry.startTime = appt.isAllDay ? null : occ.startTime;
+    entry.endTime = appt.isAllDay ? null : occ.endTime;
+    entry.infoForManagement = appt.title;
+    entry.tagIds = appt.tagIds;
+    setFormDirty(false);
+    setModal({ type: "form", entry });
   };
   // Finding 2: Löschen lief bisher ohne jede Rückfrage sofort und
   // unwiderruflich (EntryDetail-Klick -> direkt handleDelete), UND ohne
@@ -423,9 +935,12 @@ export default function App() {
   // Schließen des Bearbeiten-Formulars (Backdrop-Klick, Abbrechen, Escape) –
   // bei ungespeicherten Änderungen erst rückfragen, statt kommentarlos zu verwerfen.
   const requestCloseModal = () => {
-    if (modal?.type === "form" && formDirty) {
+    if ((modal?.type === "form" || modal?.type === "apptForm") && formDirty) {
       setConfirmDiscard({
-        message: "Ungespeicherte Änderungen am Eintrag verwerfen?",
+        message:
+          modal.type === "form"
+            ? "Ungespeicherte Änderungen am Eintrag verwerfen?"
+            : "Ungespeicherte Änderungen am Termin verwerfen?",
         onConfirm: () => {
           setFormDirty(false);
           setConfirmDiscard(null);
@@ -469,6 +984,9 @@ export default function App() {
   useBackClose(mobile && !locked && modal !== null, requestCloseModal);
   useBackClose(mobile && !locked && confirmDiscard !== null, () =>
     setConfirmDiscard(null)
+  );
+  useBackClose(mobile && !locked && seriesScope !== null, () =>
+    setSeriesScope(null)
   );
 
   if (startMode === "loading") {
@@ -547,6 +1065,31 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Verpasste Termin-Erinnerungen (App war zu / DB gesperrt, als sie
+          fällig wurden) -- Banner-Muster des Erfassungs-Hinweises darunter. */}
+      {missedReminders.length > 0 && (
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+          <div>
+            <span className="font-medium">
+              {missedReminders.length === 1
+                ? "1 verpasste Termin-Erinnerung:"
+                : `${missedReminders.length} verpasste Termin-Erinnerungen:`}
+            </span>{" "}
+            {missedReminders
+              .slice(0, 3)
+              .map((c) => `${c.title} (${reminderBody(c, todayIso())})`)
+              .join(" · ")}
+            {missedReminders.length > 3 && " · …"}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            onClick={dismissMissedReminders}
+          >
+            Ausblenden
+          </button>
+        </div>
+      )}
       {showReminder && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
           <span>
@@ -601,6 +1144,15 @@ export default function App() {
               }}
             />
           )}
+          {view === "kalender" && (
+            <CalendarPage
+              reloadKey={reloadKey}
+              onOpenEntry={openDetail}
+              onNewEntry={openNew}
+              onOpenOccurrence={openOccurrence}
+              onNewAppointment={openNewAppointment}
+            />
+          )}
           {view === "historie" && (
             <HistoryView
               tags={tags}
@@ -616,7 +1168,9 @@ export default function App() {
               onChanged={() => {
                 loadTags();
                 loadAllTags();
-                bump();
+                // Backup-/ICS-Import läuft über diesen Handler und kann
+                // Termine verändern -- Termin-Snapshot mit aktualisieren.
+                bumpAppointments();
               }}
             />
           )}
@@ -692,6 +1246,47 @@ export default function App() {
                 />
               </>
             )}
+            {modal.type === "apptForm" && (
+              <>
+                <h2
+                  id="entry-modal-heading"
+                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  Termin
+                </h2>
+                <AppointmentForm
+                  appointment={modal.appointment}
+                  tags={allTags}
+                  titleInputRef={dateFieldRef}
+                  onSaved={handleApptSaved}
+                  onCancel={requestCloseModal}
+                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  saveAction={modal.saveAction}
+                  contextHint={modal.contextHint}
+                />
+              </>
+            )}
+            {modal.type === "apptDetail" && (
+              <>
+                <h2
+                  id="entry-modal-heading"
+                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  Termin-Details
+                </h2>
+                <AppointmentDetail
+                  appointment={modal.appointment}
+                  occurrence={modal.occ}
+                  onEdit={() => requestApptEdit(modal.appointment, modal.occ)}
+                  onDelete={() => requestApptDeleteSmart(modal.appointment, modal.occ)}
+                  onDuplicate={() => handleApptDuplicate(modal.appointment)}
+                  onBookTime={() =>
+                    bookTimeFromAppointment(modal.appointment, modal.occ)
+                  }
+                  onClose={() => setModal(null)}
+                />
+              </>
+            )}
             {/* Schließen-Muster der beiden AppMenu-Modals: X-Button im
                 Modal-Kopf (statt Footer-Button wie im Detail-Modal). Grund:
                 Einstellungen ist lang und scrollt -- ein Footer-Button wäre
@@ -749,6 +1344,16 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Serien-Scope: "Nur dieser / Dieser und folgende / Alle" -- liegt wie
+          der Bestätigungsdialog über dem Detail-Modal. */}
+      {seriesScope && (
+        <SeriesScopeDialog
+          mode={seriesScope.mode}
+          onSelect={(scope) => void handleSeriesScopeSelect(scope)}
+          onCancel={() => setSeriesScope(null)}
+        />
       )}
 
       {/* Bestätigung: ungespeicherte Eingaben verwerfen ODER Eintrag löschen

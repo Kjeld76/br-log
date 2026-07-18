@@ -7,9 +7,12 @@ use serde_json::{json, Map, Number, Value as JsonValue};
 use tauri::{Manager, State};
 use zeroize::Zeroizing;
 
+mod app_settings;
 mod crypto;
 mod db_location;
 mod file_io;
+#[cfg(desktop)]
+mod tray;
 use db_location::DbLocation;
 
 /// Entsperrter DB-Zustand: offene (verschlüsselte) Connection + die DEK im
@@ -23,8 +26,9 @@ struct KeyedConn {
 }
 type DbState = Mutex<Option<KeyedConn>>;
 
-/// Aufgelöster DB-Pfad + Modus (portabel/installiert) – nur für die Anzeige.
-struct AppDbLocation(DbLocation);
+/// Aufgelöster DB-Pfad + Modus (portabel/installiert) – Anzeige (DbInfoPanel)
+/// und Ablageort der Klartext-App-Einstellungen (app_settings.rs).
+pub(crate) struct AppDbLocation(pub(crate) DbLocation);
 
 /// Strukturierter Entsperr-/Krypto-Fehler: falsches Geheimnis (Retry+Backoff)
 /// strikt getrennt von echten DB-/Keyfile-Fehlern (kein Backoff).
@@ -160,7 +164,7 @@ fn db_batch(state: State<'_, DbState>, statements: Vec<BatchStatement>) -> Resul
 // ---------- Schema-Migrationen (PRAGMA user_version) ----------
 
 /// Höchste vom Code unterstützte Schema-Version.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// Migration 1: Schema-Härtung eines v0-Bestands (Tabellen-Neubau nach dem
 /// SQLite-Standardverfahren, da SQLite kein ADD CONSTRAINT kennt):
@@ -267,6 +271,93 @@ CREATE INDEX idx_objections_entry ON objections(entry_id);
 const MIGRATE_V2_SQL: &str =
     "ALTER TABLE entries ADD COLUMN pause_minutes INTEGER NOT NULL DEFAULT 0 CHECK (pause_minutes >= 0);";
 
+/// Migration 3 (Terminkalender): vier neue Tabellen, rein additiv -- kein
+/// Tabellen-Neubau, kein FK-Aus/An (anders als Migration 1).
+///
+/// Datenmodell-Entscheidungen (Details im Plan):
+///  - Serien nach ICS-Modell: Master-Zeile mit `rrule` (RRULE-Body ohne
+///    "RRULE:"-Präfix); `exdates` (JSON-Array von YYYY-MM-DD) NUR für
+///    gelöschte Einzelinstanzen; bearbeitete Instanzen sind eigene
+///    Override-Zeilen (parent_id + recurrence_anchor = RECURRENCE-ID-
+///    Semantik) und NIE zusätzlich Exdate -- so bleibt der ICS-Export eine
+///    1:1-Abbildung ohne Doppelbuchhaltung.
+///  - recurrence_anchor ist NUR das Datum (YYYY-MM-DD) der ursprünglichen
+///    Instanz: überlebt eine "alle Termine"-Uhrzeitänderung der Serie.
+///    Folge: max. eine Instanz pro Tag je Serie (eigene Presets erzeugen
+///    nie mehr; mehrfach-tägliche ICS-Importe werden vereinfacht).
+///  - end_date ist INKLUSIV (letzter Termintag), konsistent zum restlichen
+///    Wandzeit-Modell der App; die DTEND-Exklusivität von ICS wird
+///    ausschließlich in src/lib/ics.ts konvertiert.
+///  - secret_details folgt dem BR-Geheimnis-Muster von entries: Listen-/
+///    Kalenderpfade laden die Spalte strukturell nie (LIST_APPT_COLUMNS).
+///  - Erinnerungen (appointment_reminders) hängen am Master; Overrides
+///    erben die Offsets. reminder_fired protokolliert je (Termin,
+///    Erinnerung, Instanz-Anker) das Feuern -- einzige Form, die Serien +
+///    Mehrfach-Erinnerungen ohne Doppelfeuern trägt. Die Reminder-IDs
+///    müssen dafür STABIL bleiben (DIFF-Schreiben im Repository statt
+///    DELETE+INSERT, sonst reißt ON DELETE CASCADE die fired-Zeilen mit).
+const MIGRATE_V3_SQL: &str = r#"
+CREATE TABLE appointments (
+  id                TEXT PRIMARY KEY NOT NULL,
+  title             TEXT NOT NULL DEFAULT '',
+  location          TEXT NOT NULL DEFAULT '',
+  description       TEXT NOT NULL DEFAULT '',
+  secret_details    TEXT NOT NULL DEFAULT '',
+  is_all_day        INTEGER NOT NULL DEFAULT 0 CHECK (is_all_day IN (0,1)),
+  start_date        TEXT NOT NULL,
+  start_time        TEXT,
+  end_date          TEXT NOT NULL,
+  end_time          TEXT,
+  is_important      INTEGER NOT NULL DEFAULT 0,
+  color             TEXT,
+  rrule             TEXT,
+  exdates           TEXT NOT NULL DEFAULT '[]',
+  parent_id         TEXT REFERENCES appointments(id) ON DELETE CASCADE,
+  recurrence_anchor TEXT,
+  ics_uid           TEXT,
+  ics_sequence      INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  CHECK (end_date >= start_date),
+  CHECK (is_all_day = 1 OR (start_time IS NOT NULL AND end_time IS NOT NULL)),
+  CHECK (is_all_day = 0 OR (start_time IS NULL AND end_time IS NULL)),
+  CHECK (parent_id IS NULL OR recurrence_anchor IS NOT NULL),
+  CHECK (parent_id IS NULL OR rrule IS NULL)
+);
+CREATE INDEX idx_appointments_start ON appointments(start_date);
+CREATE INDEX idx_appointments_end   ON appointments(end_date);
+CREATE INDEX idx_appointments_uid   ON appointments(ics_uid) WHERE ics_uid IS NOT NULL;
+CREATE UNIQUE INDEX idx_appointments_override
+  ON appointments(parent_id, recurrence_anchor) WHERE parent_id IS NOT NULL;
+
+CREATE TABLE appointment_tags (
+  appointment_id TEXT NOT NULL,
+  tag_id         TEXT NOT NULL,
+  PRIMARY KEY (appointment_id, tag_id),
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id)         REFERENCES task_tags(id)    ON DELETE CASCADE
+);
+CREATE INDEX idx_appointment_tags_tag ON appointment_tags(tag_id);
+
+CREATE TABLE appointment_reminders (
+  id             TEXT PRIMARY KEY NOT NULL,
+  appointment_id TEXT NOT NULL,
+  minutes_before INTEGER NOT NULL CHECK (minutes_before >= 0),
+  UNIQUE (appointment_id, minutes_before),
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+);
+
+CREATE TABLE reminder_fired (
+  appointment_id    TEXT NOT NULL,
+  reminder_id       TEXT NOT NULL,
+  occurrence_anchor TEXT NOT NULL,
+  fired_at          TEXT NOT NULL,
+  PRIMARY KEY (appointment_id, reminder_id, occurrence_anchor),
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id)          ON DELETE CASCADE,
+  FOREIGN KEY (reminder_id)    REFERENCES appointment_reminders(id) ON DELETE CASCADE
+);
+"#;
+
 fn user_version(conn: &Connection) -> Result<i64, String> {
     conn.query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())
@@ -320,6 +411,15 @@ fn run_migrations(conn: &mut Connection) -> Result<i64, String> {
         tx.execute_batch(MIGRATE_V2_SQL)
             .map_err(|e| format!("Migration 2 fehlgeschlagen: {e}"))?;
         tx.execute_batch("PRAGMA user_version=2;")
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    if version < 3 {
+        // Nur neue Tabellen -- kein Tabellen-Neubau, kein FK-Aus/An nötig.
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATE_V3_SQL)
+            .map_err(|e| format!("Migration 3 fehlgeschlagen: {e}"))?;
+        tx.execute_batch("PRAGMA user_version=3;")
             .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
@@ -1049,10 +1149,20 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
+                // show(): das Fenster kann im Tray-Betrieb versteckt sein --
+                // ein Zweitstart soll es dann sichtbar machen, nicht nur
+                // fokussieren.
+                let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
         }));
+        // Autostart (opt-in, Einstellungen): zusammen mit close_to_tray läuft
+        // die App damit ab Anmeldung im Hintergrund -> Erinnerungen feuern.
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
     }
     // Android-Portierung (A-Core): Storage-Access-Framework-Plugin nur auf
     // Android registrieren -- braucht der echte Android-Arm der drei
@@ -1070,6 +1180,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // DB wird NICHT mehr beim Start geöffnet (Schlüssel liegt erst nach
             // dem Entsperren vor). Nur Pfad/Modus ermitteln und State anlegen.
@@ -1083,9 +1194,28 @@ pub fn run() {
             };
             app.manage(AppDbLocation(loc));
             app.manage::<DbState>(Mutex::new(None));
+            // System-Tray (Desktop): Voraussetzung für close_to_tray.
+            #[cfg(desktop)]
+            tray::setup(app)?;
             Ok(())
         })
+        .on_window_event(|_window, _event| {
+            // Desktop + aktivierte Einstellung: Fenster-Schließen versteckt ins
+            // Tray statt zu beenden (Erinnerungen laufen weiter). "Beenden"
+            // im Tray-Menü geht über app.exit() an diesem Handler vorbei.
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
+                if _window.label() == "main"
+                    && app_settings::load(_window.app_handle()).close_to_tray
+                {
+                    let _ = _window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            app_settings::app_settings_get,
+            app_settings::app_settings_set,
             file_io::export_text_file,
             file_io::export_binary_file,
             file_io::import_text_file,
@@ -1118,7 +1248,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod migration_tests {
-    use super::{run_migrations, MIGRATE_V1_SQL, SCHEMA_VERSION};
+    use super::{run_migrations, MIGRATE_V1_SQL, MIGRATE_V2_SQL, SCHEMA_VERSION};
     use rusqlite::Connection;
 
     /// v0-Basisschema (Stand v1.2.0), wie es das Frontend via schema.ts anlegt.
@@ -1268,7 +1398,9 @@ mod migration_tests {
         let v = run_migrations(&mut conn).unwrap();
 
         assert_eq!(v, SCHEMA_VERSION);
-        assert_eq!(count(&conn, "PRAGMA user_version"), 2);
+        // run_migrations läuft von v1 bis zur höchsten bekannten Version durch
+        // (nicht nur bis 2) -- SCHEMA_VERSION statt Literal, wie im v0-Test.
+        assert_eq!(count(&conn, "PRAGMA user_version"), SCHEMA_VERSION);
         // Bestandsdaten (aus seed_v0/Migration 1) bleiben unangetastet.
         assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
         assert_eq!(
@@ -1314,6 +1446,213 @@ mod migration_tests {
             count(&conn, "SELECT pause_minutes FROM entries WHERE id='e1'"),
             15
         );
+    }
+
+    // ---------- Migration 3: Terminkalender (vier neue Tabellen, additiv) ----------
+
+    /// Legt einen gültigen zeitgebundenen Einzeltermin an (Minimal-Helfer der
+    /// Termin-Tests; Varianten setzen die Spalten per UPDATE bzw. eigenem INSERT).
+    fn insert_appointment(conn: &Connection, id: &str) {
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,created_at,updated_at)
+             VALUES (?1,'Sitzung','2026-07-20','09:00','2026-07-20','11:00','t','t')",
+            [id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migriert_v2_auf_v3_termin_tabellen_additiv() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        // Simuliert eine reale Bestands-DB auf v2 (BEVOR es Migration 3 gab):
+        // exakt MIGRATE_V1_SQL + MIGRATE_V2_SQL anwenden + auf 2 stempeln --
+        // nicht run_migrations, das liefe in einem Rutsch bis zur aktuellen
+        // SCHEMA_VERSION (Muster des v1-auf-v2-Tests).
+        conn.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
+        conn.execute_batch(MIGRATE_V1_SQL).unwrap();
+        conn.execute_batch(MIGRATE_V2_SQL).unwrap();
+        conn.execute_batch("PRAGMA user_version=2; PRAGMA foreign_keys=ON;")
+            .unwrap();
+
+        let v = run_migrations(&mut conn).unwrap();
+
+        assert_eq!(v, SCHEMA_VERSION);
+        assert_eq!(count(&conn, "PRAGMA user_version"), 3);
+        // Neue Tabellen existieren und sind leer.
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointments"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointment_tags"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointment_reminders"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM reminder_fired"), 0);
+        // Bestandsdaten bleiben unangetastet.
+        assert_eq!(count(&conn, "SELECT count(*) FROM entries"), 2);
+        assert_eq!(count(&conn, "SELECT count(*) FROM task_tags"), 2);
+    }
+
+    #[test]
+    fn check_constraints_der_termin_tabelle() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+
+        // Gültig: zeitgebundener Einzeltermin.
+        insert_appointment(&conn, "t1");
+        // Gültig: ganztägig ohne Uhrzeiten, mehrtägig.
+        conn.execute(
+            "INSERT INTO appointments (id,title,is_all_day,start_date,end_date,created_at,updated_at)
+             VALUES ('t2','Seminar',1,'2026-07-21','2026-07-23','t','t')",
+            [],
+        )
+        .unwrap();
+
+        // Ganztägig MIT Uhrzeit -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,is_all_day,start_date,start_time,end_date,end_time,created_at,updated_at)
+                 VALUES ('x1','Kaputt',1,'2026-07-21','09:00','2026-07-21','10:00','t','t')",
+                [],
+            )
+            .is_err());
+        // Zeitgebunden OHNE Uhrzeiten -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,start_date,end_date,created_at,updated_at)
+                 VALUES ('x2','Kaputt','2026-07-21','2026-07-21','t','t')",
+                [],
+            )
+            .is_err());
+        // Ende vor Start -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,created_at,updated_at)
+                 VALUES ('x3','Kaputt','2026-07-22','09:00','2026-07-21','10:00','t','t')",
+                [],
+            )
+            .is_err());
+        // Override ohne recurrence_anchor -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,created_at,updated_at)
+                 VALUES ('x4','Kaputt','2026-07-22','09:00','2026-07-22','10:00','t1','t','t')",
+                [],
+            )
+            .is_err());
+        // Override, der selbst eine Serie wäre (rrule gesetzt) -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,recurrence_anchor,rrule,created_at,updated_at)
+                 VALUES ('x5','Kaputt','2026-07-22','09:00','2026-07-22','10:00','t1','2026-07-22','FREQ=DAILY','t','t')",
+                [],
+            )
+            .is_err());
+        // Negativer Erinnerungs-Vorlauf -> CHECK-Verstoß.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointment_reminders (id,appointment_id,minutes_before) VALUES ('r-neg','t1',-5)",
+                [],
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn override_eindeutigkeit_pro_serie_und_anker() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+
+        // Serie + erster Override auf den 22.07.
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,rrule,created_at,updated_at)
+             VALUES ('s1','Wöchentlich','2026-07-15','09:00','2026-07-15','10:00','FREQ=WEEKLY','t','t')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,recurrence_anchor,created_at,updated_at)
+             VALUES ('o1','Verschoben','2026-07-23','11:00','2026-07-23','12:00','s1','2026-07-22','t','t')",
+            [],
+        )
+        .unwrap();
+        // Zweiter Override auf DENSELBEN Anker -> UNIQUE-Index lehnt ab.
+        assert!(conn
+            .execute(
+                "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,recurrence_anchor,created_at,updated_at)
+                 VALUES ('o2','Doppelt','2026-07-24','11:00','2026-07-24','12:00','s1','2026-07-22','t','t')",
+                [],
+            )
+            .is_err());
+        // Anderer Anker derselben Serie bleibt erlaubt.
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,recurrence_anchor,created_at,updated_at)
+             VALUES ('o3','Ok','2026-07-30','11:00','2026-07-30','12:00','s1','2026-07-29','t','t')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cascade_kette_der_termin_tabellen() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+
+        // Master mit Override, Tag-Zuordnung, Erinnerung und Feuer-Protokoll.
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,rrule,created_at,updated_at)
+             VALUES ('m1','Serie','2026-07-15','09:00','2026-07-15','10:00','FREQ=WEEKLY','t','t')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO appointments (id,title,start_date,start_time,end_date,end_time,parent_id,recurrence_anchor,created_at,updated_at)
+             VALUES ('ov1','Override','2026-07-23','11:00','2026-07-23','12:00','m1','2026-07-22','t','t')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO appointment_tags (appointment_id,tag_id) VALUES ('m1','a1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO appointment_reminders (id,appointment_id,minutes_before) VALUES ('r1','m1',15)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reminder_fired (appointment_id,reminder_id,occurrence_anchor,fired_at)
+             VALUES ('m1','r1','2026-07-15','t')",
+            [],
+        )
+        .unwrap();
+
+        // Löschen des Masters räumt die gesamte Kette ab (Override via
+        // parent_id-FK, Tags/Reminders direkt, reminder_fired über beide FKs).
+        conn.execute("DELETE FROM appointments WHERE id='m1'", []).unwrap();
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointments"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointment_tags"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointment_reminders"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM reminder_fired"), 0);
+
+        // Kaskade in der Gegenrichtung: Löschen NUR einer Erinnerung räumt
+        // deren Feuer-Protokoll ab, lässt den Termin aber stehen.
+        insert_appointment(&conn, "t9");
+        conn.execute(
+            "INSERT INTO appointment_reminders (id,appointment_id,minutes_before) VALUES ('r9','t9',30)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reminder_fired (appointment_id,reminder_id,occurrence_anchor,fired_at)
+             VALUES ('t9','r9','2026-07-20','t')",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM appointment_reminders WHERE id='r9'", [])
+            .unwrap();
+        assert_eq!(count(&conn, "SELECT count(*) FROM reminder_fired"), 0);
+        assert_eq!(count(&conn, "SELECT count(*) FROM appointments WHERE id='t9'"), 1);
     }
 }
 

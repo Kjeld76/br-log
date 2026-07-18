@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatDateDe, monthLabel, weekRangeIso } from "./calendar";
+import { addDaysIso, formatDateDe, monthLabel, weekRangeIso } from "./calendar";
+
+describe("addDaysIso", () => {
+  it("addiert Kalendertage über Monats- und Jahresgrenzen", () => {
+    expect(addDaysIso("2026-07-31", 1)).toBe("2026-08-01");
+    expect(addDaysIso("2026-08-01", -1)).toBe("2026-07-31");
+    expect(addDaysIso("2026-12-31", 1)).toBe("2027-01-01");
+  });
+});
 
 describe("monthLabel", () => {
   it("formatiert den Monat deutsch (Finding 28: kein 'July 2026')", () => {

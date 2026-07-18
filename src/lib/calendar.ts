@@ -5,6 +5,7 @@ import {
   endOfWeek,
   eachDayOfInterval,
   format,
+  addDays,
   addMonths,
   isSameMonth,
   parseISO,
@@ -75,4 +76,13 @@ export const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
  */
 export function todayIso(): string {
   return format(new Date(), "yyyy-MM-dd");
+}
+
+/**
+ * ISO-Datum ± n Kalendertage. EINZIGE Implementierung -- die Zeile
+ * format(addDays(parseISO(iso), n)) war zuvor sechsfach im Termin-Code
+ * verstreut (Muster von todayIso, Finding 45).
+ */
+export function addDaysIso(iso: string, days: number): string {
+  return format(addDays(parseISO(iso), days), "yyyy-MM-dd");
 }

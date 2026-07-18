@@ -7,6 +7,7 @@ import eye from "../assets/icons/eye.svg";
 import fingerprint from "../assets/icons/fingerprint.svg";
 import folderOpen from "../assets/icons/folder-open.svg";
 import info from "../assets/icons/info.svg";
+import list from "../assets/icons/list.svg";
 import lock from "../assets/icons/lock.svg";
 import moreVertical from "../assets/icons/more-vertical.svg";
 import printer from "../assets/icons/printer.svg";
@@ -26,6 +27,7 @@ const ICONS = {
   fingerprint,
   "folder-open": folderOpen,
   info,
+  list,
   lock,
   "more-vertical": moreVertical,
   printer,

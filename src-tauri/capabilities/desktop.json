@@ -1,0 +1,7 @@
+{
+  "identifier": "desktop",
+  "description": "Desktop-spezifische Berechtigungen (Autostart für den Tray-Betrieb)",
+  "windows": ["main"],
+  "platforms": ["windows", "linux", "macOS"],
+  "permissions": ["autostart:default"]
+}

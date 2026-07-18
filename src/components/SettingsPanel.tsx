@@ -1,4 +1,5 @@
 import DbInfoPanel from "./DbInfoPanel";
+import ReminderSettings from "./ReminderSettings";
 import SecurityPanel from "./SecurityPanel";
 import ThemeToggle from "./ThemeToggle";
 
@@ -31,6 +32,11 @@ export default function SettingsPanel({ onLockNow, onAutoLockChanged, mobile }: 
             <ThemeToggle />
           </div>
         </div>
+      </section>
+
+      <section>
+        <h3 className={heading}>Kalender &amp; Erinnerungen</h3>
+        <ReminderSettings mobile={mobile} />
       </section>
 
       <section>

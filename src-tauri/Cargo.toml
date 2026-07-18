@@ -14,7 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# Feature "tray-icon": System-Tray für den Hintergrund-Betrieb (Erinnerungen
+# feuern bei "geschlossenem" Fenster weiter, s. tray.rs) -- Desktop-only,
+# auf Android intern wirkungslos.
+tauri = { version = "2", features = ["tray-icon"] }
 # DB-Layer: rusqlite mit gebundeltem SQLite (FTS5 fest eincompiliert) statt
 # tauri-plugin-sql/sqlx. Grund: gemeinsame Basis für portablen absoluten DB-Pfad
 # (Issue #1) UND spätere SQLCipher-Verschlüsselung (Feature "bundled-sqlcipher-…").
@@ -22,6 +25,9 @@ tauri = { version = "2", features = [] }
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Termin-Erinnerungen: System-Notifications (Desktop sofort; Android
+# zusätzlich geplante Notifications via Schedule-API, s. reminderScheduler.ts).
+tauri-plugin-notification = "2"
 # Plattform-Erkennung (Linux-Portierung): Frontend fragt darüber synchron
 # ab, ob Windows/Linux/Android läuft (src/lib/platform.ts). Rust selbst
 # braucht die Plattform aktuell nicht, das Plugin muss aber registriert sein
@@ -43,6 +49,12 @@ rand_core = { version = "0.6", features = ["getrandom"] }  # OsRng fuer DEK/Reco
 # Datei-I/O-Abstraktion (file_io.rs): export_binary_file bekommt Binärinhalte
 # (künftig PDF) Base64-kodiert vom Frontend, da Tauri-IPC-Argumente JSON sind.
 base64 = "0.22"
+
+# Autostart (opt-in in den Einstellungen): App startet mit dem System und
+# landet -- zusammen mit close_to_tray -- im Tray, damit Termin-Erinnerungen
+# praktisch immer feuern. Nur Desktop.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
 
 # Android-Portierung (A-Core): Storage-Access-Framework-Zugriff (Save-/Open-
 # Dialog, content://-URIs) für den Android-Arm von file_io.rs (mod android).

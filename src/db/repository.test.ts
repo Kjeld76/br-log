@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackupPayload, TimeEntry } from "../types";
+import type { Appointment, BackupPayload, TimeEntry } from "../types";
 
 // DB-Schicht komplett mocken (austauschbare Schicht, siehe client.ts) -> die
 // repository.ts-Logik wird gegen den Mock getestet, ohne echtes SQLite/Tauri.
@@ -184,6 +184,56 @@ describe("createTag", () => {
   });
 });
 
+describe("renameTag", () => {
+  it("zieht auch den Termin-FTS-Index nach (Tag-Label ist Teil des public_content)", async () => {
+    // Ohne den Nachzug findet die FTS-Terminsuche einen Termin nach der
+    // Umbenennung dauerhaft über den ALTEN Tag-Namen, nie über den neuen --
+    // reconcileFts repariert nur ID-Differenzen, keinen veralteten Inhalt.
+    isFtsAvailableMock.mockReturnValue(true);
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT entry_id FROM entry_tags")) return [];
+      if (sql.startsWith("SELECT appointment_id FROM appointment_tags"))
+        return [{ appointment_id: "appt-1" }];
+      if (sql.startsWith("SELECT * FROM appointments"))
+        return [
+          {
+            id: "appt-1",
+            title: "BR-Sitzung",
+            location: "",
+            description: "",
+            secret_details: "",
+            is_all_day: 0,
+            start_date: "2026-07-20",
+            start_time: "09:00",
+            end_date: "2026-07-20",
+            end_time: "11:00",
+            is_important: 0,
+            color: null,
+            rrule: null,
+            exdates: "[]",
+            parent_id: null,
+            recurrence_anchor: null,
+            ics_uid: null,
+            ics_sequence: 0,
+            created_at: "t",
+            updated_at: "t",
+          },
+        ];
+      if (sql.includes("FROM appointment_tags et JOIN task_tags t"))
+        return [{ owner_id: "appt-1", id: "tag-1", label: "Sitzung" }];
+      if (sql.startsWith("SELECT id, appointment_id, minutes_before")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    await repo.renameTag("tag-1", "BR-Sitzung NEU");
+
+    const fts = batchStatement("INSERT INTO appointments_fts");
+    expect(fts).toBeDefined();
+    expect(fts!.params[0]).toBe("appt-1");
+    expect(String(fts!.params[1])).toContain("BR-Sitzung NEU");
+  });
+});
+
 describe("listEntries – Filterbau", () => {
   it("baut WHERE/Params aus from/to/tagIds ohne Volltextsuche", async () => {
     selectMock.mockResolvedValueOnce([]); // Haupt-SELECT: keine Treffer -> hydrateEntries kurzgeschlossen
@@ -247,7 +297,7 @@ describe("listEntries – Filterbau", () => {
   it("schränkt bei Volltextsuche mit Treffern auf e.id IN (...) ein", async () => {
     isFtsAvailableMock.mockReturnValue(true);
     selectMock
-      .mockResolvedValueOnce([{ entry_id: "entry-1" }]) // public_content-Treffer
+      .mockResolvedValueOnce([{ id: "entry-1" }]) // public_content-Treffer (searchHitsFor aliast AS id)
       .mockResolvedValueOnce([]) // secret_content: kein Treffer
       .mockResolvedValueOnce([]); // Haupt-SELECT (Rückgabe-Inhalt hier irrelevant)
 
@@ -530,7 +580,8 @@ describe("parseBackup", () => {
   });
 
   it("wirft bei einer unbekannten/zukünftigen schemaVersion", () => {
-    const raw = JSON.stringify({ schemaVersion: 2, entries: [] });
+    // Version 3 ist die erste UNBEKANNTE (2 = aktueller Stand mit Terminen).
+    const raw = JSON.stringify({ schemaVersion: 3, entries: [] });
     expect(() => repo.parseBackup(raw)).toThrow("Schema-Version");
   });
 
@@ -728,5 +779,540 @@ describe("getLastEntryDate", () => {
   it("liefert null ohne Einträge (MAX() auf leerer Tabelle -> NULL)", async () => {
     selectMock.mockResolvedValueOnce([{ maxDate: null }]);
     await expect(repo.getLastEntryDate()).resolves.toBeNull();
+  });
+});
+
+// ---------- Termine ----------
+
+function baseAppointment(overrides: Partial<Appointment> = {}): Appointment {
+  return {
+    id: "appt-1",
+    title: "BR-Sitzung",
+    location: "Raum 1",
+    description: "Tagesordnung",
+    secretDetails: "",
+    isAllDay: false,
+    startDate: "2026-07-20",
+    startTime: "09:00",
+    endDate: "2026-07-20",
+    endTime: "11:00",
+    isImportant: false,
+    color: null,
+    rrule: null,
+    exdates: [],
+    parentId: null,
+    recurrenceAnchor: null,
+    icsUid: null,
+    icsSequence: 0,
+    tagIds: [],
+    reminders: [],
+    createdAt: "2026-07-01T08:00:00.000Z",
+    updatedAt: "2026-07-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("saveAppointment", () => {
+  it("fügt einen neuen Termin samt Schlagwörtern und Erinnerungen atomar ein", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments")) return []; // neu
+      if (sql.startsWith("SELECT id, label FROM task_tags"))
+        return [{ id: "tag-1", label: "BR-Sitzung" }];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+    const appt = baseAppointment({
+      tagIds: ["tag-1", "tag-verwaist"],
+      reminders: [{ id: "rem-1", minutesBefore: 15 }],
+    });
+
+    await repo.saveAppointment(appt);
+
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const insert = batchStatement("INSERT INTO appointments");
+    expect(insert).toBeDefined();
+    // exdates werden als JSON-String geschrieben, updated_at ist der letzte Parameter.
+    expect(insert!.params).toContain("[]");
+    // Verwaiste Tag-Referenz wird gefiltert (FK-Schutz, wie bei Einträgen).
+    const tagInsert = batchStatement("INSERT OR IGNORE INTO appointment_tags");
+    expect(tagInsert!.params).toEqual([appt.id, "tag-1"]);
+    const remInsert = batchStatement(
+      "INSERT OR IGNORE INTO appointment_reminders"
+    );
+    expect(remInsert!.params).toEqual([("rem-1"), appt.id, 15].flat());
+  });
+
+  it("schreibt Erinnerungen DIFF-basiert: unveränderte bleiben unangetastet (kein Doppelfeuer-Risiko)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments"))
+        return [{ id: "appt-1" }]; // existiert
+      if (sql.startsWith("SELECT id, minutes_before FROM appointment_reminders"))
+        return [
+          { id: "rem-keep", minutes_before: 15 },
+          { id: "rem-change", minutes_before: 30 },
+          { id: "rem-drop", minutes_before: 60 },
+        ];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+    const appt = baseAppointment({
+      reminders: [
+        { id: "rem-keep", minutesBefore: 15 }, // unverändert
+        { id: "rem-change", minutesBefore: 45 }, // Vorlauf geändert
+        { id: "rem-new", minutesBefore: 5 }, // neu
+        // rem-drop fehlt -> wird gelöscht
+      ],
+    });
+
+    await repo.saveAppointment(appt);
+
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    // Kein pauschales DELETE aller Erinnerungen des Termins -- das würde via
+    // ON DELETE CASCADE das reminder_fired-Protokoll mitreißen (Risiko 2).
+    expect(
+      statements.some((s) =>
+        s.sql.startsWith("DELETE FROM appointment_reminders WHERE appointment_id")
+      )
+    ).toBe(false);
+    const deletes = statements.filter((s) =>
+      s.sql.startsWith("DELETE FROM appointment_reminders WHERE id")
+    );
+    expect(deletes.map((s) => s.params[0])).toEqual(["rem-drop"]);
+    const updates = statements.filter((s) =>
+      s.sql.startsWith("UPDATE appointment_reminders")
+    );
+    expect(updates.map((s) => s.params)).toEqual([[45, "rem-change"]]);
+    const inserts = statements.filter((s) =>
+      s.sql.startsWith("INSERT OR IGNORE INTO appointment_reminders")
+    );
+    expect(inserts.map((s) => s.params[0])).toEqual(["rem-new"]);
+  });
+
+  it("schreibt für Overrides weder Schlagwörter noch Erinnerungen (erben vom Master)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+    const override = baseAppointment({
+      id: "ov-1",
+      parentId: "appt-master",
+      recurrenceAnchor: "2026-07-22",
+      tagIds: [],
+      reminders: [],
+    });
+
+    await repo.saveAppointment(override);
+
+    const statements = batchMock.mock.calls[0][0] as { sql: string }[];
+    expect(statements.some((s) => s.sql.includes("appointment_tags"))).toBe(false);
+    expect(statements.some((s) => s.sql.includes("appointment_reminders"))).toBe(
+      false
+    );
+    expect(statements.some((s) => s.sql.startsWith("INSERT INTO appointments"))).toBe(
+      true
+    );
+  });
+});
+
+describe("splitSeries", () => {
+  it("migriert das Feuer-Protokoll ab dem Anker auf die neue Serie (kein Doppelfeuern)", async () => {
+    // Der Split vergibt neue Termin- UND Reminder-IDs; ohne Migration greift
+    // der firedKey (appointmentId|reminderId|anchor) nicht mehr und bereits
+    // gezeigte Erinnerungen künftiger Instanzen feuern erneut.
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      if (sql.startsWith("SELECT id, minutes_before FROM appointment_reminders"))
+        return [{ id: "rem-old", minutes_before: 10080 }];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    await repo.splitSeries({
+      master: baseAppointment({
+        id: "master-1",
+        rrule: "FREQ=WEEKLY;UNTIL=20260726",
+        reminders: [{ id: "rem-old", minutesBefore: 10080 }],
+      }),
+      newSeries: baseAppointment({
+        id: "master-2",
+        rrule: "FREQ=WEEKLY",
+        startDate: "2026-07-27",
+        endDate: "2026-07-27",
+        reminders: [{ id: "rem-new", minutesBefore: 10080 }],
+      }),
+      anchor: "2026-07-27",
+    });
+
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    const mig = statements.find((s) => s.sql.includes("UPDATE reminder_fired"));
+    expect(mig).toBeDefined();
+    expect(mig!.params).toEqual([
+      "master-2",
+      "rem-new",
+      "master-1",
+      "rem-old",
+      "2026-07-27",
+    ]);
+    // Migration muss NACH dem Anlegen der neuen Erinnerungs-Zeilen laufen
+    // (FK reminder_id -> appointment_reminders).
+    const migIndex = statements.indexOf(mig!);
+    const newRemIndex = statements.findIndex(
+      (s) =>
+        s.sql.includes("INTO appointment_reminders") &&
+        s.params.includes("rem-new")
+    );
+    expect(newRemIndex).toBeGreaterThanOrEqual(0);
+    expect(migIndex).toBeGreaterThan(newRemIndex);
+  });
+});
+
+describe("listAppointmentsRange", () => {
+  it("lädt secret_details in KEINEM Query (strukturelle Vertraulichkeits-Trennung)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM appointments a")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    await repo.listAppointmentsRange("2026-07-01", "2026-07-31");
+
+    expect(selectMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [sql] of selectMock.mock.calls) {
+      expect(sql).not.toContain("secret_details");
+    }
+  });
+
+  it("lädt Einzeltermine überlappend, Serien-Master bis zum Fensterende und deren Overrides", async () => {
+    const queries: string[] = [];
+    selectMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      queries.push(sql);
+      if (sql.includes("a.rrule IS NULL AND a.parent_id IS NULL")) {
+        // Überlappungsbedingung (start <= to UND end >= from) plus dieselben
+        // Fenster-Params für die Override-EXISTS-Bedingung.
+        expect(params).toEqual([
+          "2026-07-31",
+          "2026-07-01",
+          "2026-07-31",
+          "2026-07-01",
+        ]);
+        return [];
+      }
+      if (sql.includes("a.rrule IS NOT NULL")) {
+        expect(params).toEqual(["2026-07-31", "2026-07-31", "2026-07-01"]);
+        return [
+          {
+            id: "master-1",
+            title: "Serie",
+            location: "",
+            description: "",
+            is_all_day: 0,
+            start_date: "2026-01-07",
+            start_time: "09:00",
+            end_date: "2026-01-07",
+            end_time: "10:00",
+            is_important: 0,
+            color: null,
+            rrule: "FREQ=WEEKLY",
+            exdates: "[]",
+            parent_id: null,
+            recurrence_anchor: null,
+            ics_uid: null,
+            ics_sequence: 0,
+            created_at: "t",
+            updated_at: "t",
+          },
+        ];
+      }
+      if (sql.includes("a.parent_id IN")) return [];
+      if (sql.includes("FROM appointment_tags et JOIN task_tags t")) return [];
+      if (sql.startsWith("SELECT id, appointment_id, minutes_before")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const items = await repo.listAppointmentsRange("2026-07-01", "2026-07-31");
+
+    expect(items).toHaveLength(1);
+    expect(items[0].rrule).toBe("FREQ=WEEKLY");
+    expect(items[0].exdates).toEqual([]);
+    // Overrides der geladenen Master wurden abgefragt.
+    expect(queries.some((q) => q.includes("a.parent_id IN"))).toBe(true);
+  });
+
+  it("findet Master über vorgezogene Overrides auch in Fenstern vor dem Serien-/Terminstart", async () => {
+    // Eine Instanz vom 05.08. wurde per "nur dieser Termin" auf den 15.07.
+    // verlegt (Serie startet 01.08.): Die Master-Auswahl darf nicht allein an
+    // den Master-Daten hängen, sonst ist der Override im Juli nirgends sichtbar.
+    let masterSql = "";
+    let masterParams: unknown[] = [];
+    let singleSql = "";
+    let singleParams: unknown[] = [];
+    selectMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("a.rrule IS NOT NULL")) {
+        masterSql = sql;
+        masterParams = params ?? [];
+        return [];
+      }
+      if (sql.includes("a.rrule IS NULL AND a.parent_id IS NULL")) {
+        singleSql = sql;
+        singleParams = params ?? [];
+        return [];
+      }
+      return [];
+    });
+
+    await repo.listAppointmentsRange("2026-07-01", "2026-07-31");
+
+    expect(masterSql).toMatch(/EXISTS/);
+    expect(masterParams).toEqual(["2026-07-31", "2026-07-31", "2026-07-01"]);
+    // Auch Master OHNE Serienregel können Override-Kinder haben (Serie auf
+    // "Nie" gestellt) -- dieselbe Existenz-Bedingung.
+    expect(singleSql).toMatch(/EXISTS/);
+    expect(singleParams).toEqual([
+      "2026-07-31",
+      "2026-07-01",
+      "2026-07-31",
+      "2026-07-01",
+    ]);
+  });
+});
+
+describe("Backup mit Terminen (schemaVersion 2)", () => {
+  it("applyImport schreibt Termine mit Original-updated_at und übernimmt nur gültige Feuer-Markierungen", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return [];
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      if (sql.startsWith("SELECT id, appointment_id, minutes_before")) return [];
+      if (sql.startsWith("SELECT id, updated_at FROM appointments")) return [];
+      if (sql.startsWith("SELECT id, parent_id, recurrence_anchor, updated_at"))
+        return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const importedUpdatedAt = "2026-07-02T09:00:00.000Z";
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: "2026-07-18T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [],
+      appointments: [
+        baseAppointment({
+          updatedAt: importedUpdatedAt,
+          reminders: [{ id: "rem-1", minutesBefore: 15 }],
+        }),
+      ],
+      reminderFired: [
+        {
+          appointmentId: "appt-1",
+          reminderId: "rem-1",
+          occurrenceAnchor: "2026-07-20",
+          firedAt: "2026-07-20T08:45:00.000Z",
+        },
+        {
+          // Verwaiste Markierung (unbekannte Erinnerung) -> still übersprungen,
+          // sonst bricht die FK-Prüfung die gesamte Import-Transaktion ab.
+          appointmentId: "appt-1",
+          reminderId: "rem-ghost",
+          occurrenceAnchor: "2026-07-20",
+          firedAt: "2026-07-20T08:45:00.000Z",
+        },
+      ],
+    };
+
+    await repo.applyImport(payload);
+
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    const insert = statements.find((s) =>
+      s.sql.startsWith("INSERT INTO appointments")
+    );
+    expect(insert).toBeDefined();
+    // Letzter Parameter ist updated_at -- Original erhalten (Finding 10).
+    expect(insert!.params[insert!.params.length - 1]).toBe(importedUpdatedAt);
+    const firedInserts = statements.filter((s) =>
+      s.sql.includes("INTO reminder_fired")
+    );
+    expect(firedInserts).toHaveLength(1);
+    expect(firedInserts[0].params[1]).toBe("rem-1");
+  });
+
+  it("löst Override-Kollisionen am selben Anker per Last-Writer-Wins statt UNIQUE-Crash", async () => {
+    // Zwei Geräte haben dieselbe Instanz unabhängig bearbeitet: lokal ov-local,
+    // im Payload ov-remote -- beide (parent_id=master-1, anchor=2026-07-27).
+    // Ein plain INSERT würde am UNIQUE-Index scheitern und den ganzen Import abbrechen.
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return [];
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      if (sql.startsWith("SELECT id, appointment_id, minutes_before")) return [];
+      if (sql.startsWith("SELECT id, updated_at FROM appointments"))
+        return [
+          { id: "master-1", updated_at: "2026-07-01T00:00:00.000Z" },
+          { id: "ov-local", updated_at: "2026-07-01T00:00:00.000Z" },
+        ];
+      if (sql.startsWith("SELECT id, parent_id, recurrence_anchor, updated_at"))
+        return [
+          {
+            id: "ov-local",
+            parent_id: "master-1",
+            recurrence_anchor: "2026-07-27",
+            updated_at: "2026-07-01T00:00:00.000Z",
+          },
+        ];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: "2026-07-18T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [],
+      appointments: [
+        baseAppointment({
+          id: "ov-remote",
+          parentId: "master-1",
+          recurrenceAnchor: "2026-07-27",
+          updatedAt: "2026-07-05T00:00:00.000Z", // neuer als ov-local -> gewinnt
+        }),
+      ],
+    };
+    await repo.applyImport(payload);
+
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    expect(
+      statements.some(
+        (s) =>
+          s.sql.startsWith("DELETE FROM appointments WHERE id = ?") &&
+          s.params[0] === "ov-local"
+      )
+    ).toBe(true);
+    expect(
+      statements.some(
+        (s) =>
+          s.sql.startsWith("INSERT INTO appointments") &&
+          s.params[0] === "ov-remote"
+      )
+    ).toBe(true);
+  });
+
+  it("überspringt einen Payload-Override, wenn der lokale am selben Anker neuer ist", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id, updated_at FROM entries")) return [];
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      if (sql.startsWith("SELECT id, appointment_id, minutes_before")) return [];
+      if (sql.startsWith("SELECT id, updated_at FROM appointments"))
+        return [
+          { id: "master-1", updated_at: "2026-07-01T00:00:00.000Z" },
+          { id: "ov-local", updated_at: "2026-07-10T00:00:00.000Z" },
+        ];
+      if (sql.startsWith("SELECT id, parent_id, recurrence_anchor, updated_at"))
+        return [
+          {
+            id: "ov-local",
+            parent_id: "master-1",
+            recurrence_anchor: "2026-07-27",
+            updated_at: "2026-07-10T00:00:00.000Z",
+          },
+        ];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const payload: BackupPayload = {
+      schemaVersion: 2,
+      exportedAt: "2026-07-18T00:00:00.000Z",
+      app: "BR-Log",
+      tags: [],
+      entries: [],
+      appointments: [
+        baseAppointment({
+          id: "ov-remote",
+          parentId: "master-1",
+          recurrenceAnchor: "2026-07-27",
+          updatedAt: "2026-07-05T00:00:00.000Z", // älter als ov-local -> verliert
+        }),
+      ],
+    };
+    await repo.applyImport(payload);
+
+    const statements = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    expect(
+      statements.some((s) => s.sql.startsWith("INSERT INTO appointments"))
+    ).toBe(false);
+    expect(
+      statements.some((s) =>
+        s.sql.startsWith("DELETE FROM appointments WHERE id = ?")
+      )
+    ).toBe(false);
+  });
+
+  it("parseBackup lehnt kaputte Termine mit konkreter Meldung ab", () => {
+    const allDayMitUhrzeit = JSON.stringify({
+      schemaVersion: 2,
+      entries: [],
+      appointments: [
+        {
+          id: "a1",
+          startDate: "2026-07-20",
+          endDate: "2026-07-20",
+          isAllDay: true,
+          startTime: "09:00",
+        },
+      ],
+    });
+    expect(() => repo.parseBackup(allDayMitUhrzeit)).toThrow(
+      "darf keine Uhrzeiten"
+    );
+
+    // Invertierte Zeiten am selben Tag: kein DB-CHECK prüft die Reihenfolge --
+    // die Validierung muss die negative Dauer VOR dem Schreiben ablehnen.
+    const zeitInvertiert = JSON.stringify({
+      schemaVersion: 2,
+      entries: [],
+      appointments: [
+        {
+          id: "a3",
+          startDate: "2026-07-20",
+          startTime: "14:00",
+          endDate: "2026-07-20",
+          endTime: "13:00",
+        },
+      ],
+    });
+    expect(() => repo.parseBackup(zeitInvertiert)).toThrow(
+      "endet vor seinem Beginn"
+    );
+
+    const overrideOhneAnker = JSON.stringify({
+      schemaVersion: 2,
+      entries: [],
+      appointments: [
+        {
+          id: "a2",
+          startDate: "2026-07-20",
+          startTime: "09:00",
+          endDate: "2026-07-20",
+          endTime: "10:00",
+          parentId: "master-1",
+        },
+      ],
+    });
+    expect(() => repo.parseBackup(overrideOhneAnker)).toThrow("Instanz-Anker");
+  });
+
+  it("parseBackup akzeptiert v1-Backups ohne appointments unverändert", () => {
+    const raw = JSON.stringify({ schemaVersion: 1, entries: [] });
+    const result = repo.parseBackup(raw);
+    expect(result.appointments).toBeUndefined();
   });
 });

@@ -3,6 +3,7 @@ import { addDays, format, parseISO } from "date-fns";
 import type { TimeEntry, TaskTag } from "../types";
 import { saveEntry, listEntries } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
+import { useSaveShortcuts } from "../lib/useSaveShortcuts";
 import {
   computeDuration,
   durationInputToMinutes,
@@ -11,7 +12,12 @@ import {
   rangesOverlap,
 } from "../lib/time";
 import { toggleId } from "../lib/collections";
-import { inputCls, secondaryBtnCls } from "../lib/ui";
+import {
+  formBlockCls,
+  inputCls,
+  labelCls,
+  secondaryBtnCls,
+} from "../lib/ui";
 import ObjectionEditor from "./ObjectionEditor";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -322,26 +328,9 @@ export default function EntryForm({
 
   // Tastaturkürzel: Strg/Cmd+Enter speichert, Escape bricht ab (Dirty-Check
   // übernimmt der Aufrufer über onCancel, siehe App.tsx/QuickEntryView).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        if (!saving) void handleSave();
-      } else if (e.key === "Escape" && onCancel) {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, mode, durationText, saving, onCancel]);
+  useSaveShortcuts({ save: () => void handleSave(), cancel: onCancel, saving });
 
   const field = inputCls + " w-full";
-  const labelCls =
-    "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
-  const blockCls =
-    "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
 
   return (
     <div className="space-y-4">
@@ -359,7 +348,7 @@ export default function EntryForm({
       )}
 
       {/* Block 1: Zeit & Art */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Zeit &amp; Art
@@ -654,7 +643,7 @@ export default function EntryForm({
       </div>
 
       {/* Block 3: Widersprüche der GL (einklappbar) */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <button
           type="button"
           className="flex w-full items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100"

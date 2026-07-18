@@ -5,7 +5,7 @@ import { minutesToHhmm } from "../lib/time";
 import { formatDateDe } from "../lib/calendar";
 import { toUserMessage } from "../lib/errors";
 import { toggleId } from "../lib/collections";
-import { inputCls } from "../lib/ui";
+import { errorBoxCls, inputCls } from "../lib/ui";
 import TagFilterChips from "./TagFilterChips";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -156,7 +156,7 @@ export default function EntryList({
       </div>
 
       {error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <p className={errorBoxCls}>
           {error}
         </p>
       )}

@@ -5,8 +5,21 @@ import {
   listEntriesFull,
   getAllForBackup,
   parseBackup,
+  listAllAppointmentsFull,
+  listAppointmentsByIcsUid,
+  listAppointmentMastersByIds,
+  listOverrideAnchors,
+  applyIcsAppointments,
+  listTags,
   type PeriodFilter,
 } from "../db/repository";
+import {
+  buildIcs,
+  parseIcs,
+  planIcsImport,
+  ownUidLocalId,
+  type IcsImportPlan,
+} from "../lib/ics";
 import { minutesToHhmm, formatDecimalHoursDe } from "../lib/time";
 import { formatObjectionMeta } from "../lib/objections";
 import { todayIso } from "../lib/calendar";
@@ -151,4 +164,75 @@ export async function pickAndReadBackup(): Promise<BackupPayload | null> {
   );
   if (!picked) return null;
   return parseBackup(picked.contents);
+}
+
+// ---------- ICS (Terminkalender) ----------
+
+/**
+ * ICS-Export aller Termine. Vertrauliche Notizen NUR bei explizitem
+ * includeConfidential (Standard: außen vor, siehe lib/ics.ts).
+ */
+export async function exportIcs(
+  includeConfidential = false
+): Promise<string | null> {
+  const items = await listAllAppointmentsFull();
+  const text = buildIcs(items, { includeConfidential });
+  const name = includeConfidential
+    ? `BR-Log_Termine_VERTRAULICH_${todayIso()}.ics`
+    : `BR-Log_Termine_${todayIso()}.ics`;
+  return saveText(name, text, "ics", "iCalendar");
+}
+
+export type { IcsImportPlan } from "../lib/ics";
+
+/**
+ * Öffnet eine ICS-Datei, parst sie (lib/ics.ts) und gleicht sie über
+ * UID+SEQUENCE mit dem Bestand ab (planIcsImport). CATEGORIES werden
+ * case-insensitiv auf vorhandene Schlagwörter gemappt (unbekannte bleiben
+ * unberücksichtigt -- bewusst keine automatische Tag-Anlage aus Fremddateien).
+ */
+export async function analyzeIcsFile(): Promise<IcsImportPlan | null> {
+  const picked = await invoke<{ name: string; contents: string } | null>(
+    "import_text_file",
+    { filterName: "iCalendar", extension: "ics" }
+  );
+  if (!picked) return null;
+  const { items, warnings } = parseIcs(picked.contents);
+
+  const tags = await listTags(true);
+  const tagIdByLabel = new Map(tags.map((t) => [t.label.toLowerCase(), t.id]));
+  for (const it of items) {
+    it.appointment.tagIds = it.categories
+      .map((c) => tagIdByLabel.get(c.toLowerCase()))
+      .filter((id): id is string => !!id);
+  }
+
+  const masterUids = items
+    .filter((it) => it.appointment.parentId === null && it.appointment.icsUid)
+    .map((it) => it.appointment.icsUid!);
+  const localByUid = await listAppointmentsByIcsUid(masterUids);
+  // Reimport eigener Exporte: die UID trägt die lokale Termin-ID.
+  const ownIds = masterUids
+    .map(ownUidLocalId)
+    .filter((id): id is string => id !== null);
+  const localById = await listAppointmentMastersByIds(ownIds);
+  const localMasterIds = [
+    ...new Set(
+      [...localByUid.values(), ...localById.values()].map((l) => l.id)
+    ),
+  ];
+  const localOverrideAnchors = await listOverrideAnchors(localMasterIds);
+
+  return planIcsImport({
+    items,
+    localByUid,
+    localById,
+    localOverrideAnchors,
+    warnings,
+  });
+}
+
+/** Wendet den bestätigten ICS-Import an (atomar, repository.applyIcsAppointments). */
+export async function applyIcsPlan(plan: IcsImportPlan): Promise<void> {
+  await applyIcsAppointments(plan.toSave, plan.replaceIds);
 }

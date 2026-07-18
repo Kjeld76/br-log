@@ -9,7 +9,7 @@ import {
 } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
-import { inputCls } from "../lib/ui";
+import { errorBoxCls, inputCls } from "../lib/ui";
 
 interface Props {
   reloadKey: number;
@@ -114,7 +114,7 @@ export default function StatsView({ reloadKey }: Props) {
         <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
       )}
       {error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <p className={errorBoxCls}>
           {error}
         </p>
       )}
