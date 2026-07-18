@@ -10,6 +10,7 @@ export default {
         background: "var(--color-background)",
         surface: "var(--color-surface)",
         "surface-2": "var(--color-surface-2)",
+        "surface-input": "var(--color-surface-input)",
         overlay: "var(--color-overlay)",
         primary: "var(--color-primary)",
         "primary-hover": "var(--color-primary-hover)",

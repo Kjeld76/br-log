@@ -16,7 +16,7 @@
 
 /** Standard-Text-/Textarea-Eingabefeld (Formulare, Filter, Editoren). */
 export const inputCls =
-  "rounded border border-border-strong bg-surface p-2 text-sm text-primary-ink placeholder:text-disabled-ink";
+  "rounded border border-border-strong bg-surface-input p-2 text-sm text-primary-ink placeholder:text-disabled-ink";
 
 /** Sekundär-Button, große Variante (Modal-/Formular-Aktionsleisten). */
 export const secondaryBtnCls =
