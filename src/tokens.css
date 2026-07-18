@@ -211,6 +211,16 @@
   --color-warning-banner-hover: rgba(120, 53, 15, .4);
   --color-danger-ink: #f87171;
   --color-surface-inset: #1e293b;
+  /* --- Ergänzungs-Tokens (Fix-Runde, letzte Task-6-Restfälle) --- */
+  --color-surface-inverse: #334155;
+  --color-surface-dim: rgba(15, 23, 42, .5);
+  --color-selected-surface: rgba(12, 74, 110, .4);
+  --color-info-ink: #bae6fd;
+  --color-warning-strong-ink: #fbbf24;
+  --color-login-input: #0f172a;
+  --color-primary-outline-border: #38bdf8;
+  --color-primary-outline-ink: #7dd3fc;
+  --color-primary-outline-hover: rgba(12, 74, 110, .2);
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;
