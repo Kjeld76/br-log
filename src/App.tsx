@@ -190,12 +190,24 @@ export default function App() {
   // Android: Schlüssel der system-geplanten Notifications (Rolling Window).
   // Der In-App-Loop überspringt sie (Doppel-Zustellungs-Schutz), und beim
   // Start gelten vergangene system-geplante als zugestellt (kein Banner).
-  const scheduledKeysRef = useRef<Set<string>>(
-    new Set(loadScheduledRefs().map((r) => r.key))
+  // Lazy über useState initialisiert: ein useRef-Argument würde bei JEDEM
+  // Render von App localStorage lesen, parsen und das Set neu bauen.
+  const [initialScheduledKeys] = useState(
+    () => new Set(loadScheduledRefs().map((r) => r.key))
   );
+  const scheduledKeysRef = useRef<Set<string>>(initialScheduledKeys);
   const [missedReminders, setMissedReminders] = useState<ReminderCandidate[]>([]);
 
   const bump = () => setReloadKey((k) => k + 1);
+  // Eigener Zähler NUR für Termin-Mutationen (plus Backup-/ICS-Import): der
+  // Erinnerungs-Snapshot inkl. Android-Neuplanung hängt daran -- am globalen
+  // reloadKey würde jedes Speichern eines ZEITEINTRAGS (der häufigste Vorgang
+  // der App) den kompletten Termin-Reload samt RRULE-Expansion auslösen.
+  const [apptReloadKey, setApptReloadKey] = useState(0);
+  const bumpAppointments = () => {
+    setApptReloadKey((k) => k + 1);
+    bump();
+  };
   // Finding 22: loadTags/loadAllTags wurden an mehreren Stellen ohne catch
   // aufgerufen (u. a. aus DataView.onChanged nach Import/Tag-Änderung) --
   // der catch sitzt hier zentral, damit jeder Aufrufer automatisch geschützt ist.
@@ -540,7 +552,7 @@ export default function App() {
     // mobile ist konstant (lazy useState), planAndroidNotifications arbeitet
     // nur auf Refs -- bewusst nicht in den Deps (Muster der übrigen Effekte).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, reloadKey, snapshotRefresh]);
+  }, [ready, apptReloadKey, snapshotRefresh]);
 
   // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
   // dem In-Memory-Snapshot). Fällige feuern genau einmal (firedKeys sofort).
@@ -660,23 +672,29 @@ export default function App() {
   // (Overrides erben sie, ihre eigene Zeile trägt keine).
   const openOccurrence = async (occ: Occurrence) => {
     try {
-      let full = await getAppointment(occ.appointment.id);
-      if (!full) {
+      // Master parallel zum Override laden -- die parentId ist schon vor dem
+      // ersten Query bekannt, sequentiell zahlte jedes Öffnen einer
+      // bearbeiteten Instanz zwei hintereinander gereihte Roundtrips.
+      const [row, master] = await Promise.all([
+        getAppointment(occ.appointment.id),
+        occ.appointment.parentId
+          ? getAppointment(occ.appointment.parentId)
+          : Promise.resolve(null),
+      ]);
+      if (!row) {
         showToast("Termin nicht gefunden");
-        bump();
+        bumpAppointments();
         return;
       }
-      if (full.parentId) {
-        const master = await getAppointment(full.parentId);
-        if (master) {
-          full = {
-            ...full,
-            tagIds: master.tagIds,
-            tagLabels: master.tagLabels,
-            reminders: master.reminders,
-          };
-        }
-      }
+      const full =
+        row.parentId && master
+          ? {
+              ...row,
+              tagIds: master.tagIds,
+              tagLabels: master.tagLabels,
+              reminders: master.reminders,
+            }
+          : row;
       setModal({
         type: "apptDetail",
         appointment: full,
@@ -695,7 +713,7 @@ export default function App() {
   const handleApptSaved = () => {
     setModal(null);
     setFormDirty(false);
-    bump();
+    bumpAppointments();
     showToast("Termin gespeichert");
   };
   const editApptFromDetail = async (appt: AppointmentFullItem) => {
@@ -751,7 +769,7 @@ export default function App() {
       const master = await getAppointment(masterId);
       if (!master) {
         showToast("Termin nicht gefunden");
-        bump();
+        bumpAppointments();
         return;
       }
       // "Diesen und alle folgenden" auf der ERSTEN Instanz umfasst die ganze
@@ -798,17 +816,17 @@ export default function App() {
         } else if (scope === "single") {
           await deleteOccurrence(masterId, anchor);
           setModal(null);
-          bump();
+          bumpAppointments();
           showToast("Termin gelöscht");
         } else if (coversWholeSeries) {
           await deleteAppointment(masterId);
           setModal(null);
-          bump();
+          bumpAppointments();
           showToast("Serie gelöscht");
         } else {
           await truncateSeries({ master: truncatedMaster(master, anchor), anchor });
           setModal(null);
-          bump();
+          bumpAppointments();
           showToast("Termin und Folgetermine gelöscht");
         }
       }
@@ -820,7 +838,7 @@ export default function App() {
     try {
       await deleteAppointment(id);
       setModal(null);
-      bump();
+      bumpAppointments();
       showToast("Termin gelöscht");
     } catch (e) {
       showToast(toUserMessage(e));
@@ -1150,7 +1168,9 @@ export default function App() {
               onChanged={() => {
                 loadTags();
                 loadAllTags();
-                bump();
+                // Backup-/ICS-Import läuft über diesen Handler und kann
+                // Termine verändern -- Termin-Snapshot mit aktualisieren.
+                bumpAppointments();
               }}
             />
           )}
