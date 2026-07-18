@@ -180,9 +180,9 @@ export default function LockScreen({
   const locked = remaining > 0;
 
   const input =
-    "w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
+    "w-full rounded border border-border-strong bg-white px-3 py-2 text-sm text-primary-ink outline-none focus:border-sky-500 dark:bg-slate-900";
   const primaryBtn =
-    "w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50";
+    "w-full rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50";
 
   // Logo dekorativ (alt=""), der Produktname steht als h1 "BR-Log" im
   // jeweiligen Karteninhalt -- Screenreader lesen ihn also weiterhin genau
@@ -192,8 +192,8 @@ export default function LockScreen({
     <div
       className={
         mobile
-          ? "flex h-full flex-col items-center justify-center bg-slate-50 p-4 dark:bg-slate-900"
-          : "flex h-full items-center justify-center bg-slate-50 p-4 dark:bg-slate-900"
+          ? "flex h-full flex-col items-center justify-center bg-background p-4"
+          : "flex h-full items-center justify-center bg-background p-4"
       }
     >
       {mobile && (
@@ -201,7 +201,7 @@ export default function LockScreen({
           <img src={logo} alt="" aria-hidden="true" className="h-10 w-auto" />
         </span>
       )}
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+      <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 shadow-sm">
         {children}
       </div>
     </div>
@@ -222,11 +222,11 @@ export default function LockScreen({
   if (startMode === "error") {
     return shell(
       <div className="space-y-2 text-center">
-        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
+        <h1 className="text-lg font-bold text-primary-ink">BR-Log</h1>
         <p className="font-medium text-red-600 dark:text-red-400">
           Start nicht möglich
         </p>
-        <p className="break-all text-sm text-slate-600 dark:text-slate-300">
+        <p className="break-all text-sm text-secondary-ink">
           {startMessage || "Die Schlüsseldatei konnte nicht gelesen werden."}
         </p>
       </div>
@@ -243,12 +243,12 @@ export default function LockScreen({
     return shell(
       <div className="space-y-3 text-left">
         <div className="text-center">
-          <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
+          <h1 className="text-lg font-bold text-primary-ink">BR-Log</h1>
           <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
             Schlüsseldatei fehlt
           </p>
         </div>
-        <p className="break-all text-sm text-slate-600 dark:text-slate-300">
+        <p className="break-all text-sm text-secondary-ink">
           {startMessage ||
             "Es wurde eine verschlüsselte Datenbank gefunden, aber die zugehörige Schlüsseldatei (keyfile.json) fehlt."}
         </p>
@@ -259,7 +259,7 @@ export default function LockScreen({
         >
           Erneut prüfen
         </button>
-        <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-center text-xs text-secondary-ink">
           Nachdem die Schlüsseldatei zurückgelegt wurde, hier klicken oder die
           App neu starten.
         </p>
@@ -332,12 +332,12 @@ export default function LockScreen({
   return shell(
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="text-center">
-        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">BR-Log</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+        <h1 className="text-lg font-bold text-primary-ink">BR-Log</h1>
+        <p className="mt-1 text-sm text-secondary-ink">{subtitle}</p>
       </div>
 
       {!isUnlock && (
-        <p className="rounded bg-sky-50 p-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">
+        <p className="rounded bg-info-surface p-2 text-xs text-sky-800 dark:text-sky-200">
           {isMigrate
             ? "Die vorhandenen Daten werden jetzt mit SQLCipher (AES-256) verschlüsselt. Eine unverschlüsselte Sicherungskopie wird angelegt; sie kann anschließend über das Menü unter Einstellungen → Datenbank gelöscht werden."
             : "Die Datenbank wird mit SQLCipher (AES-256) verschlüsselt. Ohne Passwort bzw. Wiederherstellungs-Code sind die Daten nicht lesbar."}
@@ -357,7 +357,7 @@ export default function LockScreen({
             onClick={() => void runBioUnlock()}
             disabled={bioBusy}
             aria-label="Mit Fingerabdruck entsperren"
-            className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded border border-sky-600 px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400 dark:text-sky-300 dark:hover:bg-sky-900/20"
+            className="flex min-h-touch w-full items-center justify-center gap-2 rounded border border-sky-600 px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400 dark:text-sky-300 dark:hover:bg-sky-900/20"
           >
             <Icon name="fingerprint" size={20} />
             {bioBusy ? "Wird geprüft…" : "Mit Fingerabdruck entsperren"}

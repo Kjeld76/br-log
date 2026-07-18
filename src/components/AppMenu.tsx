@@ -86,7 +86,7 @@ export default function AppMenu({
   };
 
   const itemCls =
-    "flex min-h-[48px] w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700";
+    "flex min-h-touch w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-secondary-ink hover:bg-surface-2";
 
   return (
     <div ref={wrapRef} className="relative">
@@ -97,7 +97,7 @@ export default function AppMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className="mx-2 mb-2 flex min-h-[48px] items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+          className="mx-2 mb-2 flex min-h-touch items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-secondary-ink hover:bg-surface-2"
         >
           <Icon name="settings" size={18} />
           Menü
@@ -111,7 +111,7 @@ export default function AppMenu({
           aria-label="Menü"
           title="Menü"
           onClick={() => setOpen((o) => !o)}
-          className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-lg text-secondary-ink hover:bg-surface-2"
         >
           <Icon name="more-vertical" size={20} />
         </button>
@@ -123,7 +123,7 @@ export default function AppMenu({
           aria-label="App-Menü"
           onKeyDown={onMenuKeyDown}
           className={
-            "absolute z-30 w-56 rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 " +
+            "absolute z-dropdown w-56 rounded-lg border border-border bg-surface p-1 shadow-lg " +
             (variant === "sidebar" ? "bottom-full left-2 mb-1" : "right-0 top-full mt-1")
           }
         >
