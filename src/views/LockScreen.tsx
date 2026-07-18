@@ -180,7 +180,7 @@ export default function LockScreen({
   const locked = remaining > 0;
 
   const input =
-    "w-full rounded border border-border-strong bg-white px-3 py-2 text-sm text-primary-ink outline-none focus:border-sky-500 dark:bg-slate-900";
+    "w-full rounded border border-border-strong bg-login-input px-3 py-2 text-sm text-primary-ink outline-none focus:border-focus";
   const primaryBtn =
     "w-full rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50";
 
@@ -244,7 +244,7 @@ export default function LockScreen({
       <div className="space-y-3 text-left">
         <div className="text-center">
           <h1 className="text-lg font-bold text-primary-ink">BR-Log</h1>
-          <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+          <p className="mt-1 font-medium text-warning-strong-ink">
             Schlüsseldatei fehlt
           </p>
         </div>
@@ -337,7 +337,7 @@ export default function LockScreen({
       </div>
 
       {!isUnlock && (
-        <p className="rounded bg-info-surface p-2 text-xs text-sky-800 dark:text-sky-200">
+        <p className="rounded bg-info-surface p-2 text-xs text-info-ink">
           {isMigrate
             ? "Die vorhandenen Daten werden jetzt mit SQLCipher (AES-256) verschlüsselt. Eine unverschlüsselte Sicherungskopie wird angelegt; sie kann anschließend über das Menü unter Einstellungen → Datenbank gelöscht werden."
             : "Die Datenbank wird mit SQLCipher (AES-256) verschlüsselt. Ohne Passwort bzw. Wiederherstellungs-Code sind die Daten nicht lesbar."}
@@ -357,7 +357,7 @@ export default function LockScreen({
             onClick={() => void runBioUnlock()}
             disabled={bioBusy}
             aria-label="Mit Fingerabdruck entsperren"
-            className="flex min-h-touch w-full items-center justify-center gap-2 rounded border border-sky-600 px-4 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400 dark:text-sky-300 dark:hover:bg-sky-900/20"
+            className="flex min-h-touch w-full items-center justify-center gap-2 rounded border border-primary-outline px-4 py-2 text-sm font-medium text-primary-outline-ink hover:bg-primary-outline-hover disabled:opacity-50"
           >
             <Icon name="fingerprint" size={20} />
             {bioBusy ? "Wird geprüft…" : "Mit Fingerabdruck entsperren"}
@@ -447,7 +447,7 @@ export default function LockScreen({
       {isUnlock && (
         <button
           type="button"
-          className="w-full text-center text-xs text-sky-700 hover:underline dark:text-sky-300"
+          className="w-full text-center text-xs text-primary-outline-ink hover:underline"
           onClick={() => {
             setUseRecovery((v) => !v);
             setError(null);

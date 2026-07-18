@@ -55,7 +55,7 @@ export default function Sidebar({
               className={
                 "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition " +
                 (active
-                  ? "bg-sky-50 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                  ? "bg-selected-surface font-medium text-info-ink"
                   : "text-secondary-ink hover:bg-surface-2")
               }
             >
@@ -84,7 +84,7 @@ export default function Sidebar({
       <button
         type="button"
         onClick={onOpenSettings}
-        className="m-2 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-secondary-ink hover:bg-surface-2 dark:bg-slate-900/50"
+        className="m-2 flex items-start gap-2 rounded-lg bg-surface-dim p-3 text-left text-xs text-secondary-ink hover:bg-surface-2"
       >
         <Icon name="lock" size={16} className="mt-0.5 shrink-0" />
         <span>Daten liegen lokal auf diesem Gerät.</span>

@@ -1386,7 +1386,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-on-primary hover:bg-red-700"
+                className="rounded bg-danger px-4 py-2 text-sm font-medium text-on-primary hover:bg-danger-hover"
                 onClick={confirmDiscard.onConfirm}
               >
                 {confirmDiscard.confirmLabel ?? "Verwerfen"}
@@ -1405,8 +1405,8 @@ export default function App() {
           aria-live="polite"
           className={
             mobile
-              ? "fixed bottom-20 left-1/2 z-toast -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-on-primary shadow-lg dark:bg-slate-700"
-              : "fixed bottom-4 left-1/2 z-toast -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-on-primary shadow-lg dark:bg-slate-700"
+              ? "fixed bottom-20 left-1/2 z-toast -translate-x-1/2 rounded-full bg-surface-inverse px-4 py-2 text-sm text-on-primary shadow-lg"
+              : "fixed bottom-4 left-1/2 z-toast -translate-x-1/2 rounded-full bg-surface-inverse px-4 py-2 text-sm text-on-primary shadow-lg"
           }
         >
           {toast}
