@@ -305,6 +305,16 @@
   --color-destructive-ink: #f87171;
   --color-destructive-hover: rgba(127, 29, 29, .3);
   --color-archived-surface: #475569;
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-8-Restfälle) --- */
+  --color-hover-accent-line: #0369a1;
+  --color-hover-accent-surface: #334155;
+  --color-hover-accent-surface-soft: rgba(51, 65, 85, .6);
+  --color-warning-badge-surface: rgba(120, 53, 15, .4);
+  --color-warning-badge-ink: #fcd34d;
+  --color-border-empty: #334155;
+  --color-cell-muted-surface: rgba(15, 23, 42, .4);
+  --color-cell-muted-ink: #475569;
+  --color-day-number-ink: #cbd5e1;
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;
