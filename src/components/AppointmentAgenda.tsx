@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, eachDayOfInterval, format, parseISO } from "date-fns";
+import { eachDayOfInterval, format, parseISO } from "date-fns";
 import type { AppointmentListItem } from "../types";
 import { listAppointmentsRange, searchAppointments } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
-import { inputCls, secondaryBtnSmCls } from "../lib/ui";
-import { formatDateDe, todayIso } from "../lib/calendar";
+import { errorBoxCls, inputCls, secondaryBtnSmCls } from "../lib/ui";
+import { addDaysIso, formatDateDe, todayIso } from "../lib/calendar";
 import {
   expandOccurrences,
   occurrencesOnDay,
@@ -42,7 +42,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   const requestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
 
-  const to = format(addDays(parseISO(from), days), "yyyy-MM-dd");
+  const to = addDaysIso(from, days);
 
   useEffect(() => {
     const id = ++requestIdRef.current;
@@ -104,7 +104,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   const openResult = async (a: AppointmentListItem) => {
     if (a.rrule !== null && a.parentId === null) {
       try {
-        const horizon = format(addDays(parseISO(today), 366), "yyyy-MM-dd");
+        const horizon = addDaysIso(today, 366);
         const items = await listAppointmentsRange(a.startDate, horizon);
         const series = expandOccurrences(items, a.startDate, horizon).filter(
           (o) => o.appointment.id === a.id || o.appointment.parentId === a.id
@@ -141,7 +141,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
       />
 
       {error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <p className={errorBoxCls}>
           {error}
         </p>
       )}

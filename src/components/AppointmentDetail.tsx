@@ -2,17 +2,9 @@ import type { AppointmentFullItem } from "../types";
 import { formatDateDe } from "../lib/calendar";
 import { reminderLabel, dotClsFor } from "../lib/appointmentUi";
 import { secondaryBtnCls } from "../lib/ui";
+import type { OccurrenceRef } from "../lib/appointments";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
-
-/** Die konkret angezeigte Instanz (bei Serien ≠ Master-Startdaten). */
-export interface OccurrenceRef {
-  anchor: string; // YYYY-MM-DD der Instanz
-  startDate: string;
-  startTime: string | null;
-  endDate: string;
-  endTime: string | null;
-}
 
 interface Props {
   appointment: AppointmentFullItem;

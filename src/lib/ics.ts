@@ -9,7 +9,7 @@
 // hier (Export: +1 Tag bei ganztägig; Import: -1 Tag).
 
 import ICAL from "ical.js";
-import { addDays, format, parseISO } from "date-fns";
+import { addDaysIso } from "./calendar";
 import type { Appointment, AppointmentFullItem } from "../types";
 
 /** Eigene X-Property für das BR-Geheimnis (nur bei explizitem Vertraulich-Export). */
@@ -73,10 +73,7 @@ function addVevent(
   if (a.isAllDay) {
     vevent.updatePropertyWithValue("dtstart", icalDate(a.startDate));
     // DTEND exklusiv: inklusives end_date + 1 Tag.
-    vevent.updatePropertyWithValue(
-      "dtend",
-      icalDate(format(addDays(parseISO(a.endDate), 1), "yyyy-MM-dd"))
-    );
+    vevent.updatePropertyWithValue("dtend", icalDate(addDaysIso(a.endDate, 1)));
   } else {
     vevent.updatePropertyWithValue(
       "dtstart",
@@ -304,7 +301,7 @@ export function parseIcs(text: string): IcsParseResult {
       // DTEND exklusiv -> inklusives Enddatum. Bei fehlendem/gleichem DTEND
       // (endDate == startDate) bleibt der Ein-Tages-Termin bestehen.
       if (endDate > start.date) {
-        endDate = format(addDays(parseISO(endDate), -1), "yyyy-MM-dd");
+        endDate = addDaysIso(endDate, -1);
       }
       if (endDate < start.date) endDate = start.date;
     } else if (endDate < start.date) {

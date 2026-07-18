@@ -25,3 +25,15 @@ export const secondaryBtnCls =
 /** Sekundär-Button, kompakte Variante (Toolbar-/Inline-Aktionen). */
 export const secondaryBtnSmCls =
   "rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700";
+
+/** Rote Fehlerbox (Lade-/Aktionsfehler) -- war fünffach inline kopiert. */
+export const errorBoxCls =
+  "rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300";
+
+/** Formular-Feldbeschriftung (EntryForm/AppointmentForm). */
+export const labelCls =
+  "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
+
+/** Formular-Abschnittsblock (EntryForm/AppointmentForm). */
+export const formBlockCls =
+  "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";

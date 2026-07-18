@@ -34,6 +34,21 @@ export const MISSED_LOOKBACK_DAYS = 7;
  */
 export const REMINDER_HORIZON_DAYS = 60;
 
+/**
+ * Titel + Text einer Termin-Notification -- EINE Quelle für die Desktop-
+ * Sofort-Anzeige und die Android-System-Planung, damit derselbe Termin auf
+ * beiden Wegen identisch aussieht.
+ */
+export function notificationContent(
+  c: ReminderCandidate,
+  todayIso: string
+): { title: string; body: string } {
+  return {
+    title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
+    body: reminderBody(c, todayIso),
+  };
+}
+
 /** Ein konkreter Feuer-Kandidat: (Termin-Instanz × Erinnerung). */
 export interface ReminderCandidate {
   /** Master- bzw. Einzeltermin-ID -- die Zeile, die die Erinnerung TRÄGT. */

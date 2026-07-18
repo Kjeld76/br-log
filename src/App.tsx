@@ -22,7 +22,6 @@ import {
   getEntry,
   getLastEntryDate,
   newAppointment,
-  newReminder,
   getAppointment,
   deleteAppointment,
   deleteOccurrence,
@@ -47,6 +46,7 @@ import {
   firedKey,
   firedKeySetFrom,
   loadScheduledRefs,
+  notificationContent,
   notificationIdFor,
   reminderBody,
   saveScheduledRefs,
@@ -84,9 +84,7 @@ import LockScreen from "./views/LockScreen";
 import EntryForm from "./components/EntryForm";
 import EntryDetail from "./components/EntryDetail";
 import AppointmentForm from "./components/AppointmentForm";
-import AppointmentDetail, {
-  type OccurrenceRef,
-} from "./components/AppointmentDetail";
+import AppointmentDetail from "./components/AppointmentDetail";
 import SeriesScopeDialog, {
   type SeriesScope,
 } from "./components/SeriesScopeDialog";
@@ -94,10 +92,13 @@ import SettingsPanel from "./components/SettingsPanel";
 import AboutPanel from "./components/AboutPanel";
 import { Icon } from "./components/Icon";
 import {
-  remainingCountFrom,
-  rruleWithUntil,
-  splitUntilDate,
+  buildOverrideDraft,
+  buildSplitDraft,
+  duplicateAppointment,
+  plainAppointment,
+  truncatedMaster,
   type Occurrence,
+  type OccurrenceRef,
 } from "./lib/appointments";
 
 type Modal =
@@ -422,11 +423,10 @@ export default function App() {
   const notifyReminder = async (c: ReminderCandidate) => {
     try {
       if (!(await ensureNotificationPermission())) return;
-      sendNotification({
-        title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
-        // "Heute" relativ zum FEUER-Tag (bei Live-Feuern = jetzt).
-        body: reminderBody(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
-      });
+      // "Heute" relativ zum FEUER-Tag (bei Live-Feuern = jetzt).
+      sendNotification(
+        notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd"))
+      );
     } catch (e) {
       console.warn("Termin-Erinnerung konnte nicht angezeigt werden.", e);
     }
@@ -478,8 +478,7 @@ export default function App() {
           sendNotification({
             id,
             channelId: "termine",
-            title: (c.isImportant ? "Wichtiger Termin: " : "Termin: ") + c.title,
-            body: reminderBody(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
+            ...notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
             // allowWhileIdle: auch im Doze-Modus zustellen (Minuten-Toleranz
             // bleibt möglich, exakte Alarme sind ab API 31 restriktiv).
             schedule: Schedule.at(new Date(c.dueMs), false, true),
@@ -770,103 +769,9 @@ export default function App() {
   };
 
   // ---------- Serien-Bearbeitung/-Löschung (Scope-Dialog) ----------
-
-  /** AppointmentFullItem -> Appointment (ohne Anzeige-Felder tagLabels/search). */
-  const plainAppointment = (a: AppointmentFullItem): Appointment => ({
-    id: a.id,
-    title: a.title,
-    location: a.location,
-    description: a.description,
-    secretDetails: a.secretDetails,
-    isAllDay: a.isAllDay,
-    startDate: a.startDate,
-    startTime: a.startTime,
-    endDate: a.endDate,
-    endTime: a.endTime,
-    isImportant: a.isImportant,
-    color: a.color,
-    rrule: a.rrule,
-    exdates: a.exdates,
-    parentId: a.parentId,
-    recurrenceAnchor: a.recurrenceAnchor,
-    icsUid: a.icsUid,
-    icsSequence: a.icsSequence,
-    tagIds: a.tagIds,
-    reminders: a.reminders,
-    createdAt: a.createdAt,
-    updatedAt: a.updatedAt,
-  });
-
-  /** Entwurf einer Serien-Ausnahme ("nur dieser") aus der Master-Instanz. */
-  const buildOverrideDraft = (
-    master: AppointmentFullItem,
-    occ: OccurrenceRef
-  ): Appointment => {
-    const now = new Date().toISOString();
-    return {
-      ...plainAppointment(master),
-      id: crypto.randomUUID(),
-      startDate: occ.startDate,
-      startTime: occ.startTime,
-      endDate: occ.endDate,
-      endTime: occ.endTime,
-      rrule: null,
-      exdates: [],
-      parentId: master.id,
-      recurrenceAnchor: occ.anchor,
-      icsUid: null,
-      icsSequence: 0,
-      // Overrides erben Schlagwörter/Erinnerungen -- eigene Zeile trägt keine.
-      tagIds: [],
-      reminders: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-  };
-
-  /** Entwurf der NEUEN Serie ab dem Anker ("dieser und folgende"). */
-  const buildSplitDraft = (
-    master: AppointmentFullItem,
-    occ: OccurrenceRef
-  ): Appointment => {
-    const now = new Date().toISOString();
-    const spanDays = differenceInCalendarDays(
-      parseISO(master.endDate),
-      parseISO(master.startDate)
-    );
-    // Bei COUNT-Regeln bekommt der neue Teil das RESTLICHE Kontingent --
-    // sonst würde die Gesamtzahl der Termine durch den Split wachsen.
-    let rrule = master.rrule;
-    if (rrule) {
-      const remaining = remainingCountFrom(master, occ.anchor);
-      if (remaining !== null) rrule = rrule.replace(/COUNT=\d+/i, `COUNT=${remaining}`);
-    }
-    return {
-      ...plainAppointment(master),
-      id: crypto.randomUUID(),
-      startDate: occ.anchor,
-      endDate: format(addDays(parseISO(occ.anchor), spanDays), "yyyy-MM-dd"),
-      rrule,
-      exdates: master.exdates.filter((d) => d >= occ.anchor),
-      icsUid: null,
-      icsSequence: 0,
-      reminders: master.reminders.map((r) => newReminder(r.minutesBefore)),
-      createdAt: now,
-      updatedAt: now,
-    };
-  };
-
-  /** Master mit UNTIL = Vortag des Ankers (alter Serienteil bei Split/Kürzen). */
-  const truncatedMaster = (
-    master: AppointmentFullItem,
-    anchor: string
-  ): Appointment => ({
-    ...plainAppointment(master),
-    rrule: master.rrule
-      ? rruleWithUntil(master.rrule, splitUntilDate(anchor))
-      : master.rrule,
-    exdates: master.exdates.filter((d) => d < anchor),
-  });
+  // Die Termin-Builder (plainAppointment, buildOverrideDraft, buildSplitDraft,
+  // truncatedMaster, duplicateAppointment) leben als getestete pure Funktionen
+  // in lib/appointments.ts.
 
   // Bearbeiten/Löschen aus der Detailansicht: Einzeltermine direkt, Serien-
   // Instanzen (Master ODER Override) über den Scope-Dialog.
@@ -971,45 +876,12 @@ export default function App() {
       showToast(toUserMessage(e));
     }
   };
-  // Übernimmt einen Termin als Vorlage: frische ID, heutiges Datum unter
-  // Erhalt der Dauer in Tagen, NEUE Erinnerungs-IDs (appointment_reminders.id
-  // ist global eindeutig -- kopierte IDs würden am PK scheitern) und ohne
-  // ICS-Identität (UID/SEQUENCE gehören zum Original).
-  const duplicateAppointment = (source: AppointmentFullItem): Appointment => {
-    const now = new Date().toISOString();
-    const today = todayIso();
-    const spanDays = differenceInCalendarDays(
-      parseISO(source.endDate),
-      parseISO(source.startDate)
-    );
-    return {
-      id: crypto.randomUUID(),
-      title: source.title,
-      location: source.location,
-      description: source.description,
-      secretDetails: source.secretDetails,
-      isAllDay: source.isAllDay,
-      startDate: today,
-      startTime: source.startTime,
-      endDate: format(addDays(parseISO(today), spanDays), "yyyy-MM-dd"),
-      endTime: source.endTime,
-      isImportant: source.isImportant,
-      color: source.color,
-      rrule: null,
-      exdates: [],
-      parentId: null,
-      recurrenceAnchor: null,
-      icsUid: null,
-      icsSequence: 0,
-      tagIds: source.tagIds,
-      reminders: source.reminders.map((r) => newReminder(r.minutesBefore)),
-      createdAt: now,
-      updatedAt: now,
-    };
-  };
   const handleApptDuplicate = (appt: AppointmentFullItem) => {
     setFormDirty(false);
-    setModal({ type: "apptForm", appointment: duplicateAppointment(appt) });
+    setModal({
+      type: "apptForm",
+      appointment: duplicateAppointment(appt, todayIso()),
+    });
   };
   // "Zeit buchen": Eintragsformular vorbefüllt aus dem Termin -- Datum und
   // Uhrzeiten der konkreten INSTANZ (bei ganztägig leer), Titel als GL-Info,

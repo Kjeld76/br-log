@@ -5,8 +5,13 @@
 // (localTimezone), also kalendarisch korrekt über DST-Grenzen hinweg.
 
 import ICAL from "ical.js";
-import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
-import type { AppointmentListItem } from "../types";
+import { differenceInCalendarDays, parseISO } from "date-fns";
+import { addDaysIso } from "./calendar";
+import type {
+  Appointment,
+  AppointmentFullItem,
+  AppointmentListItem,
+} from "../types";
 
 /**
  * Eine konkrete Termin-Instanz im Anzeigefenster. Bei Einzelterminen 1:1 der
@@ -59,10 +64,6 @@ function icalDtstart(a: AppointmentListItem): ICAL.Time {
     { year, month, day, hour, minute, second: 0, isDate: false },
     ICAL.Timezone.localTimezone
   );
-}
-
-function addDaysIso(iso: string, days: number): string {
-  return format(addDays(parseISO(iso), days), "yyyy-MM-dd");
 }
 
 /** Occurrence aus einer Override-Zeile (Instanz wurde einzeln bearbeitet). */
@@ -395,6 +396,16 @@ export function splitUntilDate(anchor: string): string {
 }
 
 /**
+ * Setzt COUNT segmentbasiert in einer Serienregel (Muster rruleWithUntil) --
+ * die einzige erlaubte RRULE-Chirurgie außerhalb der Preset-Funktionen.
+ */
+export function rruleWithCount(rrule: string, count: number): string {
+  const parts = rrule.split(";").filter((p) => p && !/^COUNT=/i.test(p));
+  parts.push(`COUNT=${count}`);
+  return parts.join(";");
+}
+
+/**
  * Setzt UNTIL (inklusiv, Datum) in einer Serienregel und entfernt ein
  * eventuelles COUNT. String-basiert, damit auch benutzerdefinierte (nicht
  * preset-fähige) Regeln ihre übrigen Bestandteile behalten.
@@ -436,4 +447,130 @@ export function remainingCountFrom(
     before++;
   }
   return Math.max(1, total - before);
+}
+
+// ---------- Termin-Builder (Serien-Scope-Operationen, Duplizieren) ----------
+// Pure Funktionen statt Closures in App.tsx: die heikelsten Serien-Invarianten
+// (Override-Kopplung, COUNT-Restkontingent, Exdates-Partition am Anker,
+// frische Erinnerungs-IDs, ICS-Identitäts-Reset) sind hier testbar und für
+// künftige Features (Wochenansicht, Drag-Verschieben) wiederverwendbar.
+
+/** Die konkret angezeigte Instanz (bei Serien ≠ Master-Startdaten). */
+export type OccurrenceRef = Omit<Occurrence, "appointment">;
+
+/** AppointmentFullItem -> Appointment (ohne das Anzeige-Feld tagLabels). */
+export function plainAppointment(a: AppointmentFullItem): Appointment {
+  const { tagLabels: _tagLabels, ...plain } = a;
+  return plain;
+}
+
+/** Entwurf einer Serien-Ausnahme ("nur dieser") aus der Master-Instanz. */
+export function buildOverrideDraft(
+  master: AppointmentFullItem,
+  occ: OccurrenceRef
+): Appointment {
+  const now = new Date().toISOString();
+  return {
+    ...plainAppointment(master),
+    id: crypto.randomUUID(),
+    startDate: occ.startDate,
+    startTime: occ.startTime,
+    endDate: occ.endDate,
+    endTime: occ.endTime,
+    rrule: null,
+    exdates: [],
+    parentId: master.id,
+    recurrenceAnchor: occ.anchor,
+    icsUid: null,
+    icsSequence: 0,
+    // Overrides erben Schlagwörter/Erinnerungen -- eigene Zeile trägt keine.
+    tagIds: [],
+    reminders: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Entwurf der NEUEN Serie ab dem Anker ("dieser und folgende"). */
+export function buildSplitDraft(
+  master: AppointmentFullItem,
+  occ: OccurrenceRef
+): Appointment {
+  const now = new Date().toISOString();
+  const spanDays = differenceInCalendarDays(
+    parseISO(master.endDate),
+    parseISO(master.startDate)
+  );
+  // Bei COUNT-Regeln bekommt der neue Teil das RESTLICHE Kontingent --
+  // sonst würde die Gesamtzahl der Termine durch den Split wachsen.
+  let rrule = master.rrule;
+  if (rrule) {
+    const remaining = remainingCountFrom(master, occ.anchor);
+    if (remaining !== null) rrule = rruleWithCount(rrule, remaining);
+  }
+  return {
+    ...plainAppointment(master),
+    id: crypto.randomUUID(),
+    startDate: occ.anchor,
+    endDate: addDaysIso(occ.anchor, spanDays),
+    rrule,
+    exdates: master.exdates.filter((d) => d >= occ.anchor),
+    icsUid: null,
+    icsSequence: 0,
+    // Frische IDs: appointment_reminders.id ist global eindeutig.
+    reminders: master.reminders.map((r) => ({
+      id: crypto.randomUUID(),
+      minutesBefore: r.minutesBefore,
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Master mit UNTIL = Vortag des Ankers (alter Serienteil bei Split/Kürzen). */
+export function truncatedMaster(
+  master: AppointmentFullItem,
+  anchor: string
+): Appointment {
+  return {
+    ...plainAppointment(master),
+    rrule: master.rrule
+      ? rruleWithUntil(master.rrule, splitUntilDate(anchor))
+      : master.rrule,
+    exdates: master.exdates.filter((d) => d < anchor),
+  };
+}
+
+/**
+ * Übernimmt einen Termin als Vorlage: frische ID, `today` als Startdatum unter
+ * Erhalt der Dauer in Tagen, NEUE Erinnerungs-IDs und ohne ICS-Identität
+ * (UID/SEQUENCE gehören zum Original).
+ */
+export function duplicateAppointment(
+  source: AppointmentFullItem,
+  today: string
+): Appointment {
+  const now = new Date().toISOString();
+  const spanDays = differenceInCalendarDays(
+    parseISO(source.endDate),
+    parseISO(source.startDate)
+  );
+  return {
+    ...plainAppointment(source),
+    id: crypto.randomUUID(),
+    startDate: today,
+    endDate: addDaysIso(today, spanDays),
+    rrule: null,
+    exdates: [],
+    parentId: null,
+    recurrenceAnchor: null,
+    icsUid: null,
+    icsSequence: 0,
+    reminders: source.reminders.map((r) => ({
+      id: crypto.randomUUID(),
+      minutesBefore: r.minutesBefore,
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
 }

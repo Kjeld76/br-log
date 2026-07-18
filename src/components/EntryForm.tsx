@@ -11,7 +11,12 @@ import {
   rangesOverlap,
 } from "../lib/time";
 import { toggleId } from "../lib/collections";
-import { inputCls, secondaryBtnCls } from "../lib/ui";
+import {
+  formBlockCls,
+  inputCls,
+  labelCls,
+  secondaryBtnCls,
+} from "../lib/ui";
 import ObjectionEditor from "./ObjectionEditor";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -338,10 +343,6 @@ export default function EntryForm({
   }, [draft, mode, durationText, saving, onCancel]);
 
   const field = inputCls + " w-full";
-  const labelCls =
-    "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
-  const blockCls =
-    "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
 
   return (
     <div className="space-y-4">
@@ -359,7 +360,7 @@ export default function EntryForm({
       )}
 
       {/* Block 1: Zeit & Art */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Zeit &amp; Art
@@ -654,7 +655,7 @@ export default function EntryForm({
       </div>
 
       {/* Block 3: Widersprüche der GL (einklappbar) */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <button
           type="button"
           className="flex w-full items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100"

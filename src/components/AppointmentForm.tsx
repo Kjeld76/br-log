@@ -3,7 +3,13 @@ import type { Appointment, TaskTag } from "../types";
 import { newReminder, saveAppointment } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
 import { toggleId } from "../lib/collections";
-import { inputCls, secondaryBtnCls } from "../lib/ui";
+import {
+  errorBoxCls,
+  formBlockCls,
+  inputCls,
+  labelCls,
+  secondaryBtnCls,
+} from "../lib/ui";
 import {
   buildRrule,
   parseRruleToPreset,
@@ -216,10 +222,6 @@ export default function AppointmentForm({
   }, [draft, saving, onCancel]);
 
   const field = inputCls + " w-full";
-  const labelCls =
-    "mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300";
-  const blockCls =
-    "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
 
   return (
     <div className="space-y-4">
@@ -230,7 +232,7 @@ export default function AppointmentForm({
       )}
 
       {/* Block 1: Termin */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           Termin
         </h3>
@@ -364,7 +366,7 @@ export default function AppointmentForm({
       {/* Block 2: Serie -- nicht für Overrides (die Einzeländerung einer
           Instanz hat nie eine eigene Regel, siehe Migration-3-CHECK). */}
       {draft.parentId === null && (
-        <div className={blockCls}>
+        <div className={formBlockCls}>
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Wiederholung
           </h3>
@@ -543,7 +545,7 @@ export default function AppointmentForm({
           Einzeländerung -- Overrides erben sie vom Master (siehe Migration 3)
           und zeigen die Blöcke deshalb gar nicht erst an. */}
       {draft.parentId === null && (
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           Erinnerungen
         </h3>
@@ -571,7 +573,7 @@ export default function AppointmentForm({
       {/* Block 4: Schlagwörter (dieselben wie bei Zeiteinträgen -- Vorbefüllung
           bei "Zeit buchen") */}
       {draft.parentId === null && (
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Schlagwörter
@@ -614,7 +616,7 @@ export default function AppointmentForm({
       )}
 
       {/* Block 5: Beschreibung + vertrauliche Notizen */}
-      <div className={blockCls}>
+      <div className={formBlockCls}>
         <div>
           <label htmlFor={descriptionId} className={labelCls}>
             Beschreibung
@@ -652,7 +654,7 @@ export default function AppointmentForm({
       </div>
 
       {error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <p className={errorBoxCls}>
           {error}
         </p>
       )}

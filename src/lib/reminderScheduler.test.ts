@@ -3,6 +3,7 @@ import type { AppointmentListItem } from "../types";
 import {
   buildReminderCandidates,
   firedKey,
+  notificationContent,
   reminderBody,
   selectDue,
   selectMissed,
@@ -158,6 +159,29 @@ describe("selectDue / selectMissed", () => {
     // Außerhalb des Nachhol-Fensters (8 Tage später bei 7 Tagen Lookback).
     const daysLater = due + 8 * 24 * 60 * 60 * 1000;
     expect(selectMissed(cands, new Set(), daysLater)).toHaveLength(0);
+  });
+});
+
+describe("notificationContent", () => {
+  it("baut Titel und Text für Desktop- und Android-Zustellung an EINER Stelle", () => {
+    const c = buildReminderCandidates(
+      [
+        appt({
+          title: "Sitzung",
+          isImportant: true,
+          reminders: [{ id: "r", minutesBefore: 0 }],
+        }),
+      ],
+      "2026-07-01",
+      "2026-07-31"
+    )[0];
+    expect(notificationContent(c, "2026-07-20")).toEqual({
+      title: "Wichtiger Termin: Sitzung",
+      body: "Heute 10:00 Uhr",
+    });
+    expect(
+      notificationContent({ ...c, isImportant: false }, "2026-07-19").title
+    ).toBe("Termin: Sitzung");
   });
 });
 

@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { AppointmentListItem } from "../types";
+import type { AppointmentFullItem, AppointmentListItem } from "../types";
 import {
+  buildOverrideDraft,
   buildRrule,
+  buildSplitDraft,
   continuesFromPreviousDay,
   continuesToNextDay,
+  duplicateAppointment,
   expandOccurrences,
   formatOccurrenceTime,
   occurrencesOnDay,
   overlapsRange,
   parseRruleToPreset,
+  plainAppointment,
   remainingCountFrom,
+  rruleWithCount,
   rruleWithUntil,
   splitUntilDate,
+  truncatedMaster,
 } from "./appointments";
 
 function appt(overrides: Partial<AppointmentListItem> = {}): AppointmentListItem {
@@ -352,6 +358,103 @@ describe("Serienregel-Presets", () => {
     expect(remainingCountFrom(master, "2026-08-10")).toBe(7);
     // Regel ohne COUNT -> null.
     expect(remainingCountFrom(appt({ rrule: "FREQ=WEEKLY" }), "2026-08-10")).toBeNull();
+  });
+});
+
+describe("Termin-Builder (Serien-Scope-Operationen)", () => {
+  function fullAppt(
+    overrides: Partial<AppointmentFullItem> = {}
+  ): AppointmentFullItem {
+    return { ...appt(), secretDetails: "", ...overrides };
+  }
+  const master = () =>
+    fullAppt({
+      id: "serie",
+      rrule: "FREQ=WEEKLY;COUNT=10", // Instanzen ab 20.07. wöchentlich
+      exdates: ["2026-07-27", "2026-08-17"],
+      tagIds: ["tag-1"],
+      tagLabels: ["BR"],
+      reminders: [{ id: "rem-old", minutesBefore: 30 }],
+      icsUid: "x@example.org",
+      icsSequence: 3,
+    });
+  const occ = {
+    anchor: "2026-08-10",
+    startDate: "2026-08-10",
+    startTime: "09:00",
+    endDate: "2026-08-10",
+    endTime: "11:00",
+  };
+
+  it("plainAppointment entfernt genau das Anzeige-Feld tagLabels", () => {
+    const plain = plainAppointment(master());
+    expect("tagLabels" in plain).toBe(false);
+    expect(plain.id).toBe("serie");
+    expect(plain.secretDetails).toBe("");
+    expect(plain.reminders).toEqual([{ id: "rem-old", minutesBefore: 30 }]);
+  });
+
+  it("buildOverrideDraft koppelt die Ausnahme an Master+Anker ohne eigene Erbfelder", () => {
+    const d = buildOverrideDraft(master(), occ);
+    expect(d.parentId).toBe("serie");
+    expect(d.recurrenceAnchor).toBe("2026-08-10");
+    expect(d.startDate).toBe("2026-08-10");
+    expect(d.rrule).toBeNull();
+    expect(d.exdates).toEqual([]);
+    expect(d.tagIds).toEqual([]); // erben vom Master, eigene Zeile trägt keine
+    expect(d.reminders).toEqual([]);
+    expect(d.icsUid).toBeNull();
+    expect(d.id).not.toBe("serie");
+  });
+
+  it("buildSplitDraft übernimmt Rest-COUNT, spätere Exdates und NEUE Erinnerungs-IDs", () => {
+    const d = buildSplitDraft(master(), occ);
+    expect(d.startDate).toBe("2026-08-10");
+    // 3 Instanzen vor dem Anker (20.07., 27.07. als Exdate zählt mit, 03.08.).
+    expect(d.rrule).toBe("FREQ=WEEKLY;COUNT=7");
+    expect(d.exdates).toEqual(["2026-08-17"]);
+    expect(d.reminders).toHaveLength(1);
+    expect(d.reminders[0].minutesBefore).toBe(30);
+    expect(d.reminders[0].id).not.toBe("rem-old"); // PK global eindeutig
+    expect(d.icsUid).toBeNull();
+    expect(d.icsSequence).toBe(0);
+    expect(d.id).not.toBe("serie");
+  });
+
+  it("truncatedMaster kappt per UNTIL am Vortag und behält nur frühere Exdates", () => {
+    const t = truncatedMaster(master(), "2026-08-10");
+    expect(t.rrule).toBe("FREQ=WEEKLY;UNTIL=20260809");
+    expect(t.exdates).toEqual(["2026-07-27"]);
+    expect(t.id).toBe("serie"); // dieselbe Zeile, kein Neuanlegen
+  });
+
+  it("duplicateAppointment verschiebt auf heute, erhält die Dauer und erneuert Identitäten", () => {
+    const src = fullAppt({
+      startDate: "2026-07-20",
+      endDate: "2026-07-22",
+      reminders: [{ id: "rem-old", minutesBefore: 15 }],
+      icsUid: "x@example.org",
+      icsSequence: 2,
+      rrule: "FREQ=WEEKLY",
+      exdates: ["2026-07-27"],
+    });
+    const d = duplicateAppointment(src, "2026-09-01");
+    expect(d.id).not.toBe(src.id);
+    expect(d.startDate).toBe("2026-09-01");
+    expect(d.endDate).toBe("2026-09-03"); // Dauer in Tagen erhalten
+    expect(d.rrule).toBeNull();
+    expect(d.exdates).toEqual([]);
+    expect(d.icsUid).toBeNull();
+    expect(d.icsSequence).toBe(0);
+    expect(d.tagIds).toEqual(src.tagIds);
+    expect(d.reminders[0].minutesBefore).toBe(15);
+    expect(d.reminders[0].id).not.toBe("rem-old");
+  });
+
+  it("rruleWithCount ersetzt das Kontingent segmentbasiert", () => {
+    expect(rruleWithCount("FREQ=WEEKLY;INTERVAL=2;COUNT=10", 7)).toBe(
+      "FREQ=WEEKLY;INTERVAL=2;COUNT=7"
+    );
   });
 });
 

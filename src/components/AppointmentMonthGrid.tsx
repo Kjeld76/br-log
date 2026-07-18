@@ -8,7 +8,7 @@ import {
 } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
-import { secondaryBtnSmCls } from "../lib/ui";
+import { errorBoxCls, secondaryBtnSmCls } from "../lib/ui";
 import {
   monthGrid,
   monthLabel,
@@ -153,7 +153,7 @@ export default function AppointmentMonthGrid({
       </div>
 
       {error && (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <p className={errorBoxCls}>
           {error}
         </p>
       )}
