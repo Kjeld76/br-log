@@ -70,11 +70,21 @@ export function firedKeySetFrom(rows: ReminderFired[]): Set<string> {
   );
 }
 
-/** Lokale Wandzeit (Datum + HH:mm) -> Epoch-Millisekunden. */
-function localMs(dateIso: string, time: string): number {
+/**
+ * Fälligkeit = Instanz-Beginn minus Vorlauf. Der TAGES-Anteil des Vorlaufs
+ * wird in Kalendertagen abgezogen ("1 Tag vorher" heißt gleiche Wanduhrzeit
+ * am Vortag -- ein fester 24-h-Offset verschöbe die Erinnerung über
+ * DST-Grenzen um eine Stunde); nur der Rest unter einem Tag läuft als
+ * Minuten-Offset. Der Date-Konstruktor normalisiert d - days kalendarisch.
+ */
+function dueMsFor(dateIso: string, time: string, minutesBefore: number): number {
+  const days = Math.floor(minutesBefore / 1440);
+  const restMin = minutesBefore % 1440;
   const [y, m, d] = dateIso.split("-").map(Number);
   const [hh, mm] = time.split(":").map(Number);
-  return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
+  return (
+    new Date(y, m - 1, d - days, hh, mm, 0, 0).getTime() - restMin * 60_000
+  );
 }
 
 /**
@@ -97,13 +107,12 @@ export function buildReminderCandidates(
     const baseTime = a.isAllDay
       ? ALL_DAY_REMINDER_BASE
       : occ.startTime ?? ALL_DAY_REMINDER_BASE;
-    const baseMs = localMs(occ.startDate, baseTime);
     for (const r of master.reminders) {
       out.push({
         appointmentId: master.id,
         reminderId: r.id,
         anchor: occ.anchor,
-        dueMs: baseMs - r.minutesBefore * 60_000,
+        dueMs: dueMsFor(occ.startDate, baseTime, r.minutesBefore),
         title: a.title || "(ohne Titel)",
         isImportant: a.isImportant,
         occStartDate: occ.startDate,

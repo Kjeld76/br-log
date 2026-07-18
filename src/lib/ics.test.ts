@@ -272,6 +272,62 @@ describe("parseIcs Fremddateien", () => {
     ).toThrow("keine importierbaren Termine");
   });
 
+  it("erhält den Ganztägig-Status einer Serien-Ausnahme (keine erfundenen Uhrzeiten)", () => {
+    // Fremdkalender: zeitgebundene Serie, eine Instanz wurde auf ganztägig
+    // geändert. Der DB-CHECK ist zeilenweise -- gemischte Zustände zwischen
+    // Master und Override sind erlaubt; 09:00-10:00 zu erfinden ist falsch.
+    const text = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Test//DE",
+      "BEGIN:VEVENT",
+      "UID:mix@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "DTSTART:20260720T100000",
+      "DTEND:20260720T113000",
+      "RRULE:FREQ=WEEKLY",
+      "SUMMARY:Zeitgebunden",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:mix@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "RECURRENCE-ID:20260727T100000",
+      "DTSTART;VALUE=DATE:20260727",
+      "DTEND;VALUE=DATE:20260728",
+      "SUMMARY:Jetzt ganztägig",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const { items } = parseIcs(text);
+    const ov = items.find((i) => i.appointment.parentId !== null)!.appointment;
+    expect(ov.isAllDay).toBe(true);
+    expect(ov.startTime).toBeNull();
+    expect(ov.endTime).toBeNull();
+    expect(ov.startDate).toBe("2026-07-27");
+    expect(ov.endDate).toBe("2026-07-27"); // DTEND exklusiv -> inklusiv
+  });
+
+  it("korrigiert DTEND vor DTSTART am selben Tag defensiv statt eine negative Dauer zu speichern", () => {
+    const text = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Test//DE",
+      "BEGIN:VEVENT",
+      "UID:invert@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "DTSTART:20260720T140000",
+      "DTEND:20260720T130000",
+      "SUMMARY:Kaputte Zeiten",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const a = parseIcs(text).items[0].appointment;
+    expect(a.startTime).toBe("14:00");
+    expect(a.endTime).toBe("14:00"); // auf den Start gekappt, nicht invertiert
+  });
+
   it("dedupliziert mehrere Serien-Ausnahmen am selben lokalen Tag (höchste SEQUENCE gewinnt)", () => {
     // Anker-Granularität ist der Tag: zwei RECURRENCE-IDs am selben Datum
     // würden sonst am UNIQUE-Index (parent_id, recurrence_anchor) scheitern

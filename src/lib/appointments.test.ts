@@ -305,6 +305,29 @@ describe("Serienregel-Presets", () => {
     });
   });
 
+  it("rechnet UTC-UNTIL in lokale Wandzeit um statt das Datum abzuschneiden", () => {
+    // 20260630T223000Z liegt lokal (z. B. Europe/Berlin im Sommer) bereits am
+    // Folgetag -- reines Abschneiden auf die ersten 8 Ziffern würde die Serie
+    // beim Re-Save über das Formular einen Tag zu früh kappen. Erwartung
+    // TZ-unabhängig über die lokalen Date-Getter abgeleitet.
+    const js = new Date(Date.UTC(2026, 5, 30, 22, 30));
+    const p = (n: number) => String(n).padStart(2, "0");
+    const expected = `${js.getFullYear()}-${p(js.getMonth() + 1)}-${p(js.getDate())}`;
+    expect(parseRruleToPreset("FREQ=DAILY;UNTIL=20260630T223000Z")).toEqual({
+      freq: "DAILY",
+      interval: 1,
+      byWeekdays: [],
+      end: { type: "until", date: expected },
+    });
+    // Floating UNTIL (ohne Z) bleibt beim wörtlichen Datum.
+    expect(parseRruleToPreset("FREQ=DAILY;UNTIL=20260630T235959")).toEqual({
+      freq: "DAILY",
+      interval: 1,
+      byWeekdays: [],
+      end: { type: "until", date: "2026-06-30" },
+    });
+  });
+
   it("liefert null für Regeln außerhalb der Preset-Teilmenge (bleiben benutzerdefiniert)", () => {
     expect(parseRruleToPreset("FREQ=MONTHLY;BYDAY=2MO")).toBeNull(); // Ordinal
     expect(parseRruleToPreset("FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO")).toBeNull();

@@ -72,6 +72,27 @@ describe("buildReminderCandidates", () => {
     expect(cands[0].occStartTime).toBeNull();
   });
 
+  it("zieht Tages-Vorläufe in Kalendertagen ab (gleiche Wanduhrzeit, DST-fest)", () => {
+    // 25.10.2026 ist in Europe/Berlin das Sommerzeit-Ende: 24*60 Minuten vor
+    // 09:00 wäre 10:00 am Vortag -- gemeint ist aber dieselbe Wanduhrzeit.
+    const items = [
+      appt({
+        startDate: "2026-10-25",
+        endDate: "2026-10-25",
+        startTime: "09:00",
+        endTime: "10:00",
+        reminders: [
+          { id: "r1d", minutesBefore: 24 * 60 },
+          { id: "r1w", minutesBefore: 7 * 24 * 60 },
+        ],
+      }),
+    ];
+    const cands = buildReminderCandidates(items, "2026-10-01", "2026-10-31");
+    const byId = new Map(cands.map((c) => [c.reminderId, c.dueMs]));
+    expect(byId.get("r1d")).toBe(ms(2026, 10, 24, 9, 0));
+    expect(byId.get("r1w")).toBe(ms(2026, 10, 18, 9, 0));
+  });
+
   it("expandiert Serien und lässt Overrides die Master-Erinnerungen erben", () => {
     const master = appt({
       id: "serie",

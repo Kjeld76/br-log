@@ -291,7 +291,6 @@ export function parseIcs(text: string): IcsParseResult {
 
   const now = new Date().toISOString();
   const masterIdByUid = new Map<string, string>();
-  const masterByUid = new Map<string, RawEvent>();
   const items: IcsImportItem[] = [];
 
   const buildBase = (raw: RawEvent): Appointment => {
@@ -310,6 +309,12 @@ export function parseIcs(text: string): IcsParseResult {
       if (endDate < start.date) endDate = start.date;
     } else if (endDate < start.date) {
       endDate = start.date; // defensiv gegen kaputte Dateien
+    }
+    // Ebenfalls defensiv: DTEND zeitlich VOR DTSTART am selben Tag würde als
+    // negative Dauer gespeichert (kein DB-CHECK prüft die Zeit-Reihenfolge).
+    let endTime = isAllDay ? null : end.time;
+    if (!isAllDay && endDate === start.date && endTime !== null && endTime < start.time) {
+      endTime = start.time;
     }
 
     let rrule: string | null = null;
@@ -334,7 +339,7 @@ export function parseIcs(text: string): IcsParseResult {
       startDate: start.date,
       startTime: isAllDay ? null : start.time,
       endDate,
-      endTime: isAllDay ? null : end.time,
+      endTime,
       isImportant: parsePriority(vevent),
       color: null,
       rrule,
@@ -359,7 +364,6 @@ export function parseIcs(text: string): IcsParseResult {
     const appt = buildBase(raw);
     if (raw.uid) {
       masterIdByUid.set(raw.uid, appt.id);
-      masterByUid.set(raw.uid, raw);
     } else {
       warnings.push(
         `„${appt.title || "(ohne Titel)"}“ hat keine UID – ein erneuter Import derselben Datei legt ihn doppelt an.`
@@ -387,7 +391,6 @@ export function parseIcs(text: string): IcsParseResult {
       items.push({ appointment: appt, categories: parseCategories(raw.vevent) });
       continue;
     }
-    const master = masterByUid.get(raw.uid!)!;
     const recIdRaw = raw.vevent.getFirstPropertyValue("recurrence-id");
     const anchor =
       recIdRaw instanceof ICAL.Time
@@ -404,14 +407,9 @@ export function parseIcs(text: string): IcsParseResult {
     appt.icsUid = null; // UID gehört dem Master (Override-Zuordnung via Anker)
     appt.icsSequence = 0;
     appt.reminders = []; // erben vom Master
-    // Ganztägig-Status folgt dem Master (DB-CHECK: einheitliche Zeitfelder).
-    if (master.event.startDate.isDate !== appt.isAllDay) {
-      if (appt.isAllDay) {
-        appt.isAllDay = false;
-        appt.startTime = "09:00";
-        appt.endTime = "10:00";
-      }
-    }
+    // Ein vom Master abweichender Ganztägig-Status ist erlaubt: der DB-CHECK
+    // ist zeilenweise, und Anzeige/Export arbeiten pro Zeile -- Uhrzeiten zu
+    // erfinden oder zu verwerfen wäre stiller Datenverlust.
     const key = `${masterId}|${anchor}`;
     const prev = overrideByKey.get(key);
     if (prev) {

@@ -2270,6 +2270,15 @@ function validateBackupAppointment(raw: unknown, index: number): void {
     throw new AppError(
       `Ungültige Backup-Datei: Termin „${raw.id}“ hat keine gültigen Uhrzeiten (erwartet HH:MM).`
     );
+  } else if (
+    raw.startDate === raw.endDate &&
+    (raw.endTime as string) < (raw.startTime as string)
+  ) {
+    // Kein DB-CHECK prüft die Zeit-Reihenfolge am selben Tag -- eine negative
+    // Dauer würde sonst klaglos gespeichert und falsch angezeigt.
+    throw new AppError(
+      `Ungültige Backup-Datei: Termin „${raw.id}“ endet vor seinem Beginn.`
+    );
   }
   if (
     raw.exdates !== undefined &&

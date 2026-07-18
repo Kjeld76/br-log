@@ -363,9 +363,28 @@ export function parseRruleToPreset(rrule: string): SeriesPreset | null {
     end = { type: "count", count };
   } else if (params.has("UNTIL")) {
     const raw = params.get("UNTIL") ?? "";
-    const m = /^(\d{4})(\d{2})(\d{2})/.exec(raw);
+    const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(raw);
     if (!m) return null;
-    end = { type: "until", date: `${m[1]}-${m[2]}-${m[3]}` };
+    let date = `${m[1]}-${m[2]}-${m[3]}`;
+    if (m[7]) {
+      // UTC-UNTIL (Google/Outlook): erst in lokale Wandzeit umrechnen -- das
+      // UTC-Datum kann vom lokalen Datum der letzten Instanz abweichen, ein
+      // Re-Save über das Formular würde die Serie sonst einen Tag zu früh
+      // kappen (buildRrule schreibt ein reines Datums-UNTIL zurück).
+      const js = new Date(
+        Date.UTC(
+          Number(m[1]),
+          Number(m[2]) - 1,
+          Number(m[3]),
+          Number(m[4]),
+          Number(m[5]),
+          Number(m[6] ?? "0")
+        )
+      );
+      const p = (n: number) => String(n).padStart(2, "0");
+      date = `${js.getFullYear()}-${p(js.getMonth() + 1)}-${p(js.getDate())}`;
+    }
+    end = { type: "until", date };
   }
   return { freq, interval, byWeekdays, end };
 }

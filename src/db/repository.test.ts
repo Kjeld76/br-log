@@ -1274,6 +1274,25 @@ describe("Backup mit Terminen (schemaVersion 2)", () => {
       "darf keine Uhrzeiten"
     );
 
+    // Invertierte Zeiten am selben Tag: kein DB-CHECK prüft die Reihenfolge --
+    // die Validierung muss die negative Dauer VOR dem Schreiben ablehnen.
+    const zeitInvertiert = JSON.stringify({
+      schemaVersion: 2,
+      entries: [],
+      appointments: [
+        {
+          id: "a3",
+          startDate: "2026-07-20",
+          startTime: "14:00",
+          endDate: "2026-07-20",
+          endTime: "13:00",
+        },
+      ],
+    });
+    expect(() => repo.parseBackup(zeitInvertiert)).toThrow(
+      "endet vor seinem Beginn"
+    );
+
     const overrideOhneAnker = JSON.stringify({
       schemaVersion: 2,
       entries: [],
