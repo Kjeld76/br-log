@@ -297,7 +297,7 @@ describe("listEntries – Filterbau", () => {
   it("schränkt bei Volltextsuche mit Treffern auf e.id IN (...) ein", async () => {
     isFtsAvailableMock.mockReturnValue(true);
     selectMock
-      .mockResolvedValueOnce([{ entry_id: "entry-1" }]) // public_content-Treffer
+      .mockResolvedValueOnce([{ id: "entry-1" }]) // public_content-Treffer (searchHitsFor aliast AS id)
       .mockResolvedValueOnce([]) // secret_content: kein Treffer
       .mockResolvedValueOnce([]); // Haupt-SELECT (Rückgabe-Inhalt hier irrelevant)
 

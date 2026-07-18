@@ -642,7 +642,23 @@ export async function deleteEntry(id: string): Promise<void> {
 
 // ---------- Suche (spaltengebundene Trefferherkunft, KEIN LIKE-Recheck im FTS-Pfad) ----------
 
-async function searchHits(term: string): Promise<Map<string, SearchHit>> {
+/**
+ * Gemeinsames Such-Gerüst für Einträge UND Termine (Muster loadTagsByOwnerIds:
+ * EINE Semantik, zwei Tabellen): FTS-MATCH über public/secret-Spalten bzw.
+ * spaltengebundener LIKE-Fallback. Korrekturen an Escaping oder MATCH-Aufbau
+ * landen damit automatisch in beiden Suchpfaden.
+ */
+async function searchHitsFor(
+  term: string,
+  cfg: {
+    ftsTable: "entries_fts" | "appointments_fts";
+    idColumn: "entry_id" | "appointment_id";
+    /** LIKE-Fallback öffentliche Spalten; jedes ? erhält den LIKE-Term. */
+    likePublicSql: string;
+    likePublicParamCount: number;
+    likeSecretSql: string;
+  }
+): Promise<Map<string, SearchHit>> {
   const db = await getDb();
   const map = new Map<string, SearchHit>();
   const mark = (id: string, key: keyof SearchHit) => {
@@ -655,39 +671,46 @@ async function searchHits(term: string): Promise<Map<string, SearchHit>> {
     const pub = buildFtsMatch("public_content", term);
     const sec = buildFtsMatch("secret_content", term);
     if (pub) {
-      const r = await db.select<{ entry_id: string }[]>(
-        "SELECT entry_id FROM entries_fts WHERE entries_fts MATCH ?",
+      const r = await db.select<{ id: string }[]>(
+        `SELECT ${cfg.idColumn} AS id FROM ${cfg.ftsTable} WHERE ${cfg.ftsTable} MATCH ?`,
         [pub]
       );
-      for (const x of r) mark(x.entry_id, "hasPublicHit");
+      for (const x of r) mark(x.id, "hasPublicHit");
     }
     if (sec) {
-      const r = await db.select<{ entry_id: string }[]>(
-        "SELECT entry_id FROM entries_fts WHERE entries_fts MATCH ?",
+      const r = await db.select<{ id: string }[]>(
+        `SELECT ${cfg.idColumn} AS id FROM ${cfg.ftsTable} WHERE ${cfg.ftsTable} MATCH ?`,
         [sec]
       );
-      for (const x of r) mark(x.entry_id, "hasSecretHit");
+      for (const x of r) mark(x.id, "hasSecretHit");
     }
   } else {
     // Kompletter Fallback NUR falls FTS5 im Build fehlt – getrennte Spalten-Logik via LIKE.
     const like = `%${term.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
     const pub = await db.select<{ id: string }[]>(
-      `SELECT DISTINCT e.id FROM entries e
+      cfg.likePublicSql,
+      Array<string>(cfg.likePublicParamCount).fill(like)
+    );
+    for (const x of pub) mark(x.id, "hasPublicHit");
+    const sec = await db.select<{ id: string }[]>(cfg.likeSecretSql, [like]);
+    for (const x of sec) mark(x.id, "hasSecretHit");
+  }
+  return map;
+}
+
+async function searchHits(term: string): Promise<Map<string, SearchHit>> {
+  return searchHitsFor(term, {
+    ftsTable: "entries_fts",
+    idColumn: "entry_id",
+    likePublicSql: `SELECT DISTINCT e.id FROM entries e
         WHERE e.info_for_management LIKE ? ESCAPE '\\'
            OR EXISTS (SELECT 1 FROM entry_tags et JOIN task_tags t ON t.id=et.tag_id
                        WHERE et.entry_id=e.id AND t.label LIKE ? ESCAPE '\\')
            OR EXISTS (SELECT 1 FROM objections o WHERE o.entry_id=e.id
                        AND (o.reason LIKE ? ESCAPE '\\' OR o.by_whom LIKE ? ESCAPE '\\'))`,
-      [like, like, like, like]
-    );
-    for (const x of pub) mark(x.id, "hasPublicHit");
-    const sec = await db.select<{ id: string }[]>(
-      "SELECT id FROM entries WHERE secret_details LIKE ? ESCAPE '\\'",
-      [like]
-    );
-    for (const x of sec) mark(x.id, "hasSecretHit");
-  }
-  return map;
+    likePublicParamCount: 4,
+    likeSecretSql: "SELECT id FROM entries WHERE secret_details LIKE ? ESCAPE '\\'",
+  });
 }
 
 /**
@@ -1154,6 +1177,23 @@ export async function getAppointment(
 }
 
 /**
+ * Aktueller Erinnerungs-Bestand eines Termins fürs DIFF-Schreiben
+ * (appointmentWriteStatements) -- EINE Implementierung für saveAppointment,
+ * splitSeries und truncateSeries: die stabilen Reminder-IDs schützen das
+ * reminder_fired-Protokoll, dieser Ladepfad darf nicht auseinanderdriften.
+ */
+async function loadExistingReminders(
+  db: Db,
+  appointmentId: string
+): Promise<AppointmentReminder[]> {
+  const rows = await db.select<{ id: string; minutes_before: number }[]>(
+    "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
+    [appointmentId]
+  );
+  return rows.map((r) => ({ id: r.id, minutesBefore: r.minutes_before }));
+}
+
+/**
  * Speichert einen Termin (Master, Einzeltermin oder Override) samt Schlag-
  * wörtern, Erinnerungen und FTS-Index ATOMAR. `updatedAtOverride` erhält beim
  * Import den Original-Zeitstempel (Last-Writer-Wins, wie saveEntry).
@@ -1172,22 +1212,13 @@ export async function saveAppointment(
       )
     ).length > 0;
   const tagLabelById = await loadTagLabels(db, appt.tagIds);
-  const existingReminders = exists
-    ? await db.select<{ id: string; minutes_before: number }[]>(
-        "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
-        [appt.id]
-      )
-    : [];
   const statements = appointmentWriteStatements({
     appt,
     exists,
     updatedAt: updatedAtOverride ?? now,
     createdAtDefault: now,
     tagLabelById,
-    existingReminders: existingReminders.map((r) => ({
-      id: r.id,
-      minutesBefore: r.minutes_before,
-    })),
+    existingReminders: exists ? await loadExistingReminders(db, appt.id) : [],
   });
   await db.batch(statements);
 }
@@ -1206,6 +1237,19 @@ export async function deleteAppointment(id: string): Promise<void> {
       [id]
     )
   ).map((r) => r.id);
+  await db.batch(appointmentDeleteStatements(id, overrideIds));
+}
+
+/**
+ * Die vollständige Lösch-Kaskade eines Termins (Feuer-Protokoll, Erinnerungen,
+ * Schlagwort-Zuordnungen, eigene Overrides, Terminzeile, FTS) als Statement-
+ * Baustein -- EINE Quelle für deleteAppointment und den Ersetzen-Pfad des
+ * ICS-Imports; eine neue Kind-Tabelle muss nur hier ergänzt werden.
+ */
+function appointmentDeleteStatements(
+  id: string,
+  overrideIds: string[]
+): BatchStatement[] {
   const statements: BatchStatement[] = [
     { sql: "DELETE FROM reminder_fired WHERE appointment_id = ?", params: [id] },
     {
@@ -1224,7 +1268,7 @@ export async function deleteAppointment(id: string): Promise<void> {
       });
     }
   }
-  await db.batch(statements);
+  return statements;
 }
 
 /**
@@ -1338,12 +1382,6 @@ export async function splitSeries(args: {
     ...args.master.tagIds,
     ...args.newSeries.tagIds,
   ]);
-  const existingReminders = await db.select<
-    { id: string; minutes_before: number }[]
-  >(
-    "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
-    [args.master.id]
-  );
   const statements: BatchStatement[] = [
     ...appointmentWriteStatements({
       appt: args.master,
@@ -1351,10 +1389,7 @@ export async function splitSeries(args: {
       updatedAt: now,
       createdAtDefault: now,
       tagLabelById,
-      existingReminders: existingReminders.map((r) => ({
-        id: r.id,
-        minutesBefore: r.minutes_before,
-      })),
+      existingReminders: await loadExistingReminders(db, args.master.id),
     }),
     ...appointmentWriteStatements({
       appt: args.newSeries,
@@ -1411,12 +1446,6 @@ export async function truncateSeries(args: {
   const db = await getDb();
   const now = nowIso();
   const tagLabelById = await loadTagLabels(db, args.master.tagIds);
-  const existingReminders = await db.select<
-    { id: string; minutes_before: number }[]
-  >(
-    "SELECT id, minutes_before FROM appointment_reminders WHERE appointment_id = ?",
-    [args.master.id]
-  );
   const overrideRows = await db.select<{ id: string }[]>(
     "SELECT id FROM appointments WHERE parent_id = ? AND recurrence_anchor >= ?",
     [args.master.id, args.anchor]
@@ -1428,10 +1457,7 @@ export async function truncateSeries(args: {
       updatedAt: now,
       createdAtDefault: now,
       tagLabelById,
-      existingReminders: existingReminders.map((r) => ({
-        id: r.id,
-        minutesBefore: r.minutes_before,
-      })),
+      existingReminders: await loadExistingReminders(db, args.master.id),
     }),
   ];
   for (const o of overrideRows) {
@@ -1461,48 +1487,19 @@ export async function searchAppointments(
   const trimmed = term.trim();
   if (!trimmed) return [];
   const db = await getDb();
-  const map = new Map<string, SearchHit>();
-  const mark = (id: string, key: keyof SearchHit) => {
-    const h = map.get(id) || { hasPublicHit: false, hasSecretHit: false };
-    h[key] = true;
-    map.set(id, h);
-  };
-
-  if (isFtsAvailable()) {
-    const pub = buildFtsMatch("public_content", trimmed);
-    const sec = buildFtsMatch("secret_content", trimmed);
-    if (pub) {
-      const r = await db.select<{ appointment_id: string }[]>(
-        "SELECT appointment_id FROM appointments_fts WHERE appointments_fts MATCH ?",
-        [pub]
-      );
-      for (const x of r) mark(x.appointment_id, "hasPublicHit");
-    }
-    if (sec) {
-      const r = await db.select<{ appointment_id: string }[]>(
-        "SELECT appointment_id FROM appointments_fts WHERE appointments_fts MATCH ?",
-        [sec]
-      );
-      for (const x of r) mark(x.appointment_id, "hasSecretHit");
-    }
-  } else {
-    const like = `%${trimmed.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
-    const pub = await db.select<{ id: string }[]>(
-      `SELECT DISTINCT a.id FROM appointments a
+  const map = await searchHitsFor(trimmed, {
+    ftsTable: "appointments_fts",
+    idColumn: "appointment_id",
+    likePublicSql: `SELECT DISTINCT a.id FROM appointments a
         WHERE a.title LIKE ? ESCAPE '\\'
            OR a.location LIKE ? ESCAPE '\\'
            OR a.description LIKE ? ESCAPE '\\'
            OR EXISTS (SELECT 1 FROM appointment_tags at JOIN task_tags t ON t.id=at.tag_id
                        WHERE at.appointment_id=a.id AND t.label LIKE ? ESCAPE '\\')`,
-      [like, like, like, like]
-    );
-    for (const x of pub) mark(x.id, "hasPublicHit");
-    const sec = await db.select<{ id: string }[]>(
+    likePublicParamCount: 4,
+    likeSecretSql:
       "SELECT id FROM appointments WHERE secret_details LIKE ? ESCAPE '\\'",
-      [like]
-    );
-    for (const x of sec) mark(x.id, "hasSecretHit");
-  }
+  });
 
   const ids = [...map.keys()];
   if (ids.length === 0) return [];
@@ -1633,25 +1630,13 @@ export async function applyIcsAppointments(
         ).map((r) => r.id);
 
   const statements: BatchStatement[] = [];
-  for (const id of replaceIds) {
+  // Die geteilte Lösch-Kaskade erwartet die Override-IDs je Master; die
+  // Sammel-Query oben liefert sie ungruppiert -- fürs FTS-Aufräumen reicht es,
+  // sie komplett dem ersten Master mitzugeben (DELETEs sind idempotent).
+  for (const [i, id] of replaceIds.entries()) {
     statements.push(
-      { sql: "DELETE FROM reminder_fired WHERE appointment_id = ?", params: [id] },
-      {
-        sql: "DELETE FROM appointment_reminders WHERE appointment_id = ?",
-        params: [id],
-      },
-      { sql: "DELETE FROM appointment_tags WHERE appointment_id = ?", params: [id] },
-      { sql: "DELETE FROM appointments WHERE parent_id = ?", params: [id] },
-      { sql: "DELETE FROM appointments WHERE id = ?", params: [id] }
+      ...appointmentDeleteStatements(id, i === 0 ? replacedOverrideIds : [])
     );
-  }
-  if (isFtsAvailable()) {
-    for (const fid of [...replaceIds, ...replacedOverrideIds]) {
-      statements.push({
-        sql: "DELETE FROM appointments_fts WHERE appointment_id = ?",
-        params: [fid],
-      });
-    }
   }
   for (const a of appointments) {
     statements.push(
@@ -1768,12 +1753,9 @@ export async function getAllForBackup(): Promise<BackupPayload> {
   const tags = await listTags(true);
   const rows = await db.select<EntryRow[]>("SELECT * FROM entries ORDER BY date");
   const entries = (await hydrateFullEntries(rows)).map(toTimeEntry);
-  const apptRows = await db.select<AppointmentRow[]>(
-    // Master vor Overrides (parent_id NULL zuerst): applyImport schreibt in
-    // Dateireihenfolge, Overrides brauchen ihren Master wegen des FK bereits.
-    "SELECT * FROM appointments ORDER BY (parent_id IS NOT NULL), start_date"
-  );
-  const appointments = (await hydrateFullAppointments(apptRows)).map(toAppointment);
+  // Master vor Overrides (garantiert listAllAppointmentsFull): applyImport
+  // schreibt in Dateireihenfolge, Overrides brauchen ihren Master (FK) bereits.
+  const appointments = (await listAllAppointmentsFull()).map(toAppointment);
   const reminderFired = await listFiredReminders("0000-01-01");
   return {
     // Version 2 seit dem Terminkalender: Termine sind ein eigener Datenbestand
