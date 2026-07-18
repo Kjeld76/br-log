@@ -368,6 +368,11 @@ export function parseIcs(text: string): IcsParseResult {
     items.push({ appointment: appt, categories: parseCategories(raw.vevent) });
   }
 
+  // Anker-Granularität ist der Tag: mehrere RECURRENCE-IDs am selben lokalen
+  // Datum würden am UNIQUE-Index (parent_id, recurrence_anchor) scheitern und
+  // den gesamten Import abbrechen. Es gewinnt die höchste SEQUENCE (bei
+  // Gleichstand die spätere in der Datei).
+  const overrideByKey = new Map<string, { item: IcsImportItem; seq: number }>();
   for (const raw of raws) {
     if (!raw.isOverride) continue;
     const masterId = raw.uid ? masterIdByUid.get(raw.uid) : undefined;
@@ -388,6 +393,10 @@ export function parseIcs(text: string): IcsParseResult {
       recIdRaw instanceof ICAL.Time
         ? toLocalParts(recIdRaw).date
         : appt.startDate;
+    // Die eigene SEQUENCE des Override-VEVENTs (buildBase-Ergebnis wird unten
+    // auf 0 genormt) entscheidet den Tages-Kollisionsfall.
+    const seqRaw = raw.vevent.getFirstPropertyValue("sequence");
+    const seq = typeof seqRaw === "number" ? seqRaw : 0;
     appt.parentId = masterId;
     appt.recurrenceAnchor = anchor;
     appt.rrule = null;
@@ -403,11 +412,117 @@ export function parseIcs(text: string): IcsParseResult {
         appt.endTime = "10:00";
       }
     }
-    items.push({ appointment: appt, categories: [] });
+    const key = `${masterId}|${anchor}`;
+    const prev = overrideByKey.get(key);
+    if (prev) {
+      warnings.push(
+        `„${appt.title || "(ohne Titel)"}“: Mehrere Serien-Ausnahmen fallen auf denselben Tag (${anchor}) – nur die neueste wurde übernommen.`
+      );
+      if (seq < prev.seq) continue;
+    }
+    overrideByKey.set(key, { item: { appointment: appt, categories: [] }, seq });
   }
+  items.push(...[...overrideByKey.values()].map((v) => v.item));
 
   if (items.length === 0) {
     throw new Error("Die ICS-Datei enthält keine importierbaren Termine.");
   }
   return { items, warnings };
+}
+
+// ---------- Import-Abgleich (UID+SEQUENCE gegen den lokalen Bestand) ----------
+
+/** Lokale Master-Zeile für den Import-Abgleich. */
+export interface LocalApptRef {
+  id: string;
+  icsSequence: number;
+}
+
+/** Analyse-Ergebnis eines ICS-Imports (Vorschau vor dem Schreiben). */
+export interface IcsImportPlan {
+  /** Frisch einzufügende Termine (Master vor Overrides). */
+  toSave: Appointment[];
+  /** Lokale Master-IDs, die vorher ersetzt (gelöscht) werden. */
+  replaceIds: string[];
+  newCount: number; // unbekannte UID (oder ohne UID)
+  updatedCount: number; // UID bekannt, importierte SEQUENCE neuer -> ersetzt
+  unchangedCount: number; // UID bekannt, SEQUENCE gleich/älter -> bleibt lokal
+  warnings: string[];
+}
+
+/** Lokale Termin-ID aus einer eigenen Export-UID (`<id>@br-log.local`). */
+export function ownUidLocalId(uid: string): string | null {
+  const m = /^(.+)@br-log\.local$/.exec(uid);
+  return m ? m[1] : null;
+}
+
+/**
+ * Gleicht geparste ICS-Termine mit dem lokalen Bestand ab (pure Logik, DB-frei).
+ * `localByUid` matcht importierte Termine über ihre gespeicherte ics_uid;
+ * `localById` matcht Reimporte eigener Exporte über die in der UID kodierte
+ * Termin-ID (lokale Zeilen haben dann ics_uid = NULL).
+ */
+export function planIcsImport(args: {
+  items: IcsImportItem[];
+  localByUid: Map<string, LocalApptRef>;
+  localById: Map<string, LocalApptRef>;
+  /** Lokale Master-ID -> vorhandene Override-Anker (Einzel-Übernahme-Check). */
+  localOverrideAnchors: Map<string, Set<string>>;
+  warnings: string[];
+}): IcsImportPlan {
+  const { items, localByUid, localById, localOverrideAnchors } = args;
+  const warnings = [...args.warnings];
+  const toSave: Appointment[] = [];
+  const replaceIds: string[] = [];
+  // Datei-interne ID eines übersprungenen (lokal unveränderten) Masters ->
+  // sein lokales Gegenstück. Overrides solcher Master werden einzeln
+  // abgeglichen statt pauschal verworfen: Fremdkalender erhöhen beim
+  // Verschieben EINER Instanz oft nur die SEQUENCE des Override-VEVENTs.
+  const keptByFileMaster = new Map<string, { localId: string; own: boolean }>();
+  let newCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+
+  for (const it of items) {
+    const a = it.appointment;
+    if (a.parentId !== null) {
+      const kept = keptByFileMaster.get(a.parentId);
+      if (!kept) {
+        // Master wird neu angelegt oder ersetzt -- Override folgt ihm.
+        toSave.push(a);
+        continue;
+      }
+      // Master bleibt lokal bestehen: Ausnahme nur übernehmen, wenn ihr Anker
+      // frei ist. Belegte Anker nie überschreiben (lokale Einzel-Bearbeitung
+      // geht sonst verloren; zudem schützt das den UNIQUE-Override-Index).
+      const anchor = a.recurrenceAnchor ?? a.startDate;
+      if (localOverrideAnchors.get(kept.localId)?.has(anchor)) {
+        if (!kept.own) {
+          warnings.push(
+            `„${a.title || "(ohne Titel)"}“: Die Serien-Ausnahme am ${anchor} wurde nicht übernommen (Instanz ist lokal bereits einzeln bearbeitet).`
+          );
+        }
+        continue;
+      }
+      updatedCount++;
+      toSave.push({ ...a, parentId: kept.localId });
+      continue;
+    }
+    const viaUid = a.icsUid ? localByUid.get(a.icsUid) : undefined;
+    const ownId = a.icsUid ? ownUidLocalId(a.icsUid) : null;
+    const local = viaUid ?? (ownId ? localById.get(ownId) : undefined);
+    if (!local) {
+      newCount++;
+      toSave.push(a);
+    } else if (a.icsSequence > local.icsSequence) {
+      updatedCount++;
+      replaceIds.push(local.id);
+      toSave.push(a);
+    } else {
+      unchangedCount++;
+      keptByFileMaster.set(a.id, { localId: local.id, own: !viaUid });
+    }
+  }
+
+  return { toSave, replaceIds, newCount, updatedCount, unchangedCount, warnings };
 }

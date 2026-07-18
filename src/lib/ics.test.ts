@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppointmentFullItem } from "../types";
-import { buildIcs, parseIcs } from "./ics";
+import { buildIcs, parseIcs, planIcsImport } from "./ics";
 
 function appt(
   overrides: Partial<AppointmentFullItem> = {}
@@ -270,5 +270,150 @@ describe("parseIcs Fremddateien", () => {
     expect(() =>
       parseIcs("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR")
     ).toThrow("keine importierbaren Termine");
+  });
+
+  it("dedupliziert mehrere Serien-Ausnahmen am selben lokalen Tag (höchste SEQUENCE gewinnt)", () => {
+    // Anker-Granularität ist der Tag: zwei RECURRENCE-IDs am selben Datum
+    // würden sonst am UNIQUE-Index (parent_id, recurrence_anchor) scheitern
+    // und den gesamten Import abbrechen.
+    const text = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Test//DE",
+      "BEGIN:VEVENT",
+      "UID:s@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "DTSTART:20260720T090000",
+      "DTEND:20260720T100000",
+      "RRULE:FREQ=HOURLY;COUNT=48",
+      "SUMMARY:Stündlich",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:s@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "RECURRENCE-ID:20260720T110000",
+      "DTSTART:20260720T113000",
+      "DTEND:20260720T120000",
+      "SEQUENCE:2",
+      "SUMMARY:Gewinner",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:s@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "RECURRENCE-ID:20260720T150000",
+      "DTSTART:20260720T153000",
+      "DTEND:20260720T160000",
+      "SEQUENCE:1",
+      "SUMMARY:Verlierer",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const { items, warnings } = parseIcs(text);
+    const overrides = items.filter((i) => i.appointment.parentId !== null);
+    expect(overrides).toHaveLength(1);
+    expect(overrides[0].appointment.title).toBe("Gewinner");
+    expect(warnings.some((w) => w.includes("selben Tag"))).toBe(true);
+  });
+});
+
+describe("planIcsImport", () => {
+  const foreignSeries = (overrideSummary = "Verschoben") =>
+    [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Test//DE",
+      "BEGIN:VEVENT",
+      "UID:ext@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "DTSTART:20260720T100000",
+      "DTEND:20260720T110000",
+      "RRULE:FREQ=WEEKLY",
+      "SEQUENCE:1",
+      "SUMMARY:Fremdserie",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:ext@example.org",
+      "DTSTAMP:20260701T000000Z",
+      "RECURRENCE-ID:20260727T100000",
+      "DTSTART:20260728T140000",
+      "DTEND:20260728T150000",
+      "SEQUENCE:2",
+      `SUMMARY:${overrideSummary}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+  it("erkennt den Reimport eigener Exporte über die br-log.local-UID (keine Duplikate)", () => {
+    const text = buildIcs([appt({ id: "local-1" })], { includeConfidential: false });
+    const { items, warnings } = parseIcs(text);
+    const plan = planIcsImport({
+      items,
+      localByUid: new Map(),
+      localById: new Map([["local-1", { id: "local-1", icsSequence: 0 }]]),
+      localOverrideAnchors: new Map(),
+      warnings,
+    });
+    expect(plan.newCount).toBe(0);
+    expect(plan.unchangedCount).toBe(1);
+    expect(plan.toSave).toHaveLength(0);
+    expect(plan.replaceIds).toHaveLength(0);
+  });
+
+  it("übernimmt neue Ausnahmen einer lokal unveränderten importierten Serie einzeln", () => {
+    // Google & Co. erhöhen beim Verschieben EINER Instanz nur die SEQUENCE des
+    // Override-VEVENTs -- der Master gilt als unverändert, die Ausnahme darf
+    // trotzdem nicht still verworfen werden.
+    const { items, warnings } = parseIcs(foreignSeries());
+    const plan = planIcsImport({
+      items,
+      localByUid: new Map([["ext@example.org", { id: "local-m", icsSequence: 1 }]]),
+      localById: new Map(),
+      localOverrideAnchors: new Map([["local-m", new Set<string>()]]),
+      warnings,
+    });
+    expect(plan.unchangedCount).toBe(1); // Master bleibt lokal bestehen
+    expect(plan.updatedCount).toBe(1); // die Ausnahme zählt als aktualisiert
+    expect(plan.toSave).toHaveLength(1);
+    expect(plan.toSave[0].parentId).toBe("local-m"); // auf den lokalen Master umgehängt
+    expect(plan.toSave[0].title).toBe("Verschoben");
+  });
+
+  it("verwirft eine Ausnahme nicht still, wenn die Instanz lokal bereits bearbeitet ist", () => {
+    const { items, warnings } = parseIcs(foreignSeries());
+    const plan = planIcsImport({
+      items,
+      localByUid: new Map([["ext@example.org", { id: "local-m", icsSequence: 1 }]]),
+      localById: new Map(),
+      localOverrideAnchors: new Map([["local-m", new Set(["2026-07-27"])]]),
+      warnings,
+    });
+    expect(plan.toSave).toHaveLength(0);
+    expect(plan.warnings.some((w) => w.includes("nicht übernommen"))).toBe(true);
+  });
+
+  it("meldet beim Reimport eigener Exporte keine Ausnahme-Warnungen", () => {
+    // Eigener Export: die Overrides der Datei SIND die lokalen Overrides --
+    // stilles Überspringen ist hier korrekt, kein Warn-Spam.
+    const master = appt({ id: "local-m", rrule: "FREQ=WEEKLY" });
+    const override = appt({
+      id: "local-ov",
+      parentId: "local-m",
+      recurrenceAnchor: "2026-07-27",
+      startDate: "2026-07-28",
+      endDate: "2026-07-28",
+    });
+    const text = buildIcs([master, override], { includeConfidential: false });
+    const { items, warnings } = parseIcs(text);
+    const plan = planIcsImport({
+      items,
+      localByUid: new Map(),
+      localById: new Map([["local-m", { id: "local-m", icsSequence: 0 }]]),
+      localOverrideAnchors: new Map([["local-m", new Set(["2026-07-27"])]]),
+      warnings,
+    });
+    expect(plan.toSave).toHaveLength(0);
+    expect(plan.unchangedCount).toBe(1);
+    expect(plan.warnings).toEqual([]);
   });
 });

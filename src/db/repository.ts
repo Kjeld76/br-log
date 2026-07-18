@@ -1491,6 +1491,55 @@ export async function listAppointmentsByIcsUid(
 }
 
 /**
+ * (Termin-ID -> lokale Master-Zeile) für den Reimport eigener Exporte: deren
+ * UID (`<id>@br-log.local`) kodiert die lokale ID, die Zeile selbst hat
+ * ics_uid = NULL und ist über listAppointmentsByIcsUid nicht auffindbar.
+ */
+export async function listAppointmentMastersByIds(
+  ids: string[]
+): Promise<Map<string, { id: string; icsSequence: number }>> {
+  const map = new Map<string, { id: string; icsSequence: number }>();
+  if (ids.length === 0) return map;
+  const db = await getDb();
+  const rows = await selectByIdChunks<{ id: string; ics_sequence: number }>(
+    db,
+    ids,
+    (ph) => `SELECT id, ics_sequence FROM appointments
+      WHERE parent_id IS NULL AND id IN (${ph})`
+  );
+  for (const r of rows) map.set(r.id, { id: r.id, icsSequence: r.ics_sequence });
+  return map;
+}
+
+/**
+ * (Master-ID -> vorhandene Override-Anker) für die Einzel-Übernahme von
+ * Serien-Ausnahmen beim ICS-Import (belegte Anker werden nie überschrieben).
+ */
+export async function listOverrideAnchors(
+  masterIds: string[]
+): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  if (masterIds.length === 0) return map;
+  const db = await getDb();
+  const rows = await selectByIdChunks<{
+    parent_id: string;
+    recurrence_anchor: string | null;
+  }>(
+    db,
+    masterIds,
+    (ph) => `SELECT parent_id, recurrence_anchor FROM appointments
+      WHERE parent_id IN (${ph})`
+  );
+  for (const r of rows) {
+    if (!r.recurrence_anchor) continue;
+    const set = map.get(r.parent_id) ?? new Set<string>();
+    set.add(r.recurrence_anchor);
+    map.set(r.parent_id, set);
+  }
+  return map;
+}
+
+/**
  * Wendet einen ICS-Import ATOMAR an: ersetzte Bestände (UID-Match mit
  * neuerer SEQUENCE -- die Serie wird KOMPLETT ersetzt, inkl. Overrides und
  * Feuer-Protokoll) löschen, dann alle importierten Termine frisch einfügen

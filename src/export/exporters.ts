@@ -7,11 +7,19 @@ import {
   parseBackup,
   listAllAppointmentsFull,
   listAppointmentsByIcsUid,
+  listAppointmentMastersByIds,
+  listOverrideAnchors,
   applyIcsAppointments,
   listTags,
   type PeriodFilter,
 } from "../db/repository";
-import { buildIcs, parseIcs } from "../lib/ics";
+import {
+  buildIcs,
+  parseIcs,
+  planIcsImport,
+  ownUidLocalId,
+  type IcsImportPlan,
+} from "../lib/ics";
 import { minutesToHhmm, formatDecimalHoursDe } from "../lib/time";
 import { formatObjectionMeta } from "../lib/objections";
 import { todayIso } from "../lib/calendar";
@@ -176,23 +184,13 @@ export async function exportIcs(
   return saveText(name, text, "ics", "iCalendar");
 }
 
-/** Analyse-Ergebnis eines ICS-Imports (Vorschau vor dem Schreiben). */
-export interface IcsImportPlan {
-  /** Frisch einzufügende Termine (Master vor Overrides). */
-  toSave: Appointment[];
-  /** Lokale Master-IDs, die vorher ersetzt (gelöscht) werden. */
-  replaceIds: string[];
-  newCount: number; // unbekannte UID (oder ohne UID)
-  updatedCount: number; // UID bekannt, importierte SEQUENCE neuer -> ersetzt
-  unchangedCount: number; // UID bekannt, SEQUENCE gleich/älter -> bleibt lokal
-  warnings: string[];
-}
+export type { IcsImportPlan } from "../lib/ics";
 
 /**
  * Öffnet eine ICS-Datei, parst sie (lib/ics.ts) und gleicht sie über
- * UID+SEQUENCE mit dem Bestand ab. CATEGORIES werden case-insensitiv auf
- * vorhandene Schlagwörter gemappt (unbekannte bleiben unberücksichtigt --
- * bewusst keine automatische Tag-Anlage aus Fremddateien).
+ * UID+SEQUENCE mit dem Bestand ab (planIcsImport). CATEGORIES werden
+ * case-insensitiv auf vorhandene Schlagwörter gemappt (unbekannte bleiben
+ * unberücksichtigt -- bewusst keine automatische Tag-Anlage aus Fremddateien).
  */
 export async function analyzeIcsFile(): Promise<IcsImportPlan | null> {
   const picked = await invoke<{ name: string; contents: string } | null>(
@@ -214,36 +212,25 @@ export async function analyzeIcsFile(): Promise<IcsImportPlan | null> {
     .filter((it) => it.appointment.parentId === null && it.appointment.icsUid)
     .map((it) => it.appointment.icsUid!);
   const localByUid = await listAppointmentsByIcsUid(masterUids);
+  // Reimport eigener Exporte: die UID trägt die lokale Termin-ID.
+  const ownIds = masterUids
+    .map(ownUidLocalId)
+    .filter((id): id is string => id !== null);
+  const localById = await listAppointmentMastersByIds(ownIds);
+  const localMasterIds = [
+    ...new Set(
+      [...localByUid.values(), ...localById.values()].map((l) => l.id)
+    ),
+  ];
+  const localOverrideAnchors = await listOverrideAnchors(localMasterIds);
 
-  const toSave: Appointment[] = [];
-  const replaceIds: string[] = [];
-  const skippedMasterIds = new Set<string>();
-  let newCount = 0;
-  let updatedCount = 0;
-  let unchangedCount = 0;
-
-  for (const it of items) {
-    const a = it.appointment;
-    if (a.parentId !== null) {
-      // Overrides folgen der Entscheidung ihres Masters.
-      if (!skippedMasterIds.has(a.parentId)) toSave.push(a);
-      continue;
-    }
-    const local = a.icsUid ? localByUid.get(a.icsUid) : undefined;
-    if (!local) {
-      newCount++;
-      toSave.push(a);
-    } else if (a.icsSequence > local.icsSequence) {
-      updatedCount++;
-      replaceIds.push(local.id);
-      toSave.push(a);
-    } else {
-      unchangedCount++;
-      skippedMasterIds.add(a.id);
-    }
-  }
-
-  return { toSave, replaceIds, newCount, updatedCount, unchangedCount, warnings };
+  return planIcsImport({
+    items,
+    localByUid,
+    localById,
+    localOverrideAnchors,
+    warnings,
+  });
 }
 
 /** Wendet den bestätigten ICS-Import an (atomar, repository.applyIcsAppointments). */
