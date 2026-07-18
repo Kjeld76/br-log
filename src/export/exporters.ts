@@ -24,7 +24,6 @@ import { minutesToHhmm, formatDecimalHoursDe } from "../lib/time";
 import { formatObjectionMeta } from "../lib/objections";
 import { todayIso } from "../lib/calendar";
 import type {
-  Appointment,
   EntryListItem,
   EntryFullItem,
   BackupPayload,

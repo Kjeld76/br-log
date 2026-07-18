@@ -35,7 +35,12 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
   // spaltengebundene Trefferherkunft wie die Eintragssuche (SearchHit).
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<AppointmentListItem[]>([]);
+  // GETRENNTE Generationszähler für Fenster-Ladung und Suche: mit einem
+  // geteilten Zähler verwarf eine Sucheingabe die noch laufende Range-Antwort
+  // endgültig (der Effekt läuft mangels Dep-Änderung nicht erneut) -- die
+  // Agenda zeigte dann nach dem Leeren der Suche einen veralteten Stand.
   const requestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
 
   const to = format(addDays(parseISO(from), days), "yyyy-MM-dd");
 
@@ -63,14 +68,14 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
       setResults([]);
       return;
     }
-    const id = ++requestIdRef.current;
+    const id = ++searchRequestIdRef.current;
     let active = true;
     searchAppointments(t)
       .then((items) => {
-        if (active && requestIdRef.current === id) setResults(items);
+        if (active && searchRequestIdRef.current === id) setResults(items);
       })
       .catch((e) => {
-        if (active && requestIdRef.current === id) setError(toUserMessage(e));
+        if (active && searchRequestIdRef.current === id) setError(toUserMessage(e));
       });
     return () => {
       active = false;

@@ -58,27 +58,37 @@ export default function AppointmentMonthGrid({
 
   const cells = monthGrid(month);
 
-  // Race-Guard-Muster der bisherigen CalendarView (Finding 53): jede Monats-/
-  // Reload-Generation und jeder Tages-Klick invalidiert langsam auflösende
-  // Vorgänger-Antworten.
+  // Race-Guard-Muster der bisherigen CalendarView (Finding 53) -- aber mit
+  // GETRENNTEN Zählern: Ein Tages-Klick während des Monats-Ladens darf die
+  // laufende Monats-Antwort nicht verwerfen (Summen/Chips blieben sonst bis
+  // zum nächsten Monats-/Reload-Wechsel leer). Der Monats-Wechsel invalidiert
+  // umgekehrt sehr wohl laufende Tages-Abfragen.
   const requestIdRef = useRef(0);
+  const dayRequestIdRef = useRef(0);
 
   useEffect(() => {
     const id = ++requestIdRef.current;
+    dayRequestIdRef.current++;
     let active = true;
     const { from, to } = monthRangeIso(month);
+    // Termine über den VOLLEN Grid-Bereich laden (inkl. Randzellen der
+    // Nachbarmonate): die Zellen sind klickbar und das Tages-Panel würde
+    // sonst fälschlich "keine Termine" für existierende Termine melden.
+    const gridCells = monthGrid(month);
+    const gridFrom = gridCells[0].iso;
+    const gridTo = gridCells[gridCells.length - 1].iso;
     setError(null);
     Promise.all([
       daySums(from, to),
       getWorkAndCompensationMinutes(from, to),
-      listAppointmentsRange(from, to),
+      listAppointmentsRange(gridFrom, gridTo),
     ])
       .then(([s, split, appts]) => {
         if (!active || requestIdRef.current !== id) return;
         setSums(s);
         setMonthWorkMinutes(split.work);
         setMonthCompensationMinutes(split.compensation);
-        setOccurrences(expandOccurrences(appts, from, to));
+        setOccurrences(expandOccurrences(appts, gridFrom, gridTo));
       })
       .catch((e) => {
         if (active && requestIdRef.current === id) setError(toUserMessage(e));
@@ -91,14 +101,14 @@ export default function AppointmentMonthGrid({
   }, [month, reloadKey]);
 
   const handleDayClick = async (iso: string) => {
-    const id = ++requestIdRef.current;
+    const id = ++dayRequestIdRef.current;
     try {
       const items = await listEntries({ from: iso, to: iso });
-      if (requestIdRef.current !== id) return;
+      if (dayRequestIdRef.current !== id) return;
       setSelectedDay(iso);
       setDayEntries(items);
     } catch (e) {
-      if (requestIdRef.current === id) setError(toUserMessage(e));
+      if (dayRequestIdRef.current === id) setError(toUserMessage(e));
     }
   };
 
