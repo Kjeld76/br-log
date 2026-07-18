@@ -188,19 +188,19 @@ export default function AppointmentMonthGrid({
               className={
                 "flex min-h-[4rem] flex-col items-stretch gap-0.5 rounded border p-0.5 text-left transition sm:min-h-[5rem] sm:p-1 " +
                 (c.inMonth
-                  ? "border-border bg-surface hover:border-sky-300 hover:bg-sky-50 dark:hover:border-sky-700 dark:hover:bg-slate-700"
-                  : "border-transparent bg-slate-50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-600") +
-                (selectedDay === c.iso ? " ring-2 ring-sky-400" : "")
+                  ? "border-border bg-surface hover:border-hover-accent-line hover:bg-hover-accent-surface"
+                  : "border-transparent bg-cell-muted text-cell-muted-ink") +
+                (selectedDay === c.iso ? " ring-2 ring-selected-ring" : "")
               }
             >
-              <span className="flex items-center justify-between text-xs dark:text-slate-300">
+              <span className="flex items-center justify-between text-xs text-day-number-ink">
                 {c.date.getDate()}
                 {minutes ? (
                   <span
                     className="flex items-center gap-0.5 font-medium text-link"
                     title={`Erfasste Zeit: ${minutesToHhmm(minutes)} Std`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-time-dot" />
                     {/* Auf allen Breiten sichtbar: das Raster ist für
                         Android-Portrait getunt; ein title-Tooltip ist auf
                         Touch nicht erreichbar. */}

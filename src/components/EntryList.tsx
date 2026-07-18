@@ -168,7 +168,7 @@ export default function EntryList({
             key={e.id}
             role="button"
             tabIndex={0}
-            className="cursor-pointer rounded border border-border bg-surface p-3 hover:border-sky-300 hover:bg-sky-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus dark:hover:border-sky-700 dark:hover:bg-slate-700/60"
+            className="cursor-pointer rounded border border-border bg-surface p-3 hover:border-hover-accent-line hover:bg-hover-accent-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             onClick={() => onOpen(e)}
             onKeyDown={(ev) => {
               if (ev.key === "Enter" || ev.key === " ") {
@@ -195,7 +195,7 @@ export default function EntryList({
                     </span>
                   )}
                   {!e.isCompensation && !e.hadPlannedShift && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    <span className="rounded bg-warning-badge px-1.5 py-0.5 text-xs text-warning-badge-ink">
                       keine geplante Schicht
                     </span>
                   )}
@@ -237,7 +237,7 @@ export default function EntryList({
           </li>
         ))}
         {!loading && !error && entries.length === 0 && (
-          <li className="rounded border border-dashed border-slate-300 p-6 text-center text-sm text-secondary-ink dark:border-slate-700">
+          <li className="rounded border border-dashed border-empty-line p-6 text-center text-sm text-secondary-ink">
             Keine Einträge gefunden.
           </li>
         )}

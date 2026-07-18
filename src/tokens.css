@@ -94,6 +94,27 @@
   /* Archiviert-Kennzeichnung (Chip) */
   --color-archived-surface: #94a3b8;
 
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-8-Restfälle) --- */
+  /* Interaktive Zeilen/Zellen: Hover-Akzent (Sky-Rahmen, Licht-Sky/Dunkel-Slate-Flaeche) */
+  --color-hover-accent-line: #7dd3fc;
+  --color-hover-accent-surface: #f0f9ff;
+  --color-hover-accent-surface-soft: rgba(240, 249, 255, .4);
+  /* Warn-Badge (Pendant zu error-badge) */
+  --color-warning-badge-surface: #fef3c7;
+  --color-warning-badge-ink: #92400e;
+  /* Leerzustands-Rahmen (gestrichelt) */
+  --color-border-empty: #cbd5e1;
+  /* Monatsraster: Zellen ausserhalb des Monats */
+  --color-cell-muted-surface: #f8fafc;
+  --color-cell-muted-ink: #94a3b8;
+  /* Auswahlring Tageszelle (konstant in beiden Modi) */
+  --color-selected-ring: #38bdf8;
+  /* Zeitpunkt-Markierung (konstant) */
+  --color-time-dot: #0ea5e9;
+  /* Tagesnummer im Dark abgesenkt (Licht-Wert = vererbtes text-primary-ink
+     des Monatsrasters via body { color }, s. mapping.md/task-8-report.md) */
+  --color-day-number-ink: #0f172a;
+
   /* --- Vertraulich (BR-Geheimnis) — eigene semantische Gruppe --- */
   --color-confidential-surface: #fef2f2;
   --color-confidential-border: #fecaca;
@@ -201,6 +222,16 @@
     --color-destructive-ink: #f87171;
     --color-destructive-hover: rgba(127, 29, 29, .3);
     --color-archived-surface: #475569;
+    /* --- Ergänzungs-Tokens (Fix-Runde, Task-8-Restfälle) --- */
+    --color-hover-accent-line: #0369a1;
+    --color-hover-accent-surface: #334155;
+    --color-hover-accent-surface-soft: rgba(51, 65, 85, .6);
+    --color-warning-badge-surface: rgba(120, 53, 15, .4);
+    --color-warning-badge-ink: #fcd34d;
+    --color-border-empty: #334155;
+    --color-cell-muted-surface: rgba(15, 23, 42, .4);
+    --color-cell-muted-ink: #475569;
+    --color-day-number-ink: #cbd5e1;
     --color-confidential-surface: rgba(190, 18, 60, .16);
     --color-confidential-border: #be123c;
     --color-confidential-ink: #fecdd3;
