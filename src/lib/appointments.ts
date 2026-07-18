@@ -35,10 +35,12 @@ export function overlapsRange(
 }
 
 /**
- * Sicherung gegen kaputte/entartete (z. B. importierte) Serienregeln: mehr
- * Iterationen braucht kein reales Anzeigefenster (täglich über ~27 Jahre).
+ * Sicherung gegen kaputte/entartete (z. B. importierte) Serienregeln. Muss
+ * großzügig sein, weil immer ab DTSTART iteriert wird (COUNT-Semantik und
+ * Intervall-Phase erlauben keinen späteren Einstieg): FREQ=HOURLY erreicht
+ * damit Fenster ~11 Jahre nach Serienstart, MINUTELY ~70 Tage.
  */
-const MAX_ITERATIONS = 10_000;
+const MAX_ITERATIONS = 100_000;
 
 function isoFromIcalTime(t: ICAL.Time): string {
   const p = (n: number, len = 2) => String(n).padStart(len, "0");
@@ -122,7 +124,14 @@ function expandSeries(
     let iterations = 0;
     let next: ICAL.Time | null;
     while ((next = iter.next())) {
-      if (++iterations > MAX_ITERATIONS) break;
+      if (++iterations > MAX_ITERATIONS) {
+        // Nicht still verschwinden lassen: der Abbruch ist diagnostizierbar.
+        console.warn(
+          `Serien-Expansion nach ${MAX_ITERATIONS} Iterationen abgebrochen ` +
+            `(Termin ${master.id}, Regel ${master.rrule ?? ""})`
+        );
+        break;
+      }
       const anchor = isoFromIcalTime(next);
       if (anchor > to) break;
       if (seenAnchors.has(anchor)) continue;
@@ -202,7 +211,14 @@ export function expandOccurrences(
   for (const a of items) {
     if (a.parentId !== null) continue; // Overrides laufen über ihre Serie
     if (a.rrule === null) {
-      if (overlapsRange(a.startDate, a.endDate, from, to)) {
+      // Auch ein Master OHNE Regel kann Override-Kinder haben (Serie wurde auf
+      // "Nie" gestellt; ICS-Import mit verworfener RDATE-Regel). Sie müssen
+      // sichtbar bleiben; ein Override am Master-Anker ersetzt den Master.
+      const overrides = overridesByParent.get(a.id) || [];
+      const replacesSelf = overrides.some(
+        (o) => (o.recurrenceAnchor ?? o.startDate) === a.startDate
+      );
+      if (!replacesSelf && overlapsRange(a.startDate, a.endDate, from, to)) {
         out.push({
           appointment: a,
           anchor: a.startDate,
@@ -211,6 +227,11 @@ export function expandOccurrences(
           endDate: a.endDate,
           endTime: a.endTime,
         });
+      }
+      for (const ov of overrides) {
+        if (overlapsRange(ov.startDate, ov.endDate, from, to)) {
+          out.push(occurrenceFromOverride(ov));
+        }
       }
       continue;
     }

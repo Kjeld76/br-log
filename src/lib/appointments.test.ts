@@ -219,6 +219,34 @@ describe("expandOccurrences (Serien)", () => {
     expect(august[1].anchor).toBe("2026-07-27");
   });
 
+  it("zeigt Overrides eines Masters ohne RRULE weiterhin an", () => {
+    // Entsteht real: Serie mit bearbeiteten Instanzen wird auf "Nie" gestellt,
+    // oder ICS-Import einer RDATE-Serie (RRULE verworfen) mit RECURRENCE-IDs.
+    const master = appt({ id: "master", rrule: null });
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      recurrenceAnchor: "2026-07-27",
+      startDate: "2026-07-25",
+      endDate: "2026-07-25",
+    });
+    const occs = expandOccurrences([master, override], "2026-07-01", "2026-07-31");
+    expect(occs.map((o) => o.appointment.id).sort()).toEqual(["master", "ov"]);
+  });
+
+  it("lässt einen Override am Master-Anker die Master-Instanz ersetzen (rrule=null)", () => {
+    const master = appt({ id: "master", rrule: null });
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      recurrenceAnchor: "2026-07-20", // == master.startDate
+      startDate: "2026-07-21",
+      endDate: "2026-07-21",
+    });
+    const occs = expandOccurrences([master, override], "2026-07-01", "2026-07-31");
+    expect(occs.map((o) => o.appointment.id)).toEqual(["ov"]);
+  });
+
   it("vereinfacht Regeln mit mehreren Instanzen pro Tag auf die erste (Anker-Granularität)", () => {
     const master = appt({ id: "hourly", rrule: "FREQ=HOURLY;COUNT=30" });
     const occs = expandOccurrences([master], "2026-07-01", "2026-08-31");
@@ -226,12 +254,21 @@ describe("expandOccurrences (Serien)", () => {
     expect(occs.map((o) => o.anchor)).toEqual(["2026-07-20", "2026-07-21"]);
   });
 
+  it("expandiert hochfrequente Serien auch in weit entfernten Fenstern (kein stiller Abbruch)", () => {
+    // FREQ=HOURLY braucht ~17 800 Iterationen bis Juli 2028 -- das alte Limit
+    // von 10 000 ließ die Serie dort stillschweigend verschwinden.
+    const master = appt({ id: "hourly", rrule: "FREQ=HOURLY" });
+    const occs = expandOccurrences([master], "2028-07-01", "2028-07-31");
+    expect(occs.length).toBe(31);
+  });
+
   it("terminiert bei entarteten Regeln über den Iterations-Guard", () => {
     const master = appt({ id: "minutely", rrule: "FREQ=MINUTELY" }); // endlos, 1440/Tag
     const occs = expandOccurrences([master], "2026-07-01", "2027-07-01");
-    // Guard greift nach 10 000 Iterationen (~7 Tage a 1440 Minuten).
+    // Guard begrenzt die Expansion (100 000 Iterationen ≈ 70 Tage a 1440 Minuten),
+    // statt das ganze Jahr zu füllen -- wichtig ist: er terminiert.
     expect(occs.length).toBeGreaterThan(0);
-    expect(occs.length).toBeLessThan(20);
+    expect(occs.length).toBeLessThan(100);
   });
 
   it("zeigt bei nicht parsebarer Regel defensiv den Start-Termin", () => {
