@@ -24,8 +24,10 @@
   --color-on-primary: #ffffff;
 
   /* --- Marke & Interaktion (Sky-Bestand) --- */
-  --color-primary: #0284c7;
-  --color-primary-hover: #0369a1;
+  /* Nutzer-Entscheid 2026-07-19: von #0284c7/#0369a1 abgedunkelt, damit
+     Weiss auf Primary WCAG 4.5:1 erreicht (5,93:1 statt 4,10:1). */
+  --color-primary: #0369a1;
+  --color-primary-hover: #075985;
   --color-link: #0369a1;
   --color-focus-ring: #0ea5e9;
   --color-info-surface: #f0f9ff;

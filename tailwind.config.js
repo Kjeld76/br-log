@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  // dark:-Klassen (Restfälle) und Tokens hören auf DIESELBE Quelle.
+  // Tokens und Tailwind-Varianten hoeren auf DIESELBE Theming-Quelle (data-theme).
   darkMode: ["selector", '[data-theme="dark"]'],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   future: { hoverOnlyWhenSupported: true },
@@ -96,7 +96,7 @@ export default {
         toast: "var(--z-toast)", tooltip: "var(--z-tooltip)",
       },
       transitionDuration: {
-        fast: "150ms", normal: "300ms", slow: "500ms",
+        fast: "var(--motion-fast)", normal: "var(--motion-normal)", slow: "var(--motion-slow)",
       },
     },
   },
