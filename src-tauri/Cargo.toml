@@ -1,6 +1,6 @@
 [package]
 name = "br-log"
-version = "1.5.1"
+version = "1.6.0"
 description = "Betriebsrats-Zeiterfassung"
 authors = ["Mario König <kontakt@koenig-mario.de>"]
 license = "GPL-3.0-only"
