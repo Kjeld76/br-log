@@ -393,8 +393,7 @@ export function parseRruleToPreset(rrule: string): SeriesPreset | null {
           Number(m[6] ?? "0")
         )
       );
-      const p = (n: number) => String(n).padStart(2, "0");
-      date = `${js.getFullYear()}-${p(js.getMonth() + 1)}-${p(js.getDate())}`;
+      date = localIsoFromJsDate(js);
     }
     end = { type: "until", date };
   }
@@ -426,16 +425,34 @@ export function seriesEndDateFor(a: SeriesEndInput): string | null {
   } catch {
     return null;
   }
-  const spanDays = differenceInCalendarDays(parseISO(a.endDate), parseISO(a.startDate));
+  // Zentral (statt zweig-lokal) geklemmt: eine negative Spanne (endDate vor
+  // startDate, nur über korrupte/handeditierte Daten erreichbar) darf das
+  // Serienende in KEINEM Zweig vor den letzten Anker ziehen.
+  const spanDays = Math.max(
+    0,
+    differenceInCalendarDays(parseISO(a.endDate), parseISO(a.startDate))
+  );
 
   if (recur.until) {
     // Wie in parseRruleToPreset: ein Zeit-UNTIL in UTC kann lokal auf einen
     // anderen Tag fallen als das UTC-Datum -- ein zu frühes Serienende ließe
-    // die letzte Instanz aus dem Kalender verschwinden.
-    const anchor = recur.until.isDate
-      ? isoFromIcalTime(recur.until)
-      : localIsoFromJsDate(recur.until.toJSDate());
-    return addDaysIso(anchor, Math.max(0, spanDays));
+    // die letzte Instanz aus dem Kalender verschwinden. Der ical.js-Iterator
+    // vergleicht dabei floating-Wandzeiten ("wall-as-UTC") gegen das
+    // UTC-UNTIL; östlich von UTC ist das lokale Datum beweisbar >= dem
+    // UTC-Datum (konservativ), westlich von UTC kann es einen Tag DAVOR
+    // liegen, während der Iterator noch einen Anker auf dem UTC-Datum
+    // emittiert. Anker = max(UTC-Datum, lokales Datum) deckt beide Seiten ab
+    // (ISO-Strings sind lexikographisch chronologisch, ein String-Vergleich
+    // genügt).
+    let anchor: string;
+    if (recur.until.isDate) {
+      anchor = isoFromIcalTime(recur.until);
+    } else {
+      const utcAnchor = isoFromIcalTime(recur.until);
+      const localAnchor = localIsoFromJsDate(recur.until.toJSDate());
+      anchor = localAnchor > utcAnchor ? localAnchor : utcAnchor;
+    }
+    return addDaysIso(anchor, spanDays);
   }
 
   if (recur.count != null) {

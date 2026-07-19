@@ -421,6 +421,74 @@ describe("seriesEndDateFor", () => {
       )
     ).toBe("2026-07-16");
   });
+
+  it("liefert das Startdatum als Serienende bei COUNT=1", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=DAILY;COUNT=1" }))).toBe(
+      "2026-07-01"
+    );
+  });
+
+  // Anker = max(UTC-Datum, lokales Datum) des UNTIL (s. Doc-Kommentar an
+  // seriesEndDateFor): östlich von UTC (Testumgebung: Europa/Berlin) ist das
+  // lokale Datum stets >= dem UTC-Datum, der West-Fall (lokal < UTC) lässt
+  // sich hier daher nicht erzeugen (process.env.TZ ist zur Laufzeit auf
+  // Windows/Node nicht verlässlich umschaltbar). Die beiden folgenden Tests
+  // decken die in dieser TZ erreichbaren Seiten der max()-Bildung ab: einmal
+  // "lokal == UTC", einmal "lokal > UTC".
+  it("verwendet das UTC-Datum, wenn UTC- und lokales Datum des UNTIL übereinstimmen", () => {
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260101T060000Z" }))
+    ).toBe("2026-01-01");
+  });
+
+  it("verwendet das lokale (spätere) Datum, wenn ein Zeit-UNTIL lokal auf den Folgetag des UTC-Datums fällt", () => {
+    // UNTIL=20260101T230000Z: UTC-Datum 2026-01-01, lokal (Berlin, Winterzeit
+    // UTC+1) 2026-01-02 00:00 -> lokales Datum 2026-01-02, das SPÄTERE der
+    // beiden -- genau das liefert schon das reine `localIsoFromJsDate` ohne
+    // max()-Bildung (Berlin ist östlich von UTC). Dieser Test ist daher eine
+    // Regressionssicherung für die erreichbare Seite, kein RED-Beweis für die
+    // max()-Bildung selbst (die schützt nur den hier nicht erzeugbaren
+    // West-Fall, s. Kommentar oben).
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260101T230000Z" }))
+    ).toBe("2026-01-02");
+  });
+
+  it("bleibt bei einer RFC-widrigen Regel mit COUNT UND UNTIL konservativ (nimmt den UNTIL-Zweig als Obergrenze)", () => {
+    // RFC 5545 verbietet COUNT und UNTIL gemeinsam; ICAL.Recur.fromString
+    // akzeptiert die Kombination trotzdem (parseRruleToPreset lehnt sie zwar
+    // ab, seriesEndDateFor arbeitet aber direkt auf ICAL.Recur). Da
+    // `if (recur.until)` vor der COUNT-Prüfung greift, gewinnt hier IMMER der
+    // UNTIL-Zweig -- das bleibt konservativ, weil der ical.js-Iterator
+    // (recur_iterator.js: `this.last.compare(this.rule.until) > 0`) so oder
+    // so NIE eine Instanz nach UNTIL emittiert, unabhängig davon, ob COUNT
+    // oder UNTIL zuerst greift: die tatsächlich letzte Instanz liegt immer
+    // <= UNTIL, das UNTIL-Datum ist also immer eine gültige (ggf. zu späte,
+    // nie zu frühe) Obergrenze.
+    expect(
+      seriesEndDateFor(
+        master({ rrule: "FREQ=DAILY;COUNT=1000;UNTIL=20260705" })
+      )
+    ).toBe("2026-07-05");
+  });
+
+  it("klemmt eine negative Terminspanne (endDate < startDate) auch im COUNT-Zweig auf 0", () => {
+    // Nur über handeditierte/korrupte Daten erreichbar (DB-CHECK und
+    // ICS-Import verhindern endDate < startDate) -- der Clamp muss trotzdem
+    // zentral (für UNTIL UND COUNT) greifen, sonst läge das Serienende VOR
+    // der letzten Instanz (Konservativitäts-Verletzung). Instanzen ab
+    // 2026-07-01 (Mi) wöchentlich, COUNT=3 -> letzter Anker 2026-07-15;
+    // ohne zentralen Clamp würde spanDays=-1 das Ergebnis auf 2026-07-14 ziehen.
+    expect(
+      seriesEndDateFor(
+        master({
+          startDate: "2026-07-01",
+          endDate: "2026-06-30",
+          rrule: "FREQ=WEEKLY;COUNT=3",
+        })
+      )
+    ).toBe("2026-07-15");
+  });
 });
 
 describe("Termin-Builder (Serien-Scope-Operationen)", () => {
@@ -570,6 +638,8 @@ describe("resolveOverride", () => {
       tagLabels: [],
       reminders: [],
     });
+    const masterSnapshot = structuredClone(master);
+    const overrideSnapshot = structuredClone(override);
     const resolved = resolveOverride(override, master);
     expect(resolved).not.toBe(override); // neues Objekt, kein Mutieren
     expect(resolved.tagIds).toEqual(["tag-1"]);
@@ -579,6 +649,9 @@ describe("resolveOverride", () => {
     expect(resolved.id).toBe("ov");
     expect(resolved.startDate).toBe("2026-07-21");
     expect(resolved.recurrenceAnchor).toBe("2026-07-20");
+    // Inputs (override, master) bleiben unmutiert.
+    expect(override).toEqual(overrideSnapshot);
+    expect(master).toEqual(masterSnapshot);
   });
 
   it("lässt einen Nicht-Override (parentId === null) unverändert", () => {
