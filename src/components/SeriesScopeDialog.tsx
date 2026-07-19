@@ -39,7 +39,7 @@ export default function SeriesScopeDialog({ mode, onSelect, onCancel }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-overlay p-4"
       onClick={onCancel}
     >
       <div
