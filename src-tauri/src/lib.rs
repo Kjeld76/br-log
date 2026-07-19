@@ -164,7 +164,7 @@ fn db_batch(state: State<'_, DbState>, statements: Vec<BatchStatement>) -> Resul
 // ---------- Schema-Migrationen (PRAGMA user_version) ----------
 
 /// Höchste vom Code unterstützte Schema-Version.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// Migration 1: Schema-Härtung eines v0-Bestands (Tabellen-Neubau nach dem
 /// SQLite-Standardverfahren, da SQLite kein ADD CONSTRAINT kennt):
@@ -358,6 +358,19 @@ CREATE TABLE reminder_fired (
 );
 "#;
 
+/// Migration 4 (Issue #4, Task 1 von 3): neue Spalte `series_end_date` an
+/// `appointments`. Reines ADD COLUMN, kein Tabellen-Neubau, kein FK-Aus/An
+/// (Muster von Migration 2).
+///
+/// Abgeleitete Spalte NUR für Serien-Master (`rrule IS NOT NULL`): letzter
+/// Tag, den die Serie berühren kann (letzter Instanz-Anker + Mehrtages-
+/// Spanne), KONSERVATIV (darf zu spät, nie zu früh sein). NULL = endlos oder
+/// unbekannt (bleibt im Hot-Path). Berechnung ausschließlich TS-seitig
+/// (`lib/appointments.ts` via ical.js -- Rust hat keinen RRULE-Parser);
+/// Bestands-Backfill läuft beim App-Start (`backfillSeriesEndDates`), nicht
+/// in der Migration.
+const MIGRATE_V4_SQL: &str = "ALTER TABLE appointments ADD COLUMN series_end_date TEXT;";
+
 fn user_version(conn: &Connection) -> Result<i64, String> {
     conn.query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())
@@ -420,6 +433,14 @@ fn run_migrations(conn: &mut Connection) -> Result<i64, String> {
         tx.execute_batch(MIGRATE_V3_SQL)
             .map_err(|e| format!("Migration 3 fehlgeschlagen: {e}"))?;
         tx.execute_batch("PRAGMA user_version=3;")
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    if version < 4 {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATE_V4_SQL)
+            .map_err(|e| format!("Migration 4 fehlgeschlagen: {e}"))?;
+        tx.execute_batch("PRAGMA user_version=4;")
             .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
@@ -1478,7 +1499,10 @@ mod migration_tests {
         let v = run_migrations(&mut conn).unwrap();
 
         assert_eq!(v, SCHEMA_VERSION);
-        assert_eq!(count(&conn, "PRAGMA user_version"), 3);
+        // run_migrations läuft von v2 bis zur höchsten bekannten Version durch
+        // (nicht nur bis 3) -- SCHEMA_VERSION statt Literal, wie in den
+        // Nachbar-Tests der Migrationen 1/2.
+        assert_eq!(count(&conn, "PRAGMA user_version"), SCHEMA_VERSION);
         // Neue Tabellen existieren und sind leer.
         assert_eq!(count(&conn, "SELECT count(*) FROM appointments"), 0);
         assert_eq!(count(&conn, "SELECT count(*) FROM appointment_tags"), 0);
@@ -1653,6 +1677,27 @@ mod migration_tests {
             .unwrap();
         assert_eq!(count(&conn, "SELECT count(*) FROM reminder_fired"), 0);
         assert_eq!(count(&conn, "SELECT count(*) FROM appointments WHERE id='t9'"), 1);
+    }
+
+    // ---------- Migration 4: abgeleitete Spalte series_end_date (additiv) ----------
+
+    #[test]
+    fn migration_v4_fuegt_series_end_date_hinzu() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        seed_v0(&conn);
+        run_migrations(&mut conn).unwrap();
+        // Spalte existiert und ist beschreibbar (NULL-Default für Bestand).
+        conn.execute_batch(
+            "INSERT INTO appointments (id, start_date, end_date, is_all_day, start_time, end_time, exdates, created_at, updated_at)
+             VALUES ('a1','2026-01-01','2026-01-01',1,NULL,NULL,'[]','x','x');",
+        )
+        .unwrap();
+        let v: Option<String> = conn
+            .query_row("SELECT series_end_date FROM appointments WHERE id='a1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, None);
+        conn.execute("UPDATE appointments SET series_end_date='2026-03-31' WHERE id='a1'", [])
+            .unwrap();
     }
 }
 

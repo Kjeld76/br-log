@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
+import { differenceInCalendarDays, parseISO } from "date-fns";
 import type {
   TimeEntry,
   TaskTag,
@@ -27,38 +27,8 @@ import {
   deleteOccurrence,
   splitSeries,
   truncateSeries,
-  listAppointmentsRange,
-  listFiredReminders,
-  markReminderFired,
-  cleanupFiredBefore,
 } from "./db/repository";
-import {
-  cancel as cancelNotifications,
-  createChannel,
-  Importance,
-  isPermissionGranted,
-  requestPermission,
-  Schedule,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
-import {
-  buildReminderCandidates,
-  firedKey,
-  firedKeySetFrom,
-  loadScheduledRefs,
-  notificationContent,
-  notificationIdFor,
-  reminderBody,
-  saveScheduledRefs,
-  selectDue,
-  selectMissed,
-  selectToSchedule,
-  MISSED_LOOKBACK_DAYS,
-  REMINDER_HORIZON_DAYS,
-  type ReminderCandidate,
-  type ScheduledRef,
-} from "./lib/reminderScheduler";
-import type { ReminderFired } from "./types";
+import { reminderBody } from "./lib/reminderScheduler";
 import { applyTheme, getStoredTheme, watchSystemTheme } from "./lib/theme";
 import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
@@ -66,6 +36,7 @@ import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
+import { useReminderScheduler } from "./lib/useReminderScheduler";
 import {
   type StartMode,
   getStartStatus,
@@ -97,6 +68,7 @@ import {
   buildSplitDraft,
   duplicateAppointment,
   plainAppointment,
+  resolveOverride,
   truncatedMaster,
   type Occurrence,
   type OccurrenceRef,
@@ -172,32 +144,6 @@ export default function App() {
   const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
-  // ---------- Termin-Erinnerungen (Snapshot-Scheduler, s. reminderScheduler.ts) ----------
-  // Refs statt State: der Snapshot muss den Auto-Lock ÜBERLEBEN (App zeigt
-  // dann den LockScreen, bleibt aber gemountet) und darf keine Re-Renders
-  // auslösen. Enthält nur öffentliche Felder (Titel/Zeit), nie BR-Geheimnis.
-  const reminderCandidatesRef = useRef<ReminderCandidate[]>([]);
-  const firedKeysRef = useRef<Set<string>>(new Set());
-  // Feuer-Markierungen, die bei gesperrter DB anfielen -> Flush nach Unlock.
-  const pendingFiredRef = useRef<ReminderFired[]>([]);
-  const readyRef = useRef(false);
-  const firedCleanupDoneRef = useRef(false);
-  // Alter des Kandidaten-Snapshots: Der 30-s-Loop stößt bei entsperrter App
-  // periodisch einen Neuaufbau an, damit das Fenster im Dauerbetrieb mitrollt
-  // (ohne reloadKey-Bump veraltete es sonst unbegrenzt).
-  const snapshotLoadedAtRef = useRef(0);
-  const [snapshotRefresh, setSnapshotRefresh] = useState(0);
-  // Android: Schlüssel der system-geplanten Notifications (Rolling Window).
-  // Der In-App-Loop überspringt sie (Doppel-Zustellungs-Schutz), und beim
-  // Start gelten vergangene system-geplante als zugestellt (kein Banner).
-  // Lazy über useState initialisiert: ein useRef-Argument würde bei JEDEM
-  // Render von App localStorage lesen, parsen und das Set neu bauen.
-  const [initialScheduledKeys] = useState(
-    () => new Set(loadScheduledRefs().map((r) => r.key))
-  );
-  const scheduledKeysRef = useRef<Set<string>>(initialScheduledKeys);
-  const [missedReminders, setMissedReminders] = useState<ReminderCandidate[]>([]);
-
   const bump = () => setReloadKey((k) => k + 1);
   // Eigener Zähler NUR für Termin-Mutationen (plus Backup-/ICS-Import): der
   // Erinnerungs-Snapshot inkl. Android-Neuplanung hängt daran -- am globalen
@@ -208,6 +154,13 @@ export default function App() {
     setApptReloadKey((k) => k + 1);
     bump();
   };
+  // Termin-Erinnerungen (Snapshot-Scheduler, Android-Planung, Nachhol-Banner):
+  // s. reminderOrchestrator.ts/useReminderScheduler.ts (GitHub-Issue #6).
+  const { missedReminders, dismissMissedReminders } = useReminderScheduler({
+    ready,
+    mobile,
+    apptReloadKey,
+  });
   // Finding 22: loadTags/loadAllTags wurden an mehreren Stellen ohne catch
   // aufgerufen (u. a. aus DataView.onChanged nach Import/Tag-Änderung) --
   // der catch sitzt hier zentral, damit jeder Aufrufer automatisch geschützt ist.
@@ -355,247 +308,6 @@ export default function App() {
     };
   }, [ready, reloadKey]);
 
-  // ---------- Termin-Erinnerungen: Laden, Feuern, Nachholen ----------
-
-  const ensureNotificationPermission = async (): Promise<boolean> => {
-    try {
-      if (await isPermissionGranted()) return true;
-      return (await requestPermission()) === "granted";
-    } catch {
-      return false; // Plugin nicht verfügbar -> Erinnerungen bleiben stumm
-    }
-  };
-
-  // Feuer-Markierung persistieren; bei gesperrter DB in den Pending-Puffer.
-  const recordFired = (c: ReminderCandidate) => {
-    firedKeysRef.current.add(firedKey(c));
-    const f: ReminderFired = {
-      appointmentId: c.appointmentId,
-      reminderId: c.reminderId,
-      occurrenceAnchor: c.anchor,
-      firedAt: new Date().toISOString(),
-    };
-    if (readyRef.current) {
-      void markReminderFired(f).catch(() => pendingFiredRef.current.push(f));
-    } else {
-      pendingFiredRef.current.push(f);
-    }
-  };
-
-  const notifyReminder = async (c: ReminderCandidate) => {
-    try {
-      if (!(await ensureNotificationPermission())) return;
-      // "Heute" relativ zum FEUER-Tag (bei Live-Feuern = jetzt).
-      sendNotification(
-        notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd"))
-      );
-    } catch (e) {
-      console.warn("Termin-Erinnerung konnte nicht angezeigt werden.", e);
-    }
-  };
-
-  // Android: die nächsten Erinnerungen als ECHTE System-Notifications planen
-  // (feuern auch bei geschlossener App). Alte Planungen werden storniert,
-  // dann das Rolling Window neu aufgebaut (Neuplanung bei jedem Laden).
-  const planAndroidNotifications = async () => {
-    try {
-      if (!(await ensureNotificationPermission())) {
-        // Referenzen NICHT löschen: ensureNotificationPermission liefert auch
-        // bei transienten Plugin-Fehlern false. Ohne die gespeicherten IDs
-        // wären bereits system-geplante Alarme nie mehr stornierbar, und ohne
-        // die Schlüssel feuerte der In-App-Loop zusätzlich zur System-
-        // Notification (Doppel-Zustellung).
-        scheduledKeysRef.current = new Set(
-          loadScheduledRefs().map((r) => r.key)
-        );
-        return;
-      }
-      try {
-        await createChannel({
-          id: "termine",
-          name: "Termin-Erinnerungen",
-          importance: Importance.High,
-        });
-      } catch {
-        // Channel existiert bereits o. ä. -- unkritisch.
-      }
-      const old = loadScheduledRefs();
-      if (old.length > 0) {
-        try {
-          await cancelNotifications(old.map((r) => r.id));
-        } catch {
-          // Bereits zugestellte/abgelaufene IDs lassen sich nicht stornieren.
-        }
-      }
-      const toSchedule = selectToSchedule(
-        reminderCandidatesRef.current,
-        firedKeysRef.current,
-        Date.now()
-      );
-      const refs: ScheduledRef[] = [];
-      for (const c of toSchedule) {
-        const key = firedKey(c);
-        const id = notificationIdFor(key);
-        try {
-          sendNotification({
-            id,
-            channelId: "termine",
-            ...notificationContent(c, format(new Date(c.dueMs), "yyyy-MM-dd")),
-            // allowWhileIdle: auch im Doze-Modus zustellen (Minuten-Toleranz
-            // bleibt möglich, exakte Alarme sind ab API 31 restriktiv).
-            schedule: Schedule.at(new Date(c.dueMs), false, true),
-          });
-          refs.push({ key, id });
-        } catch (e) {
-          console.warn("Erinnerung konnte nicht geplant werden.", e);
-        }
-      }
-      saveScheduledRefs(refs);
-      // Union aus alten und neuen Schlüsseln: ein bereits zugestellter
-      // Kandidat, dessen dueMs noch im Live-Fenster liegt, wird nicht neu
-      // geplant -- ohne seinen alten Schlüssel verlöre er den Doppel-
-      // Zustellungs-Schutz und erschiene zusätzlich als In-App-Notification.
-      scheduledKeysRef.current = new Set([
-        ...old.map((r) => r.key),
-        ...refs.map((r) => r.key),
-      ]);
-    } catch (e) {
-      console.warn("Planung der Android-Erinnerungen fehlgeschlagen.", e);
-    }
-  };
-
-  // readyRef spiegelt `ready` für den Intervall-Callback (der läuft auch
-  // während der Sperre weiter und darf dann nicht in die DB schreiben).
-  useEffect(() => {
-    readyRef.current = ready;
-  }, [ready]);
-
-  // Snapshot laden: nächste ~8 Tage als Kandidaten + Feuer-Protokoll; dabei
-  // Pending-Markierungen aus einer Sperr-Phase nachtragen und Verpasste für
-  // den Nachhol-Banner einsammeln.
-  useEffect(() => {
-    if (!ready) return;
-    let active = true;
-    (async () => {
-      try {
-        const pending = pendingFiredRef.current;
-        pendingFiredRef.current = [];
-        for (const f of pending) {
-          try {
-            await markReminderFired(f);
-          } catch (e) {
-            // Nicht durchschreibbar (z. B. Termin inzwischen gelöscht -> die
-            // FK-Prüfung greift trotz INSERT OR IGNORE): Markierung verwerfen,
-            // aber den Snapshot-Aufbau nicht abbrechen -- sonst fällt das
-            // gesamte Erinnerungssystem für diesen Zyklus aus.
-            console.warn("Feuer-Markierung konnte nicht gespeichert werden.", e);
-          }
-        }
-        const from = format(addDays(new Date(), -MISSED_LOOKBACK_DAYS), "yyyy-MM-dd");
-        // Großzügiger Horizont: Der 30-s-Loop feuert im Tray-/Sperr-Betrieb
-        // nur aus diesem Snapshot -- mit +8 Tagen versiegten Erinnerungen,
-        // sobald die App länger als eine Woche nicht entsperrt wurde, und
-        // "1 Woche vorher"-Erinnerungen für fernere Termine fehlten ganz.
-        const to = format(addDays(new Date(), REMINDER_HORIZON_DAYS), "yyyy-MM-dd");
-        const [items, fired] = await Promise.all([
-          listAppointmentsRange(from, to),
-          listFiredReminders(from),
-        ]);
-        if (!active) return;
-        reminderCandidatesRef.current = buildReminderCandidates(items, from, to);
-        // MERGEN statt ersetzen: der 30-s-Loop kann zwischen dem DB-Read und
-        // dieser Zuweisung gefeuert haben (recordFired schreibt die DB nur
-        // fire-and-forget) -- ein komplett ersetztes Set verlöre den frischen
-        // Key und die Notification erschiene beim nächsten Tick doppelt.
-        firedKeysRef.current = new Set([
-          ...firedKeySetFrom(fired),
-          ...firedKeysRef.current,
-        ]);
-        snapshotLoadedAtRef.current = Date.now();
-        const missedAll = selectMissed(
-          reminderCandidatesRef.current,
-          firedKeysRef.current,
-          Date.now()
-        );
-        // Android: was system-geplant war und inzwischen fällig ist, hat das
-        // System zugestellt -> still als gefeuert markieren, kein Banner.
-        if (mobile) {
-          for (const c of missedAll) {
-            if (scheduledKeysRef.current.has(firedKey(c))) recordFired(c);
-          }
-        }
-        setMissedReminders(
-          mobile
-            ? missedAll.filter((c) => !scheduledKeysRef.current.has(firedKey(c)))
-            : missedAll
-        );
-        if (!firedCleanupDoneRef.current) {
-          firedCleanupDoneRef.current = true;
-          void cleanupFiredBefore(
-            format(addDays(new Date(), -90), "yyyy-MM-dd")
-          ).catch(() => {
-            /* Aufräumen ist Best-effort. */
-          });
-        }
-        if (mobile) {
-          await planAndroidNotifications();
-        } else if (reminderCandidatesRef.current.length > 0) {
-          void ensureNotificationPermission();
-        }
-      } catch (e) {
-        console.warn("Termin-Erinnerungen konnten nicht geladen werden.", e);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-    // mobile ist konstant (lazy useState), planAndroidNotifications arbeitet
-    // nur auf Refs -- bewusst nicht in den Deps (Muster der übrigen Effekte).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, apptReloadKey, snapshotRefresh]);
-
-  // 30-s-Prüf-Loop: läuft ab Mount durchgehend (auch bei gesperrter DB, aus
-  // dem In-Memory-Snapshot). Fällige feuern genau einmal (firedKeys sofort).
-  useEffect(() => {
-    const SNAPSHOT_MAX_AGE_MS = 12 * 3600_000;
-    const check = () => {
-      // Snapshot bei entsperrter App periodisch neu aufbauen (rollendes
-      // Fenster); bei gesperrter DB geht es nicht -- dafür ist der Horizont
-      // (REMINDER_HORIZON_DAYS) großzügig bemessen.
-      if (
-        readyRef.current &&
-        snapshotLoadedAtRef.current > 0 &&
-        Date.now() - snapshotLoadedAtRef.current > SNAPSHOT_MAX_AGE_MS
-      ) {
-        snapshotLoadedAtRef.current = Date.now(); // kein Doppel-Trigger
-        setSnapshotRefresh((n) => n + 1);
-      }
-      const due = selectDue(
-        reminderCandidatesRef.current,
-        firedKeysRef.current,
-        Date.now()
-      );
-      for (const c of due) {
-        // Android: system-geplante Kandidaten zeigt das System selbst an --
-        // hier nur als gefeuert markieren (Doppel-Zustellungs-Schutz).
-        const systemScheduled =
-          mobile && scheduledKeysRef.current.has(firedKey(c));
-        recordFired(c);
-        if (!systemScheduled) void notifyReminder(c);
-      }
-    };
-    const id = window.setInterval(check, 30_000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Nachhol-Banner schließen = alle als behandelt markieren.
-  const dismissMissedReminders = () => {
-    const items = missedReminders;
-    setMissedReminders([]);
-    for (const c of items) recordFired(c);
-  };
-
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
   const doLock = () => {
     void lock().finally(() => {
@@ -669,7 +381,7 @@ export default function App() {
   // Detailansicht lädt den Termin VOLLSTÄNDIG nach (inkl. secretDetails) --
   // Kalender-/Agenda-Items tragen das vertrauliche Feld strukturell nicht.
   // Bei Overrides werden Schlagwörter/Erinnerungen des Masters eingeblendet
-  // (Overrides erben sie, ihre eigene Zeile trägt keine).
+  // (Overrides erben sie, ihre eigene Zeile trägt keine) -- s. resolveOverride.
   const openOccurrence = async (occ: Occurrence) => {
     try {
       // Master parallel zum Override laden -- die parentId ist schon vor dem
@@ -686,15 +398,7 @@ export default function App() {
         bumpAppointments();
         return;
       }
-      const full =
-        row.parentId && master
-          ? {
-              ...row,
-              tagIds: master.tagIds,
-              tagLabels: master.tagLabels,
-              reminders: master.reminders,
-            }
-          : row;
+      const full = resolveOverride(row, master);
       setModal({
         type: "apptDetail",
         appointment: full,

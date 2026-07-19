@@ -14,10 +14,13 @@ import {
   parseRruleToPreset,
   plainAppointment,
   remainingCountFrom,
+  resolveOverride,
   rruleWithCount,
   rruleWithUntil,
+  seriesEndDateFor,
   splitUntilDate,
   truncatedMaster,
+  type SeriesEndInput,
 } from "./appointments";
 
 function appt(overrides: Partial<AppointmentListItem> = {}): AppointmentListItem {
@@ -361,6 +364,65 @@ describe("Serienregel-Presets", () => {
   });
 });
 
+describe("seriesEndDateFor", () => {
+  function master(overrides: Partial<SeriesEndInput> = {}): SeriesEndInput {
+    return {
+      rrule: null,
+      startDate: "2026-07-01",
+      endDate: "2026-07-01",
+      startTime: "09:00",
+      isAllDay: false,
+      ...overrides,
+    };
+  }
+
+  it("liefert null ohne RRULE (Einzeltermin)", () => {
+    expect(seriesEndDateFor(master({ rrule: null }))).toBeNull();
+  });
+
+  it("liefert null bei endloser Serie (weder COUNT noch UNTIL)", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=DAILY" }))).toBeNull();
+  });
+
+  it("übernimmt ein Datums-UNTIL direkt als Serienende", () => {
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260731" }))
+    ).toBe("2026-07-31");
+  });
+
+  it("ermittelt das Serienende bei COUNT über Iteration ab DTSTART", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=WEEKLY;COUNT=3" }))).toBe(
+      "2026-07-15"
+    );
+  });
+
+  it("addiert die Terminspanne bei mehrtägigen COUNT-Serien auf den letzten Anker", () => {
+    expect(
+      seriesEndDateFor(
+        master({ endDate: "2026-07-03", rrule: "FREQ=WEEKLY;COUNT=2" })
+      )
+    ).toBe("2026-07-10");
+  });
+
+  it("rechnet ein Zeit-UNTIL in UTC in lokale Wandzeit um (Berlin-TZ)", () => {
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260101T060000Z" }))
+    ).toBe("2026-01-01");
+  });
+
+  it("liefert null bei kaputter Regel (ICAL.Recur.fromString wirft)", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=KAPUTT" }))).toBeNull();
+  });
+
+  it("addiert die Terminspanne bei mehrtägigen UNTIL-Serien auf das UNTIL-Datum", () => {
+    expect(
+      seriesEndDateFor(
+        master({ endDate: "2026-07-02", rrule: "FREQ=WEEKLY;UNTIL=20260715" })
+      )
+    ).toBe("2026-07-16");
+  });
+});
+
 describe("Termin-Builder (Serien-Scope-Operationen)", () => {
   function fullAppt(
     overrides: Partial<AppointmentFullItem> = {}
@@ -488,5 +550,55 @@ describe("Anzeige-Helfer", () => {
     expect(continuesFromPreviousDay(occ, "2026-07-21")).toBe(true);
     expect(continuesToNextDay(occ, "2026-07-21")).toBe(true);
     expect(continuesToNextDay(occ, "2026-07-22")).toBe(false);
+  });
+});
+
+describe("resolveOverride", () => {
+  it("übernimmt tagIds/reminders/tagLabels vom Master, übrige Felder vom Override -- als neues Objekt", () => {
+    const master = appt({
+      id: "master",
+      tagIds: ["tag-1"],
+      tagLabels: ["BR"],
+      reminders: [{ id: "rem-1", minutesBefore: 30 }],
+    });
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      recurrenceAnchor: "2026-07-20",
+      startDate: "2026-07-21",
+      tagIds: [],
+      tagLabels: [],
+      reminders: [],
+    });
+    const resolved = resolveOverride(override, master);
+    expect(resolved).not.toBe(override); // neues Objekt, kein Mutieren
+    expect(resolved.tagIds).toEqual(["tag-1"]);
+    expect(resolved.tagLabels).toEqual(["BR"]);
+    expect(resolved.reminders).toEqual([{ id: "rem-1", minutesBefore: 30 }]);
+    // Übrige Felder bleiben die des Override.
+    expect(resolved.id).toBe("ov");
+    expect(resolved.startDate).toBe("2026-07-21");
+    expect(resolved.recurrenceAnchor).toBe("2026-07-20");
+  });
+
+  it("lässt einen Nicht-Override (parentId === null) unverändert", () => {
+    const single = appt({
+      id: "a1",
+      tagIds: ["x"],
+      reminders: [{ id: "r", minutesBefore: 5 }],
+    });
+    const other = appt({ id: "other", tagIds: ["y"] });
+    expect(resolveOverride(single, other)).toBe(single);
+  });
+
+  it("lässt einen Override ohne (geladenen) Master unverändert", () => {
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      tagIds: ["own"],
+      reminders: [],
+    });
+    expect(resolveOverride(override, null)).toBe(override);
+    expect(resolveOverride(override, undefined)).toBe(override);
   });
 });

@@ -913,6 +913,66 @@ describe("saveAppointment", () => {
       true
     );
   });
+
+  it("berechnet series_end_date für einen Serien-Master und schreibt es in INSERT UND UPDATE", async () => {
+    const master = baseAppointment({ rrule: "FREQ=DAILY;UNTIL=20260731" });
+
+    // INSERT-Zweig (neu).
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments")) return []; // neu
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+    await repo.saveAppointment(master);
+    const insert = batchStatement("INSERT INTO appointments");
+    expect(insert).toBeDefined();
+    expect(insert!.sql).toContain("series_end_date");
+    // series_end_date steht direkt vor created_at/updated_at (die beiden
+    // letzten Params) -- s. appointmentWriteStatements.
+    expect(insert!.params[insert!.params.length - 3]).toBe("2026-07-31");
+
+    // UPDATE-Zweig (existiert bereits).
+    batchMock.mockClear();
+    selectMock.mockReset();
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments")) return [{ id: master.id }];
+      if (sql.startsWith("SELECT id, minutes_before FROM appointment_reminders"))
+        return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+    await repo.saveAppointment(master);
+    const update = batchStatement("UPDATE appointments SET");
+    expect(update).toBeDefined();
+    expect(update!.sql).toContain("series_end_date");
+    // series_end_date steht direkt vor updated_at/id (die beiden letzten Params).
+    expect(update!.params[update!.params.length - 3]).toBe("2026-07-31");
+  });
+
+  it("schreibt series_end_date = null für Einzeltermine und Overrides (keine Serien-Master)", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("SELECT id FROM appointments")) return []; // neu
+      if (sql.startsWith("SELECT id, label FROM task_tags")) return [];
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    const single = baseAppointment({ rrule: null });
+    await repo.saveAppointment(single);
+    const singleInsert = batchStatement("INSERT INTO appointments");
+    expect(singleInsert!.params[singleInsert!.params.length - 3]).toBeNull();
+
+    batchMock.mockClear();
+    const override = baseAppointment({
+      id: "ov-1",
+      parentId: "master-1",
+      recurrenceAnchor: "2026-07-22",
+      // Ein Override trägt NIE ein eigenes Serienende, selbst mit gesetzter
+      // RRULE (appt.parentId === null-Bedingung in appointmentWriteStatements).
+      rrule: "FREQ=DAILY;UNTIL=20260731",
+    });
+    await repo.saveAppointment(override);
+    const overrideInsert = batchStatement("INSERT INTO appointments");
+    expect(overrideInsert!.params[overrideInsert!.params.length - 3]).toBeNull();
+  });
 });
 
 describe("splitSeries", () => {
@@ -1000,7 +1060,16 @@ describe("listAppointmentsRange", () => {
         return [];
       }
       if (sql.includes("a.rrule IS NOT NULL")) {
-        expect(params).toEqual(["2026-07-31", "2026-07-31", "2026-07-01"]);
+        // Hot-Path-Filter (Issue #4): start_date <= to UND (series_end_date
+        // IS NULL ODER series_end_date >= from) -- gleiche Fenster-Params
+        // dann nochmal für die Override-EXISTS-Bedingung.
+        expect(sql).toContain("a.series_end_date IS NULL OR a.series_end_date >=");
+        expect(params).toEqual([
+          "2026-07-31",
+          "2026-07-01",
+          "2026-07-31",
+          "2026-07-01",
+        ]);
         return [
           {
             id: "master-1",
@@ -1065,7 +1134,13 @@ describe("listAppointmentsRange", () => {
     await repo.listAppointmentsRange("2026-07-01", "2026-07-31");
 
     expect(masterSql).toMatch(/EXISTS/);
-    expect(masterParams).toEqual(["2026-07-31", "2026-07-31", "2026-07-01"]);
+    expect(masterSql).toContain("a.series_end_date IS NULL OR a.series_end_date >=");
+    expect(masterParams).toEqual([
+      "2026-07-31",
+      "2026-07-01",
+      "2026-07-31",
+      "2026-07-01",
+    ]);
     // Auch Master OHNE Serienregel können Override-Kinder haben (Serie auf
     // "Nie" gestellt) -- dieselbe Existenz-Bedingung.
     expect(singleSql).toMatch(/EXISTS/);
@@ -1075,6 +1150,59 @@ describe("listAppointmentsRange", () => {
       "2026-07-31",
       "2026-07-01",
     ]);
+  });
+});
+
+describe("backfillSeriesEndDates", () => {
+  it("aktualisiert nur Serien mit ermittelbarem Ende (COUNT/UNTIL) -- endlose Serien bleiben unangetastet", async () => {
+    selectMock.mockImplementation(async (sql: string) => {
+      if (
+        sql.startsWith(
+          "SELECT id, rrule, start_date, end_date, start_time, is_all_day"
+        )
+      ) {
+        return [
+          {
+            id: "count-serie",
+            rrule: "FREQ=WEEKLY;COUNT=3",
+            start_date: "2026-07-01",
+            end_date: "2026-07-01",
+            start_time: "09:00",
+            is_all_day: 0,
+          },
+          {
+            id: "endlose-serie",
+            rrule: "FREQ=DAILY",
+            start_date: "2026-07-01",
+            end_date: "2026-07-01",
+            start_time: "09:00",
+            is_all_day: 0,
+          },
+        ];
+      }
+      throw new Error(`Unerwartete Query im Test: ${sql}`);
+    });
+
+    await repo.backfillSeriesEndDates();
+
+    expect(batchMock).toHaveBeenCalledTimes(1);
+    const updates = batchMock.mock.calls[0][0] as {
+      sql: string;
+      params: unknown[];
+    }[];
+    expect(updates).toHaveLength(1);
+    expect(updates[0].sql).toBe(
+      "UPDATE appointments SET series_end_date = ? WHERE id = ?"
+    );
+    expect(updates[0].params).toEqual(["2026-07-15", "count-serie"]);
+  });
+
+  it("ruft db.batch bei leerem Ergebnis nicht auf", async () => {
+    selectMock.mockResolvedValueOnce([]);
+
+    await repo.backfillSeriesEndDates();
+
+    expect(batchMock).not.toHaveBeenCalled();
   });
 });
 

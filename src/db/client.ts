@@ -121,6 +121,16 @@ export async function initSearch(): Promise<void> {
         console.warn("FTS-Abgleich übersprungen.", e);
       }
     }
+    // Serienende-Cache nachtragen (Issue #4): läuft bei JEDEM Start,
+    // unabhängig von FTS -- Bestands-Master ohne series_end_date (angelegt vor
+    // Migration 4) holen ihr Serienende nach. Gleicher Best-effort-Charakter
+    // wie der FTS-Abgleich: ein Fehler blockiert den Start nicht.
+    try {
+      const repo = await import("./repository");
+      await repo.backfillSeriesEndDates();
+    } catch (e) {
+      console.warn("Serienende-Backfill übersprungen.", e);
+    }
   })();
   initPromise = p;
   p.catch(() => {
