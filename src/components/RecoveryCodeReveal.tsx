@@ -38,7 +38,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
         "BR-Log – Wiederherstellungs-Code\r\n\r\n" +
         code +
         "\r\n\r\nSicher aufbewahren (nicht zusammen mit der Datenbank). Mit diesem " +
-        "Code laesst sich die Datenbank auch ohne Passwort entsperren. Gehen " +
+        "Code lässt sich die Datenbank auch ohne Passwort entsperren. Gehen " +
         "Passwort UND Code verloren, sind die Daten unwiderruflich verloren.\r\n";
       const path = await invoke<string | null>("export_text_file", {
         defaultName: "BR-Log-Wiederherstellungs-Code.txt",
