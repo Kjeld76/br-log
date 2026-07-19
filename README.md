@@ -7,16 +7,16 @@
 **→ Projektseite mit Screenshots, Downloads und FAQ: https://kjeld76.github.io/br-log/**
 
 Lokale Desktop-App zur **Zeiterfassung für Betriebsratsmitglieder**. Jedes
-Mitglied erfasst seine BR-Zeiten tagesgenau (Stunden + Minuten). Zu jedem
-Eintrag werden zwei Informationsebenen getrennt gehalten:
+Mitglied erfasst seine BR-Zeiten tagesgenau (Stunden + Minuten). Jeder Eintrag
+trennt zwei Informationsebenen:
 
 1. **Info für die Geschäftsleitung** – Angaben, die der Arbeitgeber erfahren darf.
 2. **Vertrauliche Tätigkeitsbeschreibung** – die genaue Tätigkeit, die wegen des
    **BR-Geheimnisses** nicht an den Arbeitgeber gelangt.
 
-Alle Daten liegen ausschließlich **lokal** in einer SQLite-Datei auf dem Gerät.
-Es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
-(CSV/JSON) oder Kopieren der Datenbankdatei.
+Alle Daten liegen ausschließlich **lokal** in einer SQLite-Datei auf dem Gerät –
+es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
+(CSV/JSON) oder durch Kopieren der Datenbankdatei.
 
 ## Funktionen
 
@@ -28,7 +28,7 @@ Es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
 - Trennung „Info für GL" vs. „Vertraulich" (BR-Geheimnis)
 - Geplante Schicht (ja/nein) + Freitext zum Schichtausgleich
 - Mehrere Widersprüche der Geschäftsleitung je Eintrag (Begründung + Name)
-- Wiederverwendung: Eintrag duplizieren (heutiges Datum, frische ID) sowie
+- Wiederverwendung: Eintrag duplizieren (heutiges Datum, frische ID) und
   „wie beim letzten Eintrag" für Schlagwörter/GL-Info übernehmen
 - Nicht-blockierende Überlappungswarnung beim Speichern, wenn sich ein
   Zeitraum mit einem bestehenden Eintrag überschneidet
@@ -43,7 +43,7 @@ Es gibt **keinen Server**. Datenaustausch erfolgt nur durch bewussten Export
   monatlich/jährlich, „nur dieser / dieser und folgende / alle" bearbeiten),
   ganztägige und mehrtägige Termine, Wichtig-Kennzeichnung, Farben,
   Monats- und Agenda-Ansicht mit Termin-Suche – kombiniert mit den
-  Tagessummen der Zeiterfassung; „Zeit buchen" legt aus einem Termin den
+  Tagessummen der Zeiterfassung. „Zeit buchen" legt aus einem Termin den
   vorbefüllten Zeiteintrag an
 - Termin-Erinnerungen als Systembenachrichtigung: Desktop mit optionalem
   Tray-Betrieb (Schließen versteckt) und Autostart, Android mit geplanten
@@ -161,7 +161,7 @@ Abschnitt *Datenspeicherort*.
 ## Installation (Android)
 
 BR-Log steht für Android als **APK zum Sideload** zur Verfügung – siehe die
-**GitHub-Releases-Seite**. Kein Play-Store-Eintrag, die App ist nur für den
+**GitHub-Releases-Seite**. Kein Play-Store-Eintrag – die App ist nur für den
 internen BR-Kreis gedacht.
 
 1. Auf der **GitHub-Releases-Seite** den neuesten Release öffnen und die
@@ -229,19 +229,19 @@ die eine Zeile **`BR-Log-Portable`** enthält (in der mitgelieferten Datei steht
 sie in der ersten Zeile). Eine leere oder fremde `portable.txt` aktiviert den
 Modus **nicht**. Ist der
 Stick schreibgeschützt und noch keine portable Datenbank vorhanden, fällt die App
-auf den Installations-Pfad zurück; vorhandene Stick-Daten werden nie überschrieben.
+auf den Installations-Pfad zurück. Vorhandene Stick-Daten werden dabei nie überschrieben.
 
 ### Voraussetzung WebView2
 
 Die schlanke portable Version nutzt die **Microsoft Edge WebView2 Runtime** des
-Rechners (auf Windows 11 vorhanden). Startet die App nicht, die WebView2
-„Evergreen"-Runtime von Microsoft installieren. Der oben beschriebene
-Windows-SmartScreen-Hinweis gilt für die portable EXE genauso. Die portable
-Version ist nur wenige MB groß – ein einfacher USB-Stick genügt.
+Rechners (auf Windows 11 vorhanden). Startet die App nicht, hilft die
+Installation der WebView2-„Evergreen"-Runtime von Microsoft. Der oben
+beschriebene Windows-SmartScreen-Hinweis gilt für die portable EXE genauso.
+Die portable Version ist nur wenige MB groß – ein einfacher USB-Stick genügt.
 
 ## Entwicklung
 
-Voraussetzungen: Node.js 20+, Rust (stable), und unter Windows die
+Voraussetzungen: Node.js 20+, Rust (stable) und unter Windows die
 Visual-Studio-Build-Tools sowie WebView2. Für den verschlüsselten DB-Build
 (SQLCipher via gebundeltem OpenSSL) zusätzlich ein **natives Perl**
 (z. B. Strawberry Perl – das mit Git gelieferte msys-Perl funktioniert **nicht**).
@@ -283,7 +283,7 @@ Der Build ist bewusst **unsigniert**. Für eine Signatur künftig:
 BR-Log ist und bleibt kostenlos – kein Verkauf, keine Paywall, kein
 "Pro"-Upgrade (siehe Abschnitt *Lizenz*). Wer das Tool nützlich findet, kann
 freiwillig einen Kaffee spendieren: über [Ko-fi](https://ko-fi.com/mariokoenig)
-oder [Buy Me a Coffee](https://buymeacoffee.com/mariokoenig). Beides ist rein
+oder [Buy Me a Coffee](https://buymeacoffee.com/mariokoenig). Beides ist
 optional und ändert nichts am Funktionsumfang.
 
 ## Lizenz
