@@ -6,6 +6,7 @@ import {
   buildFtsMatch,
 } from "./ftsContent";
 import { AppError } from "../lib/errors";
+import { seriesEndDateFor } from "../lib/appointments";
 import type {
   TimeEntry,
   TaskTag,
@@ -1051,13 +1052,19 @@ function appointmentWriteStatements(args: {
     ? []
     : appt.tagIds.filter((id) => tagLabelById.has(id));
   const exdatesJson = JSON.stringify(appt.exdates ?? []);
+  // Cache für den Lade-Hot-Path (listAppointmentsRange, s. dortigen Kommentar):
+  // letzter berührbarer Tag der Serie, NUR für Serien-Master berechnet --
+  // Overrides und Einzeltermine tragen bewusst NULL. `null` heißt auch bei
+  // Mastern "endlos oder unbekannt" (s. seriesEndDateFor).
+  const seriesEnd =
+    appt.parentId === null && appt.rrule !== null ? seriesEndDateFor(appt) : null;
 
   if (exists) {
     st.push({
       sql: `UPDATE appointments SET title=?, location=?, description=?, secret_details=?,
          is_all_day=?, start_date=?, start_time=?, end_date=?, end_time=?, is_important=?,
          color=?, rrule=?, exdates=?, parent_id=?, recurrence_anchor=?, ics_uid=?,
-         ics_sequence=?, updated_at=? WHERE id=?`,
+         ics_sequence=?, series_end_date=?, updated_at=? WHERE id=?`,
       params: [
         appt.title,
         appt.location,
@@ -1076,6 +1083,7 @@ function appointmentWriteStatements(args: {
         appt.recurrenceAnchor,
         appt.icsUid,
         appt.icsSequence,
+        seriesEnd,
         updatedAt,
         appt.id,
       ],
@@ -1085,8 +1093,8 @@ function appointmentWriteStatements(args: {
       sql: `INSERT INTO appointments (id, title, location, description, secret_details,
          is_all_day, start_date, start_time, end_date, end_time, is_important, color,
          rrule, exdates, parent_id, recurrence_anchor, ics_uid, ics_sequence,
-         created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         series_end_date, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       params: [
         appt.id,
         appt.title,
@@ -1106,6 +1114,7 @@ function appointmentWriteStatements(args: {
         appt.recurrenceAnchor,
         appt.icsUid,
         appt.icsSequence,
+        seriesEnd,
         appt.createdAt || createdAtDefault,
         updatedAt,
       ],
@@ -1275,9 +1284,17 @@ function appointmentDeleteStatements(
  * Lädt alle Termine, die für ein Anzeigefenster [from, to] relevant sind, als
  * schlanke Listen-Items (OHNE secretDetails). Drei Teilmengen:
  *  1. Einzeltermine, die das Fenster überlappen (mehrtägige inklusive),
- *  2. ALLE Serien-Master mit start_date <= to (ob eine Instanz ins Fenster
- *     fällt, entscheidet erst die RRULE-Expansion in lib/appointments.ts --
- *     UNTIL/COUNT lassen sich SQL-seitig nicht auswerten),
+ *  2. Serien-Master mit start_date <= to UND (series_end_date IS NULL ODER
+ *     series_end_date >= from) -- ob eine Instanz TATSÄCHLICH ins Fenster
+ *     fällt, entscheidet weiterhin erst die RRULE-Expansion in
+ *     lib/appointments.ts (UNTIL/COUNT lassen sich SQL-seitig nicht
+ *     auswerten). Der Cache `series_end_date` (Issue #4) ist ein reiner
+ *     Hot-Path-Filter: er lässt NUR Master, deren Serie nachweislich VOR dem
+ *     Fenster geendet hat, den Ladepfad verlassen -- endlose/unbekannte
+ *     Serien (NULL) bleiben stets drin. Der EXISTS-Zweig für vorgezogene
+ *     Overrides bleibt bewusst UNGEFILTERT: sonst verschwände eine Instanz,
+ *     die aus einer bereits beendeten Serie heraus in das Fenster verschoben
+ *     wurde.
  *  3. ALLE Overrides der geladenen Master (ein Override kann von außerhalb
  *     ins Fenster verschoben worden sein und umgekehrt).
  */
@@ -1301,10 +1318,10 @@ export async function listAppointmentsRange(
   const masters = await db.select<AppointmentListRow[]>(
     `SELECT ${LIST_APPT_COLUMNS} FROM appointments a
       WHERE a.rrule IS NOT NULL AND a.parent_id IS NULL
-        AND (a.start_date <= ?
+        AND ((a.start_date <= ? AND (a.series_end_date IS NULL OR a.series_end_date >= ?))
              OR EXISTS (SELECT 1 FROM appointments o WHERE o.parent_id = a.id
                           AND o.start_date <= ? AND o.end_date >= ?))`,
-    [to, to, from]
+    [to, from, to, from]
   );
   // Overrides für ALLE geladenen Master (auch regel-lose, s. expandOccurrences).
   const parentIds = [...singles, ...masters].map((m) => m.id);
@@ -2711,4 +2728,47 @@ export async function reconcileFts(): Promise<void> {
 
   if (statements.length === 0) return;
   await db.batch(statements);
+}
+
+/**
+ * Trägt `series_end_date` für Bestands-Serien-Master nach, die noch keinen
+ * Wert tragen (angelegt vor Migration 4; appointmentWriteStatements pflegt
+ * die Spalte für neue Schreibvorgänge bereits automatisch mit). Läuft bei
+ * JEDEM Start (client.ts, direkt neben reconcileFts, gleicher Best-effort-
+ * Charakter) -- endlose/unbekannte Serien bleiben NULL und kosten pro Start
+ * nur den (billigen) RRULE-Parse; beendete Serien verlassen damit dauerhaft
+ * den Lade-Hot-Path von listAppointmentsRange.
+ */
+export async function backfillSeriesEndDates(): Promise<void> {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      id: string;
+      rrule: string;
+      start_date: string;
+      end_date: string;
+      start_time: string | null;
+      is_all_day: number;
+    }[]
+  >(
+    `SELECT id, rrule, start_date, end_date, start_time, is_all_day
+       FROM appointments
+      WHERE rrule IS NOT NULL AND parent_id IS NULL AND series_end_date IS NULL`
+  );
+  const updates: BatchStatement[] = [];
+  for (const r of rows) {
+    const end = seriesEndDateFor({
+      rrule: r.rrule,
+      startDate: r.start_date,
+      endDate: r.end_date,
+      startTime: r.start_time,
+      isAllDay: r.is_all_day === 1,
+    });
+    if (end !== null)
+      updates.push({
+        sql: "UPDATE appointments SET series_end_date = ? WHERE id = ?",
+        params: [end, r.id],
+      });
+  }
+  if (updates.length > 0) await db.batch(updates);
 }
