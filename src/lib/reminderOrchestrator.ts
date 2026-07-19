@@ -215,6 +215,9 @@ export function createReminderOrchestrator(deps: {
           deps.db.listAppointmentsRange(from, to),
           deps.db.listFiredReminders(from),
         ]);
+        // EIN Checkpoint direkt nach dem DB-Read -- bewusst dieselbe
+        // Schutztiefe wie das frühere active-Flag in App.tsx: der Pending-
+        // Flush davor und die Android-Planung danach laufen ungeprüft weiter.
         if (myGeneration !== generation) return;
         candidates = buildReminderCandidates(items, from, to);
         // MERGEN statt ersetzen: der 30-s-Loop kann zwischen dem DB-Read und

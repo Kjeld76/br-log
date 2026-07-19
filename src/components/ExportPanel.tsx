@@ -156,7 +156,9 @@ export default function ExportPanel({ onImported }: Props) {
 
     // Sicherheits-Backup VOR dem destruktiven Merge (Finding 24): ohne ein
     // funktionierendes Backup gäbe es nach einem bereuten/fehlerhaften Import
-    // keinen Rückweg. Schlägt die Sicherung fehl, wird NICHT importiert.
+    // keinen Rückweg. Gilt für BEIDE Quellen -- gerade der ICS-Import kann
+    // bestehende Serien ERSETZEN. Schlägt die Sicherung fehl, wird NICHT
+    // importiert.
     try {
       await backupNow();
     } catch (e) {

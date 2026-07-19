@@ -1,14 +1,16 @@
 // Erinnerungs-Logik des Terminkalenders (reine Funktionen, Vitest-testbar).
 //
 // Architektur (siehe Plan): Auf dem Desktop gibt es KEIN System-Scheduling
-// (tauri-plugin-notification kann dort nur sofortige Notifications) -- App.tsx
-// hält deshalb einen In-Memory-SNAPSHOT der nächsten Erinnerungs-Kandidaten
-// und prüft ihn in einem Intervall. Der Snapshot besteht aus AppointmentListItem-
-// Daten (Titel/Zeit), trägt also strukturell nie das BR-Geheimnis -- wichtig,
-// weil er auch bei GESPERRTER Datenbank weiterlebt (Auto-Lock beim Verstecken
-// ins Tray) und dann aus dem Speicher feuert. Feuer-Markierungen, die bei
-// gesperrter DB anfallen, sammelt App.tsx in einem Pending-Set und schreibt
-// sie nach dem Entsperren (reminder_fired verhindert Doppel-Feuern dauerhaft).
+// (tauri-plugin-notification kann dort nur sofortige Notifications) -- der
+// Orchestrator (reminderOrchestrator.ts, in App.tsx verdrahtet über
+// useReminderScheduler) hält deshalb einen In-Memory-SNAPSHOT der nächsten
+// Erinnerungs-Kandidaten und prüft ihn in einem Intervall. Der Snapshot
+// besteht aus AppointmentListItem-Daten (Titel/Zeit), trägt also strukturell
+// nie das BR-Geheimnis -- wichtig, weil er auch bei GESPERRTER Datenbank
+// weiterlebt (Auto-Lock beim Verstecken ins Tray) und dann aus dem Speicher
+// feuert. Feuer-Markierungen, die bei gesperrter DB anfallen, sammelt der
+// Orchestrator in einem Pending-Puffer und schreibt sie nach dem Entsperren
+// (reminder_fired verhindert Doppel-Feuern dauerhaft).
 
 import type { AppointmentListItem, ReminderFired } from "../types";
 import { expandOccurrences, resolveOverride } from "./appointments";
@@ -124,6 +126,10 @@ export function buildReminderCandidates(
   const out: ReminderCandidate[] = [];
   for (const occ of expandOccurrences(items, from, to)) {
     const a = occ.appointment;
+    // Fehlt der Master im Fenster (gelöscht/außerhalb), bleibt das Item roh --
+    // die eigene reminders-Liste eines Overrides ist per Schreibpfad-Invariante
+    // immer leer (appointmentWriteStatements schreibt sie nur für Master), der
+    // continue unten wirkt dann wie der frühere unbedingte Skip.
     const resolved = resolveOverride(a, a.parentId ? byId.get(a.parentId) : a);
     if (resolved.reminders.length === 0) continue;
     const baseTime = a.isAllDay
