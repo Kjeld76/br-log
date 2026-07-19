@@ -35,6 +35,13 @@ export const MISSED_LOOKBACK_DAYS = 7;
 export const REMINDER_HORIZON_DAYS = 60;
 
 /**
+ * Maximales Alter des Kandidaten-Snapshots, bevor der 30-s-Loop bei
+ * entsperrter App einen Neuaufbau anstößt, damit das Fenster im
+ * Dauerbetrieb mitrollt (ohne reloadKey-Bump veraltete es sonst unbegrenzt).
+ */
+export const SNAPSHOT_MAX_AGE_MS = 12 * 3600_000;
+
+/**
  * Titel + Text einer Termin-Notification -- EINE Quelle für die Desktop-
  * Sofort-Anzeige und die Android-System-Planung, damit derselbe Termin auf
  * beiden Wegen identisch aussieht.
