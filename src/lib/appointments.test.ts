@@ -14,6 +14,7 @@ import {
   parseRruleToPreset,
   plainAppointment,
   remainingCountFrom,
+  resolveOverride,
   rruleWithCount,
   rruleWithUntil,
   seriesEndDateFor,
@@ -549,5 +550,55 @@ describe("Anzeige-Helfer", () => {
     expect(continuesFromPreviousDay(occ, "2026-07-21")).toBe(true);
     expect(continuesToNextDay(occ, "2026-07-21")).toBe(true);
     expect(continuesToNextDay(occ, "2026-07-22")).toBe(false);
+  });
+});
+
+describe("resolveOverride", () => {
+  it("übernimmt tagIds/reminders/tagLabels vom Master, übrige Felder vom Override -- als neues Objekt", () => {
+    const master = appt({
+      id: "master",
+      tagIds: ["tag-1"],
+      tagLabels: ["BR"],
+      reminders: [{ id: "rem-1", minutesBefore: 30 }],
+    });
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      recurrenceAnchor: "2026-07-20",
+      startDate: "2026-07-21",
+      tagIds: [],
+      tagLabels: [],
+      reminders: [],
+    });
+    const resolved = resolveOverride(override, master);
+    expect(resolved).not.toBe(override); // neues Objekt, kein Mutieren
+    expect(resolved.tagIds).toEqual(["tag-1"]);
+    expect(resolved.tagLabels).toEqual(["BR"]);
+    expect(resolved.reminders).toEqual([{ id: "rem-1", minutesBefore: 30 }]);
+    // Übrige Felder bleiben die des Override.
+    expect(resolved.id).toBe("ov");
+    expect(resolved.startDate).toBe("2026-07-21");
+    expect(resolved.recurrenceAnchor).toBe("2026-07-20");
+  });
+
+  it("lässt einen Nicht-Override (parentId === null) unverändert", () => {
+    const single = appt({
+      id: "a1",
+      tagIds: ["x"],
+      reminders: [{ id: "r", minutesBefore: 5 }],
+    });
+    const other = appt({ id: "other", tagIds: ["y"] });
+    expect(resolveOverride(single, other)).toBe(single);
+  });
+
+  it("lässt einen Override ohne (geladenen) Master unverändert", () => {
+    const override = appt({
+      id: "ov",
+      parentId: "master",
+      tagIds: ["own"],
+      reminders: [],
+    });
+    expect(resolveOverride(override, null)).toBe(override);
+    expect(resolveOverride(override, undefined)).toBe(override);
   });
 });

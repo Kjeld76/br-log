@@ -11,6 +11,7 @@ import type {
   Appointment,
   AppointmentFullItem,
   AppointmentListItem,
+  AppointmentReminder,
 } from "../types";
 
 /**
@@ -524,6 +525,28 @@ export type OccurrenceRef = Omit<Occurrence, "appointment">;
 export function plainAppointment(a: AppointmentFullItem): Appointment {
   const { tagLabels: _tagLabels, ...plain } = a;
   return plain;
+}
+
+/**
+ * Overrides erben Schlagwörter und Erinnerungen vom Master (ihre eigene Zeile
+ * trägt keine, s. Migration 3) -- DIE eine Stelle, die diese Regel auflöst.
+ * Für Nicht-Overrides oder fehlenden Master: unverändert zurück.
+ */
+export function resolveOverride<
+  T extends {
+    parentId: string | null;
+    tagIds: string[];
+    reminders: AppointmentReminder[];
+    tagLabels?: string[];
+  }
+>(item: T, master: T | null | undefined): T {
+  if (item.parentId === null || !master) return item;
+  return {
+    ...item,
+    tagIds: master.tagIds,
+    reminders: master.reminders,
+    ...(master.tagLabels !== undefined ? { tagLabels: master.tagLabels } : {}),
+  };
 }
 
 /** Entwurf einer Serien-Ausnahme ("nur dieser") aus der Master-Instanz. */

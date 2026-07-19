@@ -11,7 +11,7 @@
 // sie nach dem Entsperren (reminder_fired verhindert Doppel-Feuern dauerhaft).
 
 import type { AppointmentListItem, ReminderFired } from "../types";
-import { expandOccurrences } from "./appointments";
+import { expandOccurrences, resolveOverride } from "./appointments";
 
 /**
  * Basis-Uhrzeit ganztägiger Termine für die Vorlauf-Berechnung ("1 Tag
@@ -117,14 +117,14 @@ export function buildReminderCandidates(
   const out: ReminderCandidate[] = [];
   for (const occ of expandOccurrences(items, from, to)) {
     const a = occ.appointment;
-    const master = a.parentId ? byId.get(a.parentId) : a;
-    if (!master || master.reminders.length === 0) continue;
+    const resolved = resolveOverride(a, a.parentId ? byId.get(a.parentId) : a);
+    if (resolved.reminders.length === 0) continue;
     const baseTime = a.isAllDay
       ? ALL_DAY_REMINDER_BASE
       : occ.startTime ?? ALL_DAY_REMINDER_BASE;
-    for (const r of master.reminders) {
+    for (const r of resolved.reminders) {
       out.push({
-        appointmentId: master.id,
+        appointmentId: a.parentId ?? a.id,
         reminderId: r.id,
         anchor: occ.anchor,
         dueMs: dueMsFor(occ.startDate, baseTime, r.minutesBefore),

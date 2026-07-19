@@ -97,6 +97,7 @@ import {
   buildSplitDraft,
   duplicateAppointment,
   plainAppointment,
+  resolveOverride,
   truncatedMaster,
   type Occurrence,
   type OccurrenceRef,
@@ -669,7 +670,7 @@ export default function App() {
   // Detailansicht lädt den Termin VOLLSTÄNDIG nach (inkl. secretDetails) --
   // Kalender-/Agenda-Items tragen das vertrauliche Feld strukturell nicht.
   // Bei Overrides werden Schlagwörter/Erinnerungen des Masters eingeblendet
-  // (Overrides erben sie, ihre eigene Zeile trägt keine).
+  // (Overrides erben sie, ihre eigene Zeile trägt keine) -- s. resolveOverride.
   const openOccurrence = async (occ: Occurrence) => {
     try {
       // Master parallel zum Override laden -- die parentId ist schon vor dem
@@ -686,15 +687,7 @@ export default function App() {
         bumpAppointments();
         return;
       }
-      const full =
-        row.parentId && master
-          ? {
-              ...row,
-              tagIds: master.tagIds,
-              tagLabels: master.tagLabels,
-              reminders: master.reminders,
-            }
-          : row;
+      const full = resolveOverride(row, master);
       setModal({
         type: "apptDetail",
         appointment: full,
