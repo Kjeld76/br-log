@@ -1,0 +1,51 @@
+name: Feature-Vorschlag
+description: Schlage eine neue Funktion oder Verbesserung für BR-Log vor.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke, dass du BR-Log besser machen willst! Bitte beschreibe deinen
+        Vorschlag so konkret wie möglich — und denk daran: **keine vertraulichen
+        Inhalte** (Namen, Betriebsinterna) in öffentliche Issues schreiben.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: Welches Problem aus dem BR-Alltag soll gelöst werden? Was ist heute umständlich oder gar nicht möglich?
+      placeholder: "Beispiel: Ich muss die Monatsfrist für den Freizeitausgleich heute außerhalb der App im Blick behalten …"
+    validations:
+      required: true
+  - type: textarea
+    id: loesungsvorschlag
+    attributes:
+      label: Lösungsvorschlag
+      description: Wie könnte die Funktion aussehen? Beschreibe den gewünschten Ablauf aus Nutzersicht.
+    validations:
+      required: true
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Alternativen
+      description: Welche anderen Lösungswege oder Behelfe hast du erwogen bzw. nutzt du heute?
+    validations:
+      required: false
+  - type: dropdown
+    id: plattform
+    attributes:
+      label: Plattform
+      description: Für welche Plattform ist der Vorschlag relevant?
+      options:
+        - Windows
+        - Linux
+        - Android
+        - plattformübergreifend
+    validations:
+      required: true
+  - type: textarea
+    id: kontext
+    attributes:
+      label: Zusätzlicher Kontext
+      description: Screenshots, Beispiele, rechtlicher Hintergrund (z. B. BetrVG-Bezug) — alles, was beim Einordnen hilft.
+    validations:
+      required: false
