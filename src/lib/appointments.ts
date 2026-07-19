@@ -52,8 +52,18 @@ function isoFromIcalTime(t: ICAL.Time): string {
   return `${p(t.year, 4)}-${p(t.month)}-${p(t.day)}`;
 }
 
+/** JS-Date (beliebige Zone) -> lokales Y-M-D über die lokalen Date-Getter. */
+function localIsoFromJsDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** DTSTART der Serie als floating ICAL.Time (Datum + ggf. Startzeit). */
-function icalDtstart(a: AppointmentListItem): ICAL.Time {
+function icalDtstart(a: {
+  startDate: string;
+  startTime: string | null;
+  isAllDay: boolean;
+}): ICAL.Time {
   const [year, month, day] = a.startDate.split("-").map(Number);
   // localTimezone ist in ical.js die "floating"-Zone (keine Umrechnungen).
   if (a.isAllDay || !a.startTime) {
@@ -388,6 +398,58 @@ export function parseRruleToPreset(rrule: string): SeriesPreset | null {
     end = { type: "until", date };
   }
   return { freq, interval, byWeekdays, end };
+}
+
+export interface SeriesEndInput {
+  rrule: string | null;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD, inklusiv
+  startTime: string | null;
+  isAllDay: boolean;
+}
+
+/**
+ * Letzter Tag, den die Serie berühren kann (konservativ: zu spät ist unschön,
+ * zu früh wäre ein Bug -- eine echte spätere Instanz dürfte dann nicht mehr
+ * aus dieser Cache-Spalte (`series_end_date`, Migration s. Task 1) gefunden
+ * werden). `null` heißt "endlos oder unbekannt": weder COUNT noch UNTIL,
+ * eine kaputte/nicht parsebare Regel (ICAL.Recur.fromString wirft -- deckt
+ * sich mit der defensiven Anzeige in expandSeries) oder wenn der
+ * Iterations-Guard bei COUNT-Regeln greift.
+ */
+export function seriesEndDateFor(a: SeriesEndInput): string | null {
+  if (a.rrule === null) return null;
+  let recur: ICAL.Recur;
+  try {
+    recur = ICAL.Recur.fromString(a.rrule);
+  } catch {
+    return null;
+  }
+  const spanDays = differenceInCalendarDays(parseISO(a.endDate), parseISO(a.startDate));
+
+  if (recur.until) {
+    // Wie in parseRruleToPreset: ein Zeit-UNTIL in UTC kann lokal auf einen
+    // anderen Tag fallen als das UTC-Datum -- ein zu frühes Serienende ließe
+    // die letzte Instanz aus dem Kalender verschwinden.
+    const anchor = recur.until.isDate
+      ? isoFromIcalTime(recur.until)
+      : localIsoFromJsDate(recur.until.toJSDate());
+    return addDaysIso(anchor, Math.max(0, spanDays));
+  }
+
+  if (recur.count != null) {
+    const iter = recur.iterator(icalDtstart(a));
+    let lastAnchor: string | null = null;
+    let iterations = 0;
+    let next: ICAL.Time | null;
+    while ((next = iter.next())) {
+      if (++iterations > MAX_ITERATIONS) return null; // konservativ: unbekannt statt geraten
+      lastAnchor = isoFromIcalTime(next);
+    }
+    return lastAnchor === null ? null : addDaysIso(lastAnchor, spanDays);
+  }
+
+  return null; // weder COUNT noch UNTIL -- endlose Serie
 }
 
 /** Vortag des Ankers -- das inklusive UNTIL des alten Serienteils beim Split. */

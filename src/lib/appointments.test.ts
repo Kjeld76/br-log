@@ -16,8 +16,10 @@ import {
   remainingCountFrom,
   rruleWithCount,
   rruleWithUntil,
+  seriesEndDateFor,
   splitUntilDate,
   truncatedMaster,
+  type SeriesEndInput,
 } from "./appointments";
 
 function appt(overrides: Partial<AppointmentListItem> = {}): AppointmentListItem {
@@ -358,6 +360,65 @@ describe("Serienregel-Presets", () => {
     expect(remainingCountFrom(master, "2026-08-10")).toBe(7);
     // Regel ohne COUNT -> null.
     expect(remainingCountFrom(appt({ rrule: "FREQ=WEEKLY" }), "2026-08-10")).toBeNull();
+  });
+});
+
+describe("seriesEndDateFor", () => {
+  function master(overrides: Partial<SeriesEndInput> = {}): SeriesEndInput {
+    return {
+      rrule: null,
+      startDate: "2026-07-01",
+      endDate: "2026-07-01",
+      startTime: "09:00",
+      isAllDay: false,
+      ...overrides,
+    };
+  }
+
+  it("liefert null ohne RRULE (Einzeltermin)", () => {
+    expect(seriesEndDateFor(master({ rrule: null }))).toBeNull();
+  });
+
+  it("liefert null bei endloser Serie (weder COUNT noch UNTIL)", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=DAILY" }))).toBeNull();
+  });
+
+  it("übernimmt ein Datums-UNTIL direkt als Serienende", () => {
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260731" }))
+    ).toBe("2026-07-31");
+  });
+
+  it("ermittelt das Serienende bei COUNT über Iteration ab DTSTART", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=WEEKLY;COUNT=3" }))).toBe(
+      "2026-07-15"
+    );
+  });
+
+  it("addiert die Terminspanne bei mehrtägigen COUNT-Serien auf den letzten Anker", () => {
+    expect(
+      seriesEndDateFor(
+        master({ endDate: "2026-07-03", rrule: "FREQ=WEEKLY;COUNT=2" })
+      )
+    ).toBe("2026-07-10");
+  });
+
+  it("rechnet ein Zeit-UNTIL in UTC in lokale Wandzeit um (Berlin-TZ)", () => {
+    expect(
+      seriesEndDateFor(master({ rrule: "FREQ=DAILY;UNTIL=20260101T060000Z" }))
+    ).toBe("2026-01-01");
+  });
+
+  it("liefert null bei kaputter Regel (ICAL.Recur.fromString wirft)", () => {
+    expect(seriesEndDateFor(master({ rrule: "FREQ=KAPUTT" }))).toBeNull();
+  });
+
+  it("addiert die Terminspanne bei mehrtägigen UNTIL-Serien auf das UNTIL-Datum", () => {
+    expect(
+      seriesEndDateFor(
+        master({ endDate: "2026-07-02", rrule: "FREQ=WEEKLY;UNTIL=20260715" })
+      )
+    ).toBe("2026-07-16");
   });
 });
 
