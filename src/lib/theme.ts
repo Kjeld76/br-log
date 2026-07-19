@@ -21,11 +21,10 @@ function isDark(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && prefersDark());
 }
 
-/** Setzt `dark`-Klasse + `data-theme` + sofortige Hintergrundfarbe (deckungsgleich mit dem FOUC-Script). */
+/** Setzt `data-theme` + sofortige Hintergrundfarbe (deckungsgleich mit dem FOUC-Script). */
 export function applyTheme(theme: Theme): void {
   const dark = isDark(theme);
   const root = document.documentElement;
-  root.classList.toggle("dark", dark);
   root.dataset.theme = dark ? "dark" : "light";
   root.style.backgroundColor = dark ? FOUC_BG.dark : FOUC_BG.light;
   void syncWindowTheme(theme);

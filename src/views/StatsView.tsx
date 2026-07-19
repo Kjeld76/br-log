@@ -63,22 +63,21 @@ export default function StatsView({ reloadKey }: Props) {
   }, [from, to, reloadKey]);
 
   const field = inputCls;
-  const card =
-    "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
-  const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
+  const card = "rounded-lg border border-border bg-surface p-4";
+  const heading = "mb-2 text-sm font-semibold text-primary-ink";
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4">
       <header>
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+        <h2 className="text-lg font-bold text-primary-ink">
           Auswertung
         </h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-secondary-ink">
           Summen und Kennzahlen zur eigenen BR-Zeit.
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-secondary-ink">
         <span>Zeitraum:</span>
         <input
           type="date"
@@ -96,7 +95,7 @@ export default function StatsView({ reloadKey }: Props) {
         {(from || to) && (
           <button
             type="button"
-            className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+            className="text-xs text-secondary-ink hover:underline"
             onClick={() => {
               setFrom("");
               setTo("");
@@ -105,13 +104,13 @@ export default function StatsView({ reloadKey }: Props) {
             Zeitraum löschen
           </button>
         )}
-        <span className="text-xs text-slate-400 dark:text-slate-500">
+        <span className="text-xs text-disabled-ink">
           (leer = gesamter Bestand)
         </span>
       </div>
 
       {loading && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Lädt…</p>
+        <p className="text-sm text-secondary-ink">Lädt…</p>
       )}
       {error && (
         <p className={errorBoxCls}>
@@ -124,36 +123,36 @@ export default function StatsView({ reloadKey }: Props) {
           {/* Kennzahlen */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className={card}>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 BR-Zeit im Zeitraum
               </div>
-              <div className="mt-1 text-xl font-semibold text-slate-800 dark:text-slate-100">
+              <div className="mt-1 text-xl font-semibold text-primary-ink">
                 {minutesToHhmm(stats.totalMinutes)} Std
               </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">
+              <div className="text-xs text-disabled-ink">
                 ohne Freizeitausgleich
               </div>
             </div>
             <div className={card}>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 Außerhalb geplanter Schicht
               </div>
-              <div className="mt-1 text-xl font-semibold text-slate-800 dark:text-slate-100">
+              <div className="mt-1 text-xl font-semibold text-primary-ink">
                 {minutesToHhmm(stats.outsidePlannedShiftMinutes)} Std
               </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">
+              <div className="text-xs text-disabled-ink">
                 {pct(stats.outsidePlannedShiftMinutes, stats.totalMinutes)}{" "}
                 der BR-Zeit
               </div>
             </div>
             <div className={card}>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 Widersprüche der GL
               </div>
-              <div className="mt-1 text-xl font-semibold text-slate-800 dark:text-slate-100">
+              <div className="mt-1 text-xl font-semibold text-primary-ink">
                 {stats.objectionCount}
               </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">
+              <div className="text-xs text-disabled-ink">
                 in {stats.objectionEntryCount} Eintrag/Einträgen
               </div>
             </div>
@@ -164,17 +163,17 @@ export default function StatsView({ reloadKey }: Props) {
             <section className={card}>
               <h3 className={heading}>Je Monat</h3>
               {stats.monthSums.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-secondary-ink">
                   Keine Einträge.
                 </p>
               ) : (
                 <ul className="space-y-1 text-sm">
                   {stats.monthSums.map((m) => (
                     <li key={m.month} className="flex justify-between">
-                      <span className="capitalize text-slate-600 dark:text-slate-300">
+                      <span className="capitalize text-secondary-ink">
                         {monthLabel(m.month)}
                       </span>
-                      <span className="font-medium text-slate-800 dark:text-slate-100">
+                      <span className="font-medium text-primary-ink">
                         {minutesToHhmm(m.minutes)} Std
                       </span>
                     </li>
@@ -185,17 +184,17 @@ export default function StatsView({ reloadKey }: Props) {
             <section className={card}>
               <h3 className={heading}>Je Jahr</h3>
               {stats.yearSums.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-secondary-ink">
                   Keine Einträge.
                 </p>
               ) : (
                 <ul className="space-y-1 text-sm">
                   {stats.yearSums.map((y) => (
                     <li key={y.year} className="flex justify-between">
-                      <span className="text-slate-600 dark:text-slate-300">
+                      <span className="text-secondary-ink">
                         {y.year}
                       </span>
-                      <span className="font-medium text-slate-800 dark:text-slate-100">
+                      <span className="font-medium text-primary-ink">
                         {minutesToHhmm(y.minutes)} Std
                       </span>
                     </li>
@@ -208,7 +207,7 @@ export default function StatsView({ reloadKey }: Props) {
           {/* Je Schlagwort */}
           <section className={card}>
             <h3 className={heading}>Je Schlagwort</h3>
-            <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mb-2 text-xs text-secondary-ink">
               Nur Einträge mit genau einem Schlagwort lassen sich eindeutig
               zuordnen; bei Mehrfachauswahl wäre die Dauer nicht widerspruchsfrei
               aufteilbar.
@@ -216,23 +215,23 @@ export default function StatsView({ reloadKey }: Props) {
             {stats.tagSums.length === 0 &&
             stats.multiTagMinutes === 0 &&
             stats.untaggedMinutes === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-secondary-ink">
                 Keine Einträge.
               </p>
             ) : (
               <ul className="space-y-1 text-sm">
                 {stats.tagSums.map((t) => (
                   <li key={t.tagId} className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-300">
+                    <span className="text-secondary-ink">
                       {t.label}
                     </span>
-                    <span className="font-medium text-slate-800 dark:text-slate-100">
+                    <span className="font-medium text-primary-ink">
                       {minutesToHhmm(t.minutes)} Std
                     </span>
                   </li>
                 ))}
                 {stats.multiTagMinutes > 0 && (
-                  <li className="flex justify-between border-t border-slate-200 pt-1 italic text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  <li className="flex justify-between border-t border-border pt-1 italic text-secondary-ink">
                     <span>
                       Einträge mit mehreren Schlagwörtern (nicht aufteilbar)
                     </span>
@@ -242,7 +241,7 @@ export default function StatsView({ reloadKey }: Props) {
                   </li>
                 )}
                 {stats.untaggedMinutes > 0 && (
-                  <li className="flex justify-between italic text-slate-500 dark:text-slate-400">
+                  <li className="flex justify-between italic text-secondary-ink">
                     <span>Ohne Schlagwort</span>
                     <span className="font-medium">
                       {minutesToHhmm(stats.untaggedMinutes)} Std
@@ -265,31 +264,31 @@ export default function StatsView({ reloadKey }: Props) {
           </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 Guthaben (laufend gesamt)
               </div>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              <div className="text-lg font-semibold text-primary-ink">
                 {minutesToHhmm(balance.credit)} Std
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 Verbraucht (laufend gesamt)
               </div>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              <div className="text-lg font-semibold text-primary-ink">
                 {minutesToHhmm(balance.used)} Std
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-secondary-ink">
                 Saldo
               </div>
               <div
                 className={
                   "text-lg font-semibold " +
                   (balance.balance < 0
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-slate-800 dark:text-slate-100")
+                    ? "text-danger-ink"
+                    : "text-primary-ink")
                 }
               >
                 {minutesToHhmm(balance.balance)} Std
@@ -298,10 +297,10 @@ export default function StatsView({ reloadKey }: Props) {
           </div>
 
           {balance.byMonth.length > 0 && (
-            <div className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-700">
+            <div className="mt-3 border-t border-border pt-2">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-slate-500 dark:text-slate-400">
+                  <tr className="text-left text-secondary-ink">
                     <th className="py-1">Monat</th>
                     <th className="py-1 text-right">Guthaben</th>
                     <th className="py-1 text-right">Verbraucht</th>
@@ -311,15 +310,15 @@ export default function StatsView({ reloadKey }: Props) {
                   {balance.byMonth.map((m) => (
                     <tr
                       key={m.month}
-                      className="border-t border-slate-100 dark:border-slate-800"
+                      className="border-t border-border"
                     >
-                      <td className="py-1 capitalize text-slate-600 dark:text-slate-300">
+                      <td className="py-1 capitalize text-secondary-ink">
                         {monthLabel(m.month)}
                       </td>
-                      <td className="py-1 text-right text-slate-700 dark:text-slate-200">
+                      <td className="py-1 text-right text-primary-ink">
                         {minutesToHhmm(m.credit)} Std
                       </td>
-                      <td className="py-1 text-right text-slate-700 dark:text-slate-200">
+                      <td className="py-1 text-right text-primary-ink">
                         {minutesToHhmm(m.used)} Std
                       </td>
                     </tr>
@@ -329,7 +328,7 @@ export default function StatsView({ reloadKey }: Props) {
             </div>
           )}
 
-          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-3 text-xs text-secondary-ink">
             Hinweis: Nach § 37 Abs. 3 BetrVG ist Freizeitausgleich für BR-Arbeit
             außerhalb der Arbeitszeit grundsätzlich innerhalb eines Monats zu
             gewähren; andernfalls entsteht ein Anspruch auf Vergütung wie
