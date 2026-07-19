@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { BackupPayload, ImportSummary } from "../types";
 import {
   exportGlCsv,
   exportFullCsv,
@@ -8,12 +7,12 @@ import {
   exportIcs,
   analyzeIcsFile,
   applyIcsPlan,
-  type IcsImportPlan,
 } from "../export/exporters";
 import { analyzeImport, applyImport } from "../db/repository";
 import { backupNow } from "../db/client";
 import { toUserMessage } from "../lib/errors";
 import { inputCls } from "../lib/ui";
+import { icsImportPreview, jsonImportPreview, type ImportPreview } from "../lib/importPreview";
 import { Icon, type IconName } from "./Icon";
 
 interface Props {
@@ -74,13 +73,15 @@ export default function ExportPanel({ onImported }: Props) {
   // für das JSON-Backup (vollständige Datensicherung/Geräteübertragung).
   const [csvFrom, setCsvFrom] = useState("");
   const [csvTo, setCsvTo] = useState("");
-  const [pending, setPending] = useState<{
-    payload: BackupPayload;
-    summary: ImportSummary;
+  // Generischer Pending-Import-Zustand: EINE Vorschau + EIN Anwenden-Schritt
+  // für beide Importquellen (JSON-Backup, ICS). Eine dritte Importquelle
+  // bräuchte künftig nur noch startX + einen Builder in lib/importPreview.ts.
+  const [pendingImport, setPendingImport] = useState<{
+    preview: ImportPreview;
+    apply: () => Promise<string>;
   } | null>(null);
-  // ICS: Vertraulich-Haken (Export) + Import-Vorschau.
+  // ICS: Vertraulich-Haken (Export).
   const [icsConfidential, setIcsConfidential] = useState(false);
-  const [icsPending, setIcsPending] = useState<IcsImportPlan | null>(null);
 
   const run = async (fn: () => Promise<string | null>, label: string) => {
     setError(null);
@@ -106,8 +107,17 @@ export default function ExportPanel({ onImported }: Props) {
         setStatus("Abgebrochen.");
         return;
       }
+      // Die hier berechnete Vorschau wird beim bestätigten Import
+      // wiederverwendet (precomputedSummary) -- die Konflikt-/Tag-Analyse
+      // läuft dadurch nicht zusätzlich ein zweites Mal (Finding 32).
       const summary = await analyzeImport(payload);
-      setPending({ payload, summary });
+      setPendingImport({
+        preview: jsonImportPreview(summary),
+        apply: async () => {
+          const s = await applyImport(payload, summary);
+          return `Import abgeschlossen: ${s.newEntries} neu, ${s.conflicts} aktualisiert, ${s.unchanged} unverändert.`;
+        },
+      });
     } catch (e) {
       setError(toUserMessage(e));
     } finally {
@@ -115,8 +125,32 @@ export default function ExportPanel({ onImported }: Props) {
     }
   };
 
-  const confirmImport = async () => {
-    if (!pending) return;
+  const startIcsImport = async () => {
+    setError(null);
+    setStatus(null);
+    setBusy(true);
+    try {
+      const plan = await analyzeIcsFile();
+      if (!plan) {
+        setStatus("Abgebrochen.");
+        return;
+      }
+      setPendingImport({
+        preview: icsImportPreview(plan),
+        apply: async () => {
+          await applyIcsPlan(plan);
+          return `ICS-Import abgeschlossen: ${plan.newCount} neu, ${plan.updatedCount} aktualisiert, ${plan.unchangedCount} unverändert.`;
+        },
+      });
+    } catch (e) {
+      setError(toUserMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmPendingImport = async () => {
+    if (!pendingImport) return;
     setBusy(true);
     setError(null);
 
@@ -136,63 +170,9 @@ export default function ExportPanel({ onImported }: Props) {
     }
 
     try {
-      // Die bereits in startImport berechnete Vorschau wird wiederverwendet
-      // (precomputedSummary) -- die Konflikt-/Tag-Analyse läuft dadurch nicht
-      // zusätzlich ein zweites Mal beim bestätigten Import (Finding 32).
-      const s = await applyImport(pending.payload, pending.summary);
-      setStatus(
-        `Import abgeschlossen: ${s.newEntries} neu, ${s.conflicts} aktualisiert, ${s.unchanged} unverändert.`
-      );
-      setPending(null);
-      onImported();
-    } catch (e) {
-      setError(toUserMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startIcsImport = async () => {
-    setError(null);
-    setStatus(null);
-    setBusy(true);
-    try {
-      const plan = await analyzeIcsFile();
-      if (!plan) {
-        setStatus("Abgebrochen.");
-        return;
-      }
-      setIcsPending(plan);
-    } catch (e) {
-      setError(toUserMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirmIcsImport = async () => {
-    if (!icsPending) return;
-    setBusy(true);
-    setError(null);
-    // Sicherheits-Backup wie beim JSON-Import (Finding 24): der ICS-Import
-    // kann bestehende Serien ERSETZEN -- ohne Backup kein Rückweg.
-    try {
-      await backupNow();
-    } catch (e) {
-      setError(
-        `Import abgebrochen: Das Sicherheits-Backup vor dem Import ist fehlgeschlagen. ${toUserMessage(
-          e
-        )}`
-      );
-      setBusy(false);
-      return;
-    }
-    try {
-      await applyIcsPlan(icsPending);
-      setStatus(
-        `ICS-Import abgeschlossen: ${icsPending.newCount} neu, ${icsPending.updatedCount} aktualisiert, ${icsPending.unchangedCount} unverändert.`
-      );
-      setIcsPending(null);
+      const message = await pendingImport.apply();
+      setStatus(message);
+      setPendingImport(null);
       onImported();
     } catch (e) {
       setError(toUserMessage(e));
@@ -294,95 +274,32 @@ export default function ExportPanel({ onImported }: Props) {
         </span>
       </label>
 
-      {/* Konflikt-Zusammenfassung + Bestätigung */}
-      {pending && (
+      {/* Generisches Import-Vorschau-Panel + Bestätigung -- gilt für beide
+          Importquellen (JSON-Backup, ICS); eine dritte bräuchte künftig nur
+          noch startX + einen Builder in lib/importPreview.ts. */}
+      {pendingImport && (
         <div className="rounded border border-warning-action-line bg-warning-banner p-3 text-sm">
           <p className="font-medium text-warning-banner-ink">
-            Import-Vorschau
+            {pendingImport.preview.title}
           </p>
           <ul className="mt-1 list-inside list-disc text-warning-banner-ink">
-            <li>{pending.summary.newEntries} neue Einträge</li>
-            <li>
-              {pending.summary.conflicts} Konflikte (neuere Version gewinnt)
-            </li>
-            <li>{pending.summary.unchanged} unverändert</li>
-            <li>{pending.summary.newTags} neue Schlagwörter</li>
-            {(pending.summary.newAppointments ?? 0) +
-              (pending.summary.appointmentConflicts ?? 0) +
-              (pending.summary.appointmentUnchanged ?? 0) >
-              0 && (
-              <li>
-                Termine: {pending.summary.newAppointments ?? 0} neu,{" "}
-                {pending.summary.appointmentConflicts ?? 0} aktualisiert,{" "}
-                {pending.summary.appointmentUnchanged ?? 0} unverändert
-              </li>
-            )}
+            {pendingImport.preview.bullets.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
           </ul>
 
-          {pending.summary.conflictItems.length > 0 && (
+          {pendingImport.preview.detail && (
             <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
               <p className="text-xs font-semibold text-warning-banner-ink">
-                Diese {pending.summary.conflictItems.length} lokalen Einträge
-                würden überschrieben:
+                {pendingImport.preview.detail.heading}
               </p>
               <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
-                {pending.summary.conflictItems.map((c) => (
-                  <li
-                    key={c.id}
-                    className="text-xs text-warning-banner-ink"
-                  >
-                    <span className="font-medium">{c.date}</span> — {c.label}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
-              onClick={() => setPending(null)}
-              disabled={busy}
-            >
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              className="rounded bg-warning-action px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-warning-action-hover"
-              onClick={confirmImport}
-              disabled={busy}
-            >
-              Import starten
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ICS-Import-Vorschau + Bestätigung (Muster der Backup-Vorschau) */}
-      {icsPending && (
-        <div className="rounded border border-warning-action-line bg-warning-banner p-3 text-sm">
-          <p className="font-medium text-warning-banner-ink">
-            ICS-Import-Vorschau
-          </p>
-          <ul className="mt-1 list-inside list-disc text-warning-banner-ink">
-            <li>{icsPending.newCount} neue Termine</li>
-            <li>
-              {icsPending.updatedCount} aktualisiert (bestehende Serie/Termin
-              wird ersetzt)
-            </li>
-            <li>{icsPending.unchangedCount} unverändert</li>
-          </ul>
-
-          {icsPending.warnings.length > 0 && (
-            <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
-              <p className="text-xs font-semibold text-warning-banner-ink">
-                Hinweise:
-              </p>
-              <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
-                {icsPending.warnings.map((w, i) => (
+                {pendingImport.preview.detail.lines.map((line, i) => (
                   <li key={i} className="text-xs text-warning-banner-ink">
-                    {w}
+                    {line.strong && (
+                      <span className="font-medium">{line.strong}</span>
+                    )}
+                    {line.text}
                   </li>
                 ))}
               </ul>
@@ -393,7 +310,7 @@ export default function ExportPanel({ onImported }: Props) {
             <button
               type="button"
               className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
-              onClick={() => setIcsPending(null)}
+              onClick={() => setPendingImport(null)}
               disabled={busy}
             >
               Abbrechen
@@ -401,7 +318,7 @@ export default function ExportPanel({ onImported }: Props) {
             <button
               type="button"
               className="rounded bg-warning-action px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-warning-action-hover"
-              onClick={confirmIcsImport}
+              onClick={confirmPendingImport}
               disabled={busy}
             >
               Import starten
