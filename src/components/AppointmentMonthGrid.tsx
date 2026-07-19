@@ -135,7 +135,7 @@ export default function AppointmentMonthGrid({
     }
   };
 
-  const navBtn = secondaryBtnSmCls + " min-h-[44px] sm:min-h-0";
+  const navBtn = secondaryBtnSmCls + " min-h-touch-pointer sm:min-h-0";
   const selectedOccs = selectedDay ? occsByDay.get(selectedDay) ?? [] : [];
 
   return (
@@ -144,10 +144,10 @@ export default function AppointmentMonthGrid({
         <button type="button" className={navBtn} onClick={() => onShiftMonth(-1)}>
           ‹ Vorheriger
         </button>
-        <h3 className="text-base font-semibold capitalize text-slate-800 dark:text-slate-100">
+        <h3 className="text-base font-semibold capitalize text-primary-ink">
           {monthLabel(month)}
           {(monthWorkMinutes > 0 || monthCompensationMinutes > 0) && (
-            <span className="ml-2 text-sm font-normal normal-case text-slate-500 dark:text-slate-400">
+            <span className="ml-2 text-sm font-normal normal-case text-secondary-ink">
               ({minutesToHhmm(monthWorkMinutes)} Std
               {monthCompensationMinutes > 0 &&
                 ` · + ${minutesToHhmm(monthCompensationMinutes)} Std Freizeitausgleich`}
@@ -170,7 +170,7 @@ export default function AppointmentMonthGrid({
         {WEEKDAYS.map((w) => (
           <div
             key={w}
-            className="py-0.5 text-center text-xs font-medium text-slate-500 dark:text-slate-400 sm:py-1"
+            className="py-0.5 text-center text-xs font-medium text-secondary-ink sm:py-1"
           >
             {w}
           </div>
@@ -188,19 +188,19 @@ export default function AppointmentMonthGrid({
               className={
                 "flex min-h-[4rem] flex-col items-stretch gap-0.5 rounded border p-0.5 text-left transition sm:min-h-[5rem] sm:p-1 " +
                 (c.inMonth
-                  ? "border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-sky-700 dark:hover:bg-slate-700"
-                  : "border-transparent bg-slate-50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-600") +
-                (selectedDay === c.iso ? " ring-2 ring-sky-400" : "")
+                  ? "border-border bg-surface hover:border-hover-accent-line hover:bg-hover-accent-surface"
+                  : "border-transparent bg-cell-muted text-cell-muted-ink") +
+                (selectedDay === c.iso ? " ring-2 ring-selected-ring" : "")
               }
             >
-              <span className="flex items-center justify-between text-xs dark:text-slate-300">
+              <span className="flex items-center justify-between text-xs text-day-number-ink">
                 {c.date.getDate()}
                 {minutes ? (
                   <span
-                    className="flex items-center gap-0.5 font-medium text-sky-700 dark:text-sky-400"
+                    className="flex items-center gap-0.5 font-medium text-link"
                     title={`Erfasste Zeit: ${minutesToHhmm(minutes)} Std`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-time-dot" />
                     {/* Auf allen Breiten sichtbar: das Raster ist für
                         Android-Portrait getunt; ein title-Tooltip ist auf
                         Touch nicht erreichbar. */}
@@ -233,7 +233,7 @@ export default function AppointmentMonthGrid({
                 );
               })}
               {more > 0 && (
-                <span className="px-1 text-[10px] text-slate-500 dark:text-slate-400 sm:text-xs">
+                <span className="px-1 text-[10px] text-secondary-ink sm:text-xs">
                   +{more} weitere
                 </span>
               )}
@@ -244,22 +244,22 @@ export default function AppointmentMonthGrid({
 
       {/* Tages-Panel: Termine + Einträge des angeklickten Tags */}
       {selectedDay && (
-        <div className="rounded border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+        <div className="rounded border border-border bg-surface p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <h4 className="text-sm font-semibold text-primary-ink">
               {formatDateDe(selectedDay)}
             </h4>
             <div className="flex gap-2">
               <button
                 type="button"
-                className="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700"
+                className="rounded bg-primary px-2 py-1 text-xs font-medium text-on-primary hover:bg-primary-hover"
                 onClick={() => onNewAppointment(selectedDay)}
               >
                 + Termin
               </button>
               <button
                 type="button"
-                className="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700"
+                className="rounded bg-primary px-2 py-1 text-xs font-medium text-on-primary hover:bg-primary-hover"
                 onClick={() => onNewEntry(selectedDay)}
               >
                 + Eintrag
@@ -286,7 +286,7 @@ export default function AppointmentMonthGrid({
 
           {dayEntries.length > 0 && (
             <>
-              <h5 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <h5 className="mb-1 text-xs font-medium uppercase tracking-wide text-secondary-ink">
                 Erfasste Zeiten
               </h5>
               <ul className="space-y-1">
@@ -295,7 +295,7 @@ export default function AppointmentMonthGrid({
                     key={e.id}
                     role="button"
                     tabIndex={0}
-                    className="cursor-pointer rounded border border-slate-100 p-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:hover:bg-slate-700"
+                    className="cursor-pointer rounded border border-border p-2 text-sm hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                     onClick={() => onOpenEntry(e)}
                     onKeyDown={(ev) => {
                       if (ev.key === "Enter" || ev.key === " ") {
@@ -305,9 +305,9 @@ export default function AppointmentMonthGrid({
                     }}
                   >
                     <div className="flex justify-between">
-                      <span className="flex min-w-0 items-center gap-1.5 truncate text-slate-700 dark:text-slate-200">
+                      <span className="flex min-w-0 items-center gap-1.5 truncate text-primary-ink">
                         {e.isCompensation && (
-                          <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                          <span className="shrink-0 rounded bg-success-surface px-1.5 py-0.5 text-xs text-success-ink">
                             Freizeitausgleich
                           </span>
                         )}
@@ -315,7 +315,7 @@ export default function AppointmentMonthGrid({
                           {e.tagLabels.join(", ") || e.infoForManagement || "Eintrag"}
                         </span>
                       </span>
-                      <span className="ml-2 shrink-0 font-medium text-slate-700 dark:text-slate-200">
+                      <span className="ml-2 shrink-0 font-medium text-primary-ink">
                         {minutesToHhmm(e.durationMinutes)}
                       </span>
                     </div>
@@ -326,7 +326,7 @@ export default function AppointmentMonthGrid({
           )}
 
           {selectedOccs.length === 0 && dayEntries.length === 0 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-secondary-ink">
               Keine Termine oder Einträge an diesem Tag.
             </p>
           )}

@@ -70,7 +70,7 @@ export default function CalendarPage({
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+        <h2 className="text-lg font-bold text-primary-ink">
           Kalender
         </h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -98,7 +98,7 @@ export default function CalendarPage({
           )}
           <button
             type="button"
-            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
             onClick={() => onNewAppointment(todayIso())}
           >
             + Termin

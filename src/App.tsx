@@ -991,7 +991,7 @@ export default function App() {
 
   if (startMode === "loading") {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
+      <div className="flex h-full items-center justify-center text-secondary-ink">
         Wird geladen…
       </div>
     );
@@ -1010,10 +1010,10 @@ export default function App() {
 
   if (initError) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
+      <div className="flex h-full items-center justify-center text-secondary-ink">
         <div className="max-w-md space-y-4 p-4 text-center">
           <div>
-            <p className="font-medium text-red-600 dark:text-red-400">
+            <p className="font-medium text-danger-ink">
               Fehler beim Start
             </p>
             <p className="mt-1 break-all text-sm">{initError}</p>
@@ -1023,19 +1023,19 @@ export default function App() {
             type="button"
             onClick={retryInit}
             disabled={retrying}
-            className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+            className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
           >
             {retrying ? "Wird erneut versucht…" : "Erneut versuchen"}
           </button>
 
           {initDbPath && (
-            <div className="rounded bg-slate-100 p-2 text-left text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <div className="rounded bg-surface-inset p-2 text-left text-xs text-secondary-ink">
               <div className="font-medium">Datenbank-Datei:</div>
               <div className="mt-1 break-all">{initDbPath}</div>
             </div>
           )}
 
-          <p className="text-left text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-left text-xs text-secondary-ink">
             Bleibt der Fehler bestehen: Die Datenbank am oben genannten Pfad
             zuvor kopieren (sichern). Ein früher erstelltes JSON-Backup lässt
             sich anschließend über „Daten → Sicherung &amp; Übertragung →
@@ -1048,7 +1048,7 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
+      <div className="flex h-full items-center justify-center text-secondary-ink">
         Daten werden geladen…
       </div>
     );
@@ -1068,7 +1068,7 @@ export default function App() {
       {/* Verpasste Termin-Erinnerungen (App war zu / DB gesperrt, als sie
           fällig wurden) -- Banner-Muster des Erfassungs-Hinweises darunter. */}
       {missedReminders.length > 0 && (
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-warning-banner-line bg-warning-banner px-4 py-2 text-sm text-warning-banner-ink">
           <div>
             <span className="font-medium">
               {missedReminders.length === 1
@@ -1083,7 +1083,7 @@ export default function App() {
           </div>
           <button
             type="button"
-            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-warning-banner-hover"
             onClick={dismissMissedReminders}
           >
             Ausblenden
@@ -1091,14 +1091,14 @@ export default function App() {
         </div>
       )}
       {showReminder && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-warning-banner-line bg-warning-banner px-4 py-2 text-sm text-warning-banner-ink">
           <span>
             Letzter Eintrag vor {daysSinceLastEntry} Tagen ({formatDateDe(lastEntryDate!)}
             ). Zeitnahe Erfassung stärkt den Nachweis.
           </span>
           <button
             type="button"
-            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-warning-banner-hover"
             onClick={() => setReminderDismissed(true)}
           >
             Ausblenden
@@ -1188,8 +1188,8 @@ export default function App() {
         <div
           className={
             mobile
-              ? "fixed inset-0 z-20 flex items-stretch justify-center overflow-y-auto bg-black/50"
-              : "fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+              ? "fixed inset-0 z-overlay flex items-stretch justify-center overflow-y-auto bg-overlay"
+              : "fixed inset-0 z-overlay flex items-start justify-center overflow-y-auto bg-overlay p-4"
           }
           onClick={requestCloseModal}
         >
@@ -1201,12 +1201,12 @@ export default function App() {
             tabIndex={-1}
             className={
               mobile
-                ? "min-h-full w-full rounded-none bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+                ? "min-h-full w-full rounded-none bg-surface p-4 shadow-xl outline-none"
                 : // "Über BR-Log" ist bewusst ein kleines Modal (siehe Auftrag),
                   // alle anderen (Formular/Detail/Einstellungen) bleiben beim
                   // gewohnten max-w-2xl -- selber Container/Mechanismus, nur die
                   // Breite variiert mit dem Modal-Typ.
-                  "my-4 w-full rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800 " +
+                  "my-4 w-full rounded-lg bg-surface p-4 shadow-xl outline-none " +
                   (modal.type === "about" ? "max-w-sm" : "max-w-2xl")
             }
             onClick={(e) => e.stopPropagation()}
@@ -1215,7 +1215,7 @@ export default function App() {
               <>
                 <h2
                   id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                  className="mb-3 text-base font-semibold text-primary-ink"
                 >
                   Eintrag
                 </h2>
@@ -1233,7 +1233,7 @@ export default function App() {
               <>
                 <h2
                   id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                  className="mb-3 text-base font-semibold text-primary-ink"
                 >
                   Eintrag-Details
                 </h2>
@@ -1250,7 +1250,7 @@ export default function App() {
               <>
                 <h2
                   id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                  className="mb-3 text-base font-semibold text-primary-ink"
                 >
                   Termin
                 </h2>
@@ -1270,7 +1270,7 @@ export default function App() {
               <>
                 <h2
                   id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100"
+                  className="mb-3 text-base font-semibold text-primary-ink"
                 >
                   Termin-Details
                 </h2>
@@ -1302,7 +1302,7 @@ export default function App() {
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2
                     id="entry-modal-heading"
-                    className="text-base font-semibold text-slate-800 dark:text-slate-100"
+                    className="text-base font-semibold text-primary-ink"
                   >
                     Einstellungen
                   </h2>
@@ -1311,7 +1311,7 @@ export default function App() {
                     aria-label="Schließen"
                     title="Schließen"
                     onClick={requestCloseModal}
-                    className="-my-2 -mr-2 flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                    className="-my-2 -mr-2 flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-lg text-secondary-ink hover:bg-surface-2"
                   >
                     <Icon name="x" size={20} />
                   </button>
@@ -1334,7 +1334,7 @@ export default function App() {
                     aria-label="Schließen"
                     title="Schließen"
                     onClick={requestCloseModal}
-                    className="-my-2 -mr-2 ml-auto flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                    className="-my-2 -mr-2 ml-auto flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-lg text-secondary-ink hover:bg-surface-2"
                   >
                     <Icon name="x" size={20} />
                   </button>
@@ -1361,7 +1361,7 @@ export default function App() {
           destruktiven Button ("Verwerfen" vs. "Löschen"). */}
       {confirmDiscard && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-overlay p-4"
           onClick={() => setConfirmDiscard(null)}
         >
           <div
@@ -1370,10 +1370,10 @@ export default function App() {
             aria-modal="true"
             aria-label={confirmDiscard.message}
             tabIndex={-1}
-            className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl outline-none dark:bg-slate-800"
+            className="w-full max-w-sm rounded-lg bg-surface p-4 shadow-xl outline-none"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-sm text-slate-700 dark:text-slate-200">
+            <p className="text-sm text-primary-ink">
               {confirmDiscard.message}
             </p>
             <div className="mt-3 flex justify-end gap-2">
@@ -1386,7 +1386,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                className="rounded bg-danger px-4 py-2 text-sm font-medium text-on-primary hover:bg-danger-hover"
                 onClick={confirmDiscard.onConfirm}
               >
                 {confirmDiscard.confirmLabel ?? "Verwerfen"}
@@ -1405,8 +1405,8 @@ export default function App() {
           aria-live="polite"
           className={
             mobile
-              ? "fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
-              : "fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-800 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-700"
+              ? "fixed bottom-20 left-1/2 z-toast -translate-x-1/2 rounded-full bg-surface-inverse px-4 py-2 text-sm text-on-primary shadow-lg"
+              : "fixed bottom-4 left-1/2 z-toast -translate-x-1/2 rounded-full bg-surface-inverse px-4 py-2 text-sm text-on-primary shadow-lg"
           }
         >
           {toast}

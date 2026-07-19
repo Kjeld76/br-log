@@ -36,7 +36,7 @@ export default function Sidebar({
   onLockNow,
 }: Props) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
       <div className="p-4">
         {/* Markenelement: größer + im Dunkelmodus auf hellem Badge lesbar */}
         <span className="brand-logo-wrap">
@@ -55,8 +55,8 @@ export default function Sidebar({
               className={
                 "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition " +
                 (active
-                  ? "bg-sky-50 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700")
+                  ? "bg-selected-surface font-medium text-info-ink"
+                  : "text-secondary-ink hover:bg-surface-2")
               }
             >
               <Icon name={n.icon} size={18} />
@@ -84,7 +84,7 @@ export default function Sidebar({
       <button
         type="button"
         onClick={onOpenSettings}
-        className="m-2 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500 hover:bg-slate-100 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:bg-slate-700"
+        className="m-2 flex items-start gap-2 rounded-lg bg-surface-dim p-3 text-left text-xs text-secondary-ink hover:bg-surface-2"
       >
         <Icon name="lock" size={16} className="mt-0.5 shrink-0" />
         <span>Daten liegen lokal auf diesem Gerät.</span>

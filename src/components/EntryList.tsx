@@ -82,7 +82,7 @@ export default function EntryList({
   return (
     <div className="space-y-3">
       {/* Such- und Filterleiste (sticky) */}
-      <div className="sticky top-0 z-10 space-y-2 bg-slate-50 pb-2 pt-1 dark:bg-slate-900">
+      <div className="sticky top-0 z-10 space-y-2 bg-background pb-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
           <input
             className={field + " min-w-[12rem] flex-1"}
@@ -92,7 +92,7 @@ export default function EntryList({
           />
           <button
             type="button"
-            className="rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
+            className="rounded bg-primary px-3 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover"
             onClick={onNewEntry}
           >
             + Neuer Eintrag
@@ -106,7 +106,7 @@ export default function EntryList({
           onClear={() => setTagIds([])}
         />
 
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-secondary-ink">
           <span>Zeitraum:</span>
           <input
             type="date"
@@ -124,7 +124,7 @@ export default function EntryList({
           {(from || to) && (
             <button
               type="button"
-              className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+              className="text-xs text-secondary-ink hover:underline"
               onClick={() => {
                 setFrom("");
                 setTo("");
@@ -137,7 +137,7 @@ export default function EntryList({
       </div>
 
       {/* Summenzeile */}
-      <div className="flex items-center justify-between rounded bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800 dark:text-slate-200">
+      <div className="flex items-center justify-between rounded bg-surface-inset px-3 py-2 text-sm text-primary-ink">
         <span>
           {loading
             ? "Lädt…"
@@ -148,7 +148,7 @@ export default function EntryList({
         <span className="font-medium">
           Summe: {minutesToHhmm(totalMinutes)} Std
           {compensationMinutes > 0 && (
-            <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">
+            <span className="ml-1 font-normal text-secondary-ink">
               (+ {minutesToHhmm(compensationMinutes)} Std Freizeitausgleich)
             </span>
           )}
@@ -168,7 +168,7 @@ export default function EntryList({
             key={e.id}
             role="button"
             tabIndex={0}
-            className="cursor-pointer rounded border border-slate-200 bg-white p-3 hover:border-sky-300 hover:bg-sky-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-sky-700 dark:hover:bg-slate-700/60"
+            className="cursor-pointer rounded border border-border bg-surface p-3 hover:border-hover-accent-line hover:bg-hover-accent-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             onClick={() => onOpen(e)}
             onKeyDown={(ev) => {
               if (ev.key === "Enter" || ev.key === " ") {
@@ -180,27 +180,27 @@ export default function EntryList({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-slate-800 dark:text-slate-100">
+                  <span className="font-medium text-primary-ink">
                     {formatDateDe(e.date)}
                   </span>
                   {e.startTime && e.endTime && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="text-xs text-secondary-ink">
                       {e.startTime}–{e.endTime}
                       {e.pauseMinutes > 0 && ` (Pause ${e.pauseMinutes} Min)`}
                     </span>
                   )}
                   {e.isCompensation && (
-                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    <span className="rounded bg-success-surface px-1.5 py-0.5 text-xs text-success-ink">
                       Freizeitausgleich
                     </span>
                   )}
                   {!e.isCompensation && !e.hadPlannedShift && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    <span className="rounded bg-warning-badge px-1.5 py-0.5 text-xs text-warning-badge-ink">
                       keine geplante Schicht
                     </span>
                   )}
                   {e.objections.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                    <span className="inline-flex items-center gap-1 rounded bg-error-badge px-1.5 py-0.5 text-xs text-error-badge-ink">
                       <Icon name="alert-triangle" size={11} />
                       {e.objections.length} Widerspruch
                       {e.objections.length > 1 ? "e" : ""}
@@ -215,7 +215,7 @@ export default function EntryList({
                   </div>
                 )}
                 {e.infoForManagement && (
-                  <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 truncate text-sm text-secondary-ink">
                     {e.infoForManagement}
                   </p>
                 )}
@@ -228,16 +228,16 @@ export default function EntryList({
                 )}
               </div>
               <div className="shrink-0 text-right">
-                <div className="font-semibold text-slate-800 dark:text-slate-100">
+                <div className="font-semibold text-primary-ink">
                   {minutesToHhmm(e.durationMinutes)}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Std</div>
+                <div className="text-xs text-secondary-ink">Std</div>
               </div>
             </div>
           </li>
         ))}
         {!loading && !error && entries.length === 0 && (
-          <li className="rounded border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          <li className="rounded border border-dashed border-empty-line p-6 text-center text-sm text-secondary-ink">
             Keine Einträge gefunden.
           </li>
         )}

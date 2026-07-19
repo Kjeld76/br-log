@@ -40,24 +40,24 @@ export default function AboutPanel() {
     <div className="space-y-4 text-center">
       <img src={logo} alt="BR-Log" className="mx-auto h-16 w-auto" />
       <div>
-        <p className="text-base font-semibold text-slate-800 dark:text-slate-100">
+        <p className="text-base font-semibold text-primary-ink">
           BR-Log
         </p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-secondary-ink">
           Version {version ?? "…"}
         </p>
       </div>
-      <p className="text-sm text-slate-600 dark:text-slate-300">
+      <p className="text-sm text-secondary-ink">
         Erfassung und Nachweis von Betriebsratszeiten nach BetrVG.
       </p>
-      <p className="text-sm text-slate-600 dark:text-slate-300">
+      <p className="text-sm text-secondary-ink">
         Entwickler: Mario König
       </p>
-      <p className="text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-xs text-secondary-ink">
         Lizenz: GPLv3
       </p>
       <div className="space-y-2">
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-secondary-ink">
           BR-Log ist kostenlos. Wenn es dir hilft, freue ich mich über einen
           Kaffee:
         </p>
@@ -80,10 +80,10 @@ export default function AboutPanel() {
           </button>
         </div>
         {donateError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{donateError}</p>
+          <p className="text-xs text-danger-ink">{donateError}</p>
         )}
       </div>
-      <p className="rounded bg-slate-50 p-2 text-xs text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">
+      <p className="rounded bg-surface-dim p-2 text-xs text-secondary-ink">
         Alle Daten bleiben ausschließlich lokal auf diesem Gerät – keine
         Cloud, kein Tracking.
       </p>

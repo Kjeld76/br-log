@@ -16,9 +16,11 @@ export interface ColorOption {
 
 // "Standard" (color = null) nutzt bewusst denselben Sky-Ton wie die übrige
 // App-Akzentfarbe -- die Palette ergänzt nur Unterscheidungsfarben.
-export const DEFAULT_CHIP_CLS =
-  "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200";
-export const DEFAULT_DOT_CLS = "bg-sky-500";
+// Klassen referenzieren --color-appt-*-Tokens (tokens.css); Definition in
+// styles.css (.appt-chip-*/.appt-dot-*) -- semantisch statt Palette-Utilities,
+// kein dark:-Zweig mehr nötig (Light/Dark steckt im Token).
+export const DEFAULT_CHIP_CLS = "appt-chip-sky";
+export const DEFAULT_DOT_CLS = "appt-dot-sky";
 
 export const COLOR_OPTIONS: ColorOption[] = [
   {
@@ -30,28 +32,26 @@ export const COLOR_OPTIONS: ColorOption[] = [
   {
     value: "amber",
     label: "Gelb",
-    chipCls: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    dotCls: "bg-amber-500",
+    chipCls: "appt-chip-amber",
+    dotCls: "appt-dot-amber",
   },
   {
     value: "emerald",
     label: "Grün",
-    chipCls:
-      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-    dotCls: "bg-emerald-500",
+    chipCls: "appt-chip-emerald",
+    dotCls: "appt-dot-emerald",
   },
   {
     value: "violet",
     label: "Lila",
-    chipCls:
-      "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
-    dotCls: "bg-violet-500",
+    chipCls: "appt-chip-violet",
+    dotCls: "appt-dot-violet",
   },
   {
     value: "rose",
     label: "Rot",
-    chipCls: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    dotCls: "bg-rose-500",
+    chipCls: "appt-chip-rose",
+    dotCls: "appt-dot-rose",
   },
 ];
 

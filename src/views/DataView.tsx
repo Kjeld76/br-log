@@ -13,11 +13,11 @@ interface Props {
 // diese Ansicht mischte bisher App-Einstellungen mit Datenfunktionen, ohne
 // klare Trennung.
 export default function DataView({ onChanged, reloadKey }: Props) {
-  const heading = "mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200";
+  const heading = "mb-2 text-sm font-semibold text-primary-ink";
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-4">
-      <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+      <h2 className="text-lg font-bold text-primary-ink">
         Daten
       </h2>
 

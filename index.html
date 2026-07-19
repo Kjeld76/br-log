@@ -19,7 +19,7 @@
             (t === "system" &&
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           var root = document.documentElement;
-          if (dark) root.classList.add("dark");
+          root.dataset.theme = dark ? "dark" : "light";
           root.style.backgroundColor = dark ? "#0f172a" : "#f8fafc";
         } catch (e) {}
       })();

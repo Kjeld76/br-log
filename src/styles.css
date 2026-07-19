@@ -1,3 +1,4 @@
+@import "./tokens.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,14 +11,26 @@ body,
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+  font-family: var(--font-system);
+  background: var(--color-background);
+  color: var(--color-text-primary);
 }
 
-.dark body {
-  background: #0f172a; /* slate-900 */
-  color: #e2e8f0; /* slate-200 */
+/* ----------------------------------------------------------------------------
+   Fokus & Bewegung — global, themeunabhängig (Tokens aus tokens.css).
+---------------------------------------------------------------------------- */
+:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-ring);
+  outline-offset: var(--focus-offset);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ----------------------------------------------------------------------------
@@ -25,54 +38,87 @@ body {
    Muss sich in BEIDEN Modi deutlich von der neutralen GL-Sicht abheben:
    - Hell: rosé/rot getönt auf hellem UI.
    - Dunkel: rosé/rot getönt auf dunklem, neutral-slate UI.
+   Werte kommen vollständig aus dem Theme-Block der Tokens (tokens.css) —
+   keine `.dark`-Zwillinge mehr nötig.
 ---------------------------------------------------------------------------- */
 .confidential-block {
-  background: #fef2f2; /* rose-50 */
-  border: 1px solid #fecaca; /* red-200 */
-  color: #991b1b; /* red-800 */
-}
-.dark .confidential-block {
-  background: rgba(190, 18, 60, 0.16); /* rose-700 getönt */
-  border-color: #be123c; /* rose-700 */
-  color: #fecdd3; /* rose-200 */
+  background: var(--color-confidential-surface);
+  border: 1px solid var(--color-confidential-border);
+  color: var(--color-confidential-ink);
 }
 
 .confidential-input {
   width: 100%;
   border-radius: 0.375rem;
-  border: 1px solid #fecaca;
-  background: #ffffff;
-  color: #7f1d1d;
+  border: 1px solid var(--color-confidential-border);
+  background: var(--color-confidential-input-bg);
+  color: var(--color-confidential-input-ink);
   padding: 0.5rem;
   font-size: 0.875rem;
 }
 .confidential-input::placeholder {
-  color: #fca5a5;
-}
-.dark .confidential-input {
-  border-color: #be123c;
-  background: #1c1117; /* sehr dunkles Rosé-Schwarz */
-  color: #fecdd3;
-}
-.dark .confidential-input::placeholder {
-  color: #9f6b76;
+  color: var(--color-confidential-placeholder);
 }
 
 .text-confidential {
-  color: #991b1b;
-}
-.dark .text-confidential {
-  color: #fda4af; /* rose-300 */
+  color: var(--color-confidential-text);
 }
 
-/* Logo im Header: im Dunkelmodus auf hellem „Badge" lesbar halten. */
+/* Logo im Header: im Dunkelmodus auf hellem „Badge" lesbar halten.
+   Hintergrund kommt aus --color-logo-badge (im Light-Theme "transparent",
+   daher hier themeunabhängig). Das Padding ändert im Light-Modus sichtbar
+   das Layout (auch bei transparentem Hintergrund) und bleibt deshalb an den
+   Struktur-Selektor `[data-theme="dark"]` gebunden. */
 .brand-logo-wrap {
   display: inline-block;
   border-radius: 0.5rem;
+  background: var(--color-logo-badge);
 }
-.dark .brand-logo-wrap {
-  background: #f1f5f9; /* slate-100 */
+[data-theme="dark"] .brand-logo-wrap {
   padding: 0.4rem 0.6rem;
+}
+
+/* ----------------------------------------------------------------------------
+   Termin-Farbchips (AppointmentColor): Chip-Fläche/-Text und Farbpunkt.
+   Bestandswerte aus tokens.css (--color-appt-*), s. lib/appointmentUi.ts --
+   dieselbe Zuordnung Farbschlüssel -> Ton wie zuvor, jetzt themeunabhängig
+   (die Tokens tragen die Light/Dark-Unterscheidung, nicht die Klasse hier).
+---------------------------------------------------------------------------- */
+.appt-chip-sky {
+  background: var(--color-appt-sky-bg);
+  color: var(--color-appt-sky-ink);
+}
+.appt-chip-emerald {
+  background: var(--color-appt-emerald-bg);
+  color: var(--color-appt-emerald-ink);
+}
+.appt-chip-amber {
+  background: var(--color-appt-amber-bg);
+  color: var(--color-appt-amber-ink);
+}
+.appt-chip-rose {
+  background: var(--color-appt-rose-bg);
+  color: var(--color-appt-rose-ink);
+}
+.appt-chip-violet {
+  background: var(--color-appt-violet-bg);
+  color: var(--color-appt-violet-ink);
+}
+
+.appt-dot-sky {
+  background: var(--color-appt-sky-dot);
+}
+.appt-dot-emerald {
+  background: var(--color-appt-emerald-dot);
+}
+.appt-dot-amber {
+  background: var(--color-appt-amber-dot);
+}
+.appt-dot-rose {
+  background: var(--color-appt-rose-dot);
+}
+.appt-dot-violet {
+  background: var(--color-appt-violet-dot);
 }
 
 /* ----------------------------------------------------------------------------
@@ -88,10 +134,10 @@ body {
    vorher auf dem Bildschirm sichtbar ist.
 ---------------------------------------------------------------------------- */
 #print-report {
-  color: #000;
-  background: #fff;
+  color: var(--print-ink);
+  background: var(--print-paper);
   padding: 16px;
-  border: 1px solid #cbd5e1; /* slate-300 */
+  border: 1px solid var(--print-frame);
   border-radius: 0.5rem;
 }
 

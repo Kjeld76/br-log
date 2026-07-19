@@ -21,7 +21,7 @@ interface Props {
 
 export default function BottomNav({ view, onNavigate }: Props) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+    <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-surface">
       {NAV.map((n) => {
         const active = view === n.key;
         return (
@@ -33,14 +33,14 @@ export default function BottomNav({ view, onNavigate }: Props) {
             className={
               "flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-xs transition " +
               (active
-                ? "font-medium text-sky-700 dark:text-sky-300"
-                : "text-slate-500 dark:text-slate-400")
+                ? "font-medium text-primary-outline-ink"
+                : "text-secondary-ink")
             }
           >
             <span
               className={
                 "flex h-7 w-14 items-center justify-center rounded-full transition " +
-                (active ? "bg-sky-100 dark:bg-sky-900/40" : "")
+                (active ? "bg-info-badge" : "")
               }
             >
               <Icon name={n.icon} size={20} />

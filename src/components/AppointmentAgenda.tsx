@@ -157,7 +157,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
       {searching && (
         <>
           {results.length === 0 && !error && (
-            <p className="rounded border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+            <p className="rounded border border-border bg-surface p-4 text-sm text-secondary-ink">
               Keine Termine gefunden.
             </p>
           )}
@@ -179,7 +179,7 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
       )}
 
       {!searching && groups.length === 0 && !error && (
-        <p className="rounded border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+        <p className="rounded border border-border bg-surface p-4 text-sm text-secondary-ink">
           Keine Termine bis {formatDateDe(to)}.
         </p>
       )}
@@ -191,8 +191,8 @@ export default function AppointmentAgenda({ reloadKey, onOpenOccurrence }: Props
             className={
               "mb-1 text-sm font-semibold " +
               (g.iso === today
-                ? "text-sky-700 dark:text-sky-400"
-                : "text-slate-700 dark:text-slate-200")
+                ? "text-link"
+                : "text-primary-ink")
             }
           >
             {formatDateDe(g.iso)}

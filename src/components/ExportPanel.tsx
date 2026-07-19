@@ -213,13 +213,13 @@ export default function ExportPanel({ onImported }: Props) {
   };
 
   const btn =
-    "w-full rounded border border-slate-300 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700";
+    "w-full rounded border border-empty-line bg-surface px-4 py-3 text-left text-sm text-primary-ink hover:bg-surface-2 disabled:opacity-50";
   const field = inputCls;
 
   return (
     <div className="space-y-4">
       {/* Zeitraumauswahl -- gilt nur für die beiden CSV-Exporte darunter. */}
-      <div className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+      <div className="flex flex-wrap items-center gap-2 rounded border border-border bg-cell-muted p-3 text-sm text-secondary-ink">
         <span>CSV-Zeitraum:</span>
         <input
           type="date"
@@ -237,7 +237,7 @@ export default function ExportPanel({ onImported }: Props) {
         {(csvFrom || csvTo) && (
           <button
             type="button"
-            className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+            className="text-xs text-secondary-ink hover:underline"
             onClick={() => {
               setCsvFrom("");
               setCsvTo("");
@@ -246,7 +246,7 @@ export default function ExportPanel({ onImported }: Props) {
             Zeitraum löschen
           </button>
         )}
-        <span className="w-full text-xs text-slate-400 dark:text-slate-500">
+        <span className="w-full text-xs text-disabled-ink">
           Leer = gesamter Bestand. Gilt nur für die CSV-Exporte, nicht für das
           JSON-Backup (immer vollständig).
         </span>
@@ -265,7 +265,7 @@ export default function ExportPanel({ onImported }: Props) {
               <Icon name={a.icon} size={20} className="mt-0.5 shrink-0" />
               <div>
                 <div className="font-medium">{a.title}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
+                <div className="text-xs text-secondary-ink">
                   {a.desc}
                 </div>
               </div>
@@ -276,7 +276,7 @@ export default function ExportPanel({ onImported }: Props) {
 
       {/* Vertraulich-Option des ICS-Exports: bewusst opt-in mit rotem
           Warnhinweis -- das BR-Geheimnis verlässt sonst nie die App. */}
-      <label className="flex items-start gap-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+      <label className="flex items-start gap-2 rounded border border-border bg-cell-muted p-3 text-sm text-secondary-ink">
         <input
           type="checkbox"
           className="mt-0.5"
@@ -286,7 +286,7 @@ export default function ExportPanel({ onImported }: Props) {
         <span>
           Vertrauliche Notizen in den ICS-Export einschließen
           {icsConfidential && (
-            <span className="mt-1 block text-xs font-medium text-red-700 dark:text-red-400">
+            <span className="mt-1 block text-xs font-medium text-destructive-ink">
               Achtung: Die Datei enthält dann das BR-Geheimnis im Klartext –
               nur für die eigene, sichere Verwendung.
             </span>
@@ -296,11 +296,11 @@ export default function ExportPanel({ onImported }: Props) {
 
       {/* Konflikt-Zusammenfassung + Bestätigung */}
       {pending && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/20">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
+        <div className="rounded border border-warning-action-line bg-warning-banner p-3 text-sm">
+          <p className="font-medium text-warning-banner-ink">
             Import-Vorschau
           </p>
-          <ul className="mt-1 list-inside list-disc text-amber-900 dark:text-amber-200">
+          <ul className="mt-1 list-inside list-disc text-warning-banner-ink">
             <li>{pending.summary.newEntries} neue Einträge</li>
             <li>
               {pending.summary.conflicts} Konflikte (neuere Version gewinnt)
@@ -320,8 +320,8 @@ export default function ExportPanel({ onImported }: Props) {
           </ul>
 
           {pending.summary.conflictItems.length > 0 && (
-            <div className="mt-2 rounded border border-amber-200 bg-white/60 p-2 dark:border-amber-800 dark:bg-black/20">
-              <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+            <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
+              <p className="text-xs font-semibold text-warning-banner-ink">
                 Diese {pending.summary.conflictItems.length} lokalen Einträge
                 würden überschrieben:
               </p>
@@ -329,7 +329,7 @@ export default function ExportPanel({ onImported }: Props) {
                 {pending.summary.conflictItems.map((c) => (
                   <li
                     key={c.id}
-                    className="text-xs text-amber-900 dark:text-amber-200"
+                    className="text-xs text-warning-banner-ink"
                   >
                     <span className="font-medium">{c.date}</span> — {c.label}
                   </li>
@@ -341,7 +341,7 @@ export default function ExportPanel({ onImported }: Props) {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
               onClick={() => setPending(null)}
               disabled={busy}
             >
@@ -349,7 +349,7 @@ export default function ExportPanel({ onImported }: Props) {
             </button>
             <button
               type="button"
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+              className="rounded bg-warning-action px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-warning-action-hover"
               onClick={confirmImport}
               disabled={busy}
             >
@@ -361,11 +361,11 @@ export default function ExportPanel({ onImported }: Props) {
 
       {/* ICS-Import-Vorschau + Bestätigung (Muster der Backup-Vorschau) */}
       {icsPending && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/20">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
+        <div className="rounded border border-warning-action-line bg-warning-banner p-3 text-sm">
+          <p className="font-medium text-warning-banner-ink">
             ICS-Import-Vorschau
           </p>
-          <ul className="mt-1 list-inside list-disc text-amber-900 dark:text-amber-200">
+          <ul className="mt-1 list-inside list-disc text-warning-banner-ink">
             <li>{icsPending.newCount} neue Termine</li>
             <li>
               {icsPending.updatedCount} aktualisiert (bestehende Serie/Termin
@@ -375,13 +375,13 @@ export default function ExportPanel({ onImported }: Props) {
           </ul>
 
           {icsPending.warnings.length > 0 && (
-            <div className="mt-2 rounded border border-amber-200 bg-white/60 p-2 dark:border-amber-800 dark:bg-black/20">
-              <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+            <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
+              <p className="text-xs font-semibold text-warning-banner-ink">
                 Hinweise:
               </p>
               <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
                 {icsPending.warnings.map((w, i) => (
-                  <li key={i} className="text-xs text-amber-900 dark:text-amber-200">
+                  <li key={i} className="text-xs text-warning-banner-ink">
                     {w}
                   </li>
                 ))}
@@ -392,7 +392,7 @@ export default function ExportPanel({ onImported }: Props) {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
               onClick={() => setIcsPending(null)}
               disabled={busy}
             >
@@ -400,7 +400,7 @@ export default function ExportPanel({ onImported }: Props) {
             </button>
             <button
               type="button"
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+              className="rounded bg-warning-action px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-warning-action-hover"
               onClick={confirmIcsImport}
               disabled={busy}
             >
@@ -411,12 +411,12 @@ export default function ExportPanel({ onImported }: Props) {
       )}
 
       {status && (
-        <p className="break-all rounded bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
+        <p className="break-all rounded bg-success-surface px-3 py-2 text-sm text-success-ink">
           {status}
         </p>
       )}
       {error && (
-        <p className="break-all rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+        <p className="break-all rounded bg-error-surface px-3 py-2 text-sm text-error-ink">
           {error}
         </p>
       )}

@@ -335,11 +335,11 @@ export default function EntryForm({
   return (
     <div className="space-y-4">
       {showLastDefaultsHint && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-info-banner-line bg-info-banner p-3 text-sm text-info-banner-ink">
           <span>Wie beim letzten Eintrag übernehmen?</span>
           <button
             type="button"
-            className="rounded-full bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-700"
+            className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-on-primary hover:bg-primary-hover"
             onClick={applyLastDefaults}
           >
             Übernehmen
@@ -350,17 +350,17 @@ export default function EntryForm({
       {/* Block 1: Zeit & Art */}
       <div className={formBlockCls}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <h3 className="text-sm font-semibold text-primary-ink">
             Zeit &amp; Art
           </h3>
-          <div className="flex overflow-hidden rounded-full border border-slate-300 text-xs dark:border-slate-600">
+          <div className="flex overflow-hidden rounded-full border border-border-strong text-xs">
             <button
               type="button"
               className={
                 "px-3 py-1 " +
                 (mode === "range"
-                  ? "bg-sky-600 text-white"
-                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
+                  ? "bg-primary text-on-primary"
+                  : "bg-surface text-secondary-ink hover:bg-surface-2")
               }
               onClick={() => switchMode("range")}
             >
@@ -371,8 +371,8 @@ export default function EntryForm({
               className={
                 "px-3 py-1 " +
                 (mode === "duration"
-                  ? "bg-sky-600 text-white"
-                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700")
+                  ? "bg-primary text-on-primary"
+                  : "bg-surface text-secondary-ink hover:bg-surface-2")
               }
               onClick={() => switchMode("duration")}
             >
@@ -384,7 +384,7 @@ export default function EntryForm({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label htmlFor={dateId} className={labelCls}>
-              Datum <span className="text-red-500">*</span>
+              Datum <span className="text-required">*</span>
             </label>
             <input
               id={dateId}
@@ -400,7 +400,7 @@ export default function EntryForm({
             <>
               <div>
                 <label htmlFor={startId} className={labelCls}>
-                  Von <span className="text-red-500">*</span>
+                  Von <span className="text-required">*</span>
                 </label>
                 <div className="flex gap-1">
                   <input
@@ -412,7 +412,7 @@ export default function EntryForm({
                   />
                   <button
                     type="button"
-                    className="shrink-0 rounded border border-slate-300 px-2 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                    className="shrink-0 rounded border border-border-strong px-2 text-xs text-secondary-ink hover:bg-surface-2"
                     title="Aktuelle Uhrzeit übernehmen"
                     onClick={() => patch({ startTime: nowHhmm() })}
                   >
@@ -422,7 +422,7 @@ export default function EntryForm({
               </div>
               <div>
                 <label htmlFor={endId} className={labelCls}>
-                  Bis <span className="text-red-500">*</span>
+                  Bis <span className="text-required">*</span>
                 </label>
                 <input
                   id={endId}
@@ -452,7 +452,7 @@ export default function EntryForm({
           ) : (
             <div className="sm:col-span-2">
               <label htmlFor={durationId} className={labelCls}>
-                Dauer (Std:Min oder Minuten) <span className="text-red-500">*</span>
+                Dauer (Std:Min oder Minuten) <span className="text-required">*</span>
               </label>
               <input
                 id={durationId}
@@ -475,8 +475,8 @@ export default function EntryForm({
             className={
               "rounded border p-2 text-sm " +
               (durationPreviewError
-                ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300"
-                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300")
+                ? "border-error bg-error-surface text-error-ink"
+                : "border-border bg-surface-dim text-primary-ink")
             }
           >
             {durationPreviewError
@@ -513,7 +513,7 @@ export default function EntryForm({
             ))}
             <button
               type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 sm:min-h-0"
+              className="inline-flex min-h-touch-pointer items-center justify-center rounded-full border border-border-strong px-3 py-1 text-xs text-secondary-ink hover:bg-surface-2 sm:min-h-0"
               onClick={() => setTagPickerOpen((v) => !v)}
               disabled={draft.isCompensation}
             >
@@ -521,9 +521,9 @@ export default function EntryForm({
             </button>
           </div>
           {tagPickerOpen && (
-            <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900/50">
+            <div className="mt-2 flex flex-wrap gap-1.5 rounded border border-border bg-surface-dim p-2">
               {pickableTags.length === 0 && (
-                <span className="text-xs text-slate-500 dark:text-slate-400">
+                <span className="text-xs text-secondary-ink">
                   Keine Schlagwörter – unter „Daten" anlegen.
                 </span>
               )}
@@ -541,8 +541,8 @@ export default function EntryForm({
         </div>
 
         {/* Geplante Schicht */}
-        <div className="space-y-2 rounded border border-slate-200 p-3 dark:border-slate-700">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        <div className="space-y-2 rounded border border-border p-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-primary-ink">
             <input
               type="checkbox"
               checked={draft.hadPlannedShift}
@@ -571,8 +571,8 @@ export default function EntryForm({
         {/* Freizeitausgleich (Finding 14, § 37 Abs. 3 BetrVG): ein genommener
             Ausgleich ist keine BR-Tätigkeit -- Tags/GL-Info/Vertraulich werden
             deaktiviert statt eine fachlich sinnlose Dokumentation zu erzwingen. */}
-        <div className="space-y-1 rounded border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+        <div className="space-y-1 rounded border border-success-banner-line bg-success-banner p-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-primary-ink">
             <input
               type="checkbox"
               checked={!!draft.isCompensation}
@@ -580,7 +580,7 @@ export default function EntryForm({
             />
             Freizeitausgleich genommen (§ 37 Abs. 3 BetrVG)
           </label>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-secondary-ink">
             Keine BR-Tätigkeit – Schlagwörter, GL-Info und vertrauliche Details
             sind hier nicht relevant und werden gesperrt. Fließt separat in
             den Freizeitausgleich-Saldo der Auswertung ein.
@@ -591,22 +591,22 @@ export default function EntryForm({
       {/* Block 2: Dokumentation -- bei Freizeitausgleich komplett gesperrt. */}
       <div
         className={
-          "space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800" +
+          "space-y-3 rounded-lg border border-border bg-surface p-4" +
           (draft.isCompensation ? " pointer-events-none opacity-40" : "")
         }
         aria-disabled={draft.isCompensation}
       >
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <h3 className="text-sm font-semibold text-primary-ink">
           Dokumentation
         </h3>
         <div>
           <label
             htmlFor={infoId}
-            className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-300"
+            className="mb-1 flex items-center gap-1.5 text-sm font-medium text-primary-ink"
           >
             <Icon name="eye" size={16} />
             Tätigkeit (Info für Geschäftsleitung)
-            <span className="text-red-500">*</span>
+            <span className="text-required">*</span>
           </label>
           <textarea
             id={infoId}
@@ -646,19 +646,19 @@ export default function EntryForm({
       <div className={formBlockCls}>
         <button
           type="button"
-          className="flex w-full items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100"
+          className="flex w-full items-center justify-between text-sm font-semibold text-primary-ink"
           onClick={() => setObjOpen((v) => !v)}
         >
           <span className="flex items-center gap-1.5">
             <Icon name="alert-triangle" size={16} />
             Widersprüche der Geschäftsleitung
             {draft.objections.length > 0 && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-300">
+              <span className="rounded-full bg-error-badge px-2 py-0.5 text-xs text-error-badge-ink">
                 {draft.objections.length}
               </span>
             )}
           </span>
-          <span className="text-slate-400">{objOpen ? "▴" : "▾"}</span>
+          <span className="text-disabled-ink">{objOpen ? "▴" : "▾"}</span>
         </button>
         {objOpen && (
           <ObjectionEditor
@@ -669,25 +669,25 @@ export default function EntryForm({
       </div>
 
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+        <p className="rounded bg-error-surface px-3 py-2 text-sm text-error-ink">
           {error}
         </p>
       )}
 
       {overlapWarning && (
-        <div className="space-y-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+        <div className="space-y-2 rounded bg-warning-banner px-3 py-2 text-sm text-warning-banner-ink">
           <p>{overlapWarning}</p>
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              className="rounded border border-amber-300 px-3 py-1 text-xs hover:bg-white dark:border-amber-700 dark:hover:bg-amber-900/40"
+              className="rounded border border-warning-action-line px-3 py-1 text-xs hover:bg-warning-action-ghost-hover"
               onClick={() => setOverlapWarning(null)}
             >
               Zeiten prüfen
             </button>
             <button
               type="button"
-              className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+              className="rounded bg-warning-action px-3 py-1 text-xs font-medium text-on-primary hover:bg-warning-action-hover"
               onClick={() => handleSave({ skipOverlapCheck: true })}
             >
               Trotzdem speichern
@@ -705,7 +705,7 @@ export default function EntryForm({
         {onCancel && (
           <button
             type="button"
-            className={secondaryBtnCls + " min-h-[48px] flex-1 sm:min-h-0 sm:flex-none"}
+            className={secondaryBtnCls + " min-h-touch flex-1 sm:min-h-0 sm:flex-none"}
             onClick={onCancel}
           >
             Abbrechen
@@ -714,7 +714,7 @@ export default function EntryForm({
         <button
           type="button"
           disabled={saving}
-          className="min-h-[48px] flex-1 rounded bg-sky-600 px-6 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 sm:min-h-0 sm:flex-none"
+          className="min-h-touch flex-1 rounded bg-primary px-6 py-2 text-sm font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:min-h-0 sm:flex-none"
           onClick={() => handleSave()}
           title="Strg/Cmd+Enter"
         >

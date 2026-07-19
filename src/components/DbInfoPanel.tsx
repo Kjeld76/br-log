@@ -124,30 +124,29 @@ export default function DbInfoPanel({ mobile }: Props) {
     }
   };
 
-  const card =
-    "rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800";
+  const card = "rounded border border-border bg-surface p-4";
   const btn = "flex items-center gap-1.5 " + secondaryBtnSmCls + " disabled:opacity-50";
 
   return (
     <div className="space-y-5">
       <section className={card}>
-        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary-ink">
           Datenspeicher
           <span
             className={
               "rounded px-1.5 py-0.5 text-[11px] font-medium " +
               (portable
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300")
+                ? "bg-success-surface text-success-ink"
+                : "bg-surface-2 text-secondary-ink")
             }
           >
             {portable ? "Portabel (USB)" : "Installiert"}
           </span>
-          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+          <span className="rounded bg-info-badge px-1.5 py-0.5 text-[11px] font-medium text-primary-outline-ink">
             Verschlüsselt
           </span>
         </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-secondary-ink">
           Alle Daten liegen ausschließlich lokal auf diesem Gerät – es gibt keinen
           Server. Die Datenbank ist mit SQLCipher (AES-256) verschlüsselt; der
           Schlüssel dazu liegt gekapselt in der Datei keyfile.json im selben
@@ -163,10 +162,10 @@ export default function DbInfoPanel({ mobile }: Props) {
           Schlüsselunabhängig ist der JSON-Export unter „Daten → Export &amp;
           Backup" – er braucht weder keyfile.json noch Passwort.
         </p>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-2 text-sm text-secondary-ink">
           Zusätzlich legt die App bei jedem Entsperren automatisch eine
           Sicherung (Datenbank + keyfile.json) im Unterordner{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">
+          <code className="rounded bg-code-surface px-1 py-0.5 text-xs">
             backups/
           </code>{" "}
           {mobile ? "an" : "neben der Hauptdatenbank an"} – rotierend, die
@@ -174,18 +173,18 @@ export default function DbInfoPanel({ mobile }: Props) {
           {mobile
             ? "Auf Android liegt dieser Ordner in der App-Sandbox: für Nutzer nicht erreichbar und beim Deinstallieren der App unwiederbringlich mitgelöscht – kein Ersatz für ein externes Backup."
             : <>Zum Wiederherstellen bei geschlossener App die gewünschten
-                Dateien aus <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-900/60">backups/</code> zurück
+                Dateien aus <code className="rounded bg-code-surface px-1 py-0.5 text-xs">backups/</code> zurück
                 auf br_zeiten.db bzw. keyfile.json kopieren.</>}
         </p>
         {mobile && (
-          <div className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+          <div className="mt-2 rounded bg-warning-banner p-2 text-xs text-warning-banner-ink">
             <strong>Achtung:</strong> Beim Deinstallieren der App werden
             Datenbank, Schlüsseldatei und automatische Backups
             unwiederbringlich gelöscht – regelmäßig ein JSON-Backup
             exportieren und außerhalb des Geräts sichern.
           </div>
         )}
-        <div className="mt-2 break-all rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+        <div className="mt-2 break-all rounded bg-surface-dim p-2 text-xs text-primary-ink">
           {dbPath || "Pfad wird ermittelt…"}
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -212,17 +211,17 @@ export default function DbInfoPanel({ mobile }: Props) {
           </button>
         </div>
         {backupStatus && (
-          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+          <p className="mt-2 break-all rounded bg-success-surface px-2 py-1.5 text-xs text-success-ink">
             {backupStatus}
           </p>
         )}
         {indexStatus && (
-          <p className="mt-2 break-all rounded bg-green-50 px-2 py-1.5 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-300">
+          <p className="mt-2 break-all rounded bg-success-surface px-2 py-1.5 text-xs text-success-ink">
             {indexStatus}
           </p>
         )}
         {hasBackup && (
-          <div className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+          <div className="mt-3 rounded bg-warning-banner p-2 text-xs text-warning-banner-ink">
             Aus der Verschlüsselung existiert noch eine{" "}
             <strong>unverschlüsselte</strong> Sicherungskopie
             (br_zeiten.db.pre-encrypt.bak). Erst löschen, wenn Passwort und
@@ -230,14 +229,14 @@ export default function DbInfoPanel({ mobile }: Props) {
             <button
               type="button"
               onClick={removeBackup}
-              className="mt-2 block rounded border border-amber-300 px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/50"
+              className="mt-2 block rounded border border-warning-action-line px-2 py-1 font-medium hover:bg-warning-banner-hover"
             >
               Klartext-Backup löschen
             </button>
           </div>
         )}
         {error && (
-          <p className="mt-2 break-all text-xs text-red-600 dark:text-red-400">
+          <p className="mt-2 break-all text-xs text-danger-ink">
             {error}
           </p>
         )}

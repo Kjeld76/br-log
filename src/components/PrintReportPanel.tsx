@@ -9,6 +9,7 @@ import { isWindows } from "../lib/platform";
 // Haupt-Chunk landet und den App-Start nicht verlangsamt.
 import type { ReportModel } from "../export/reportPdf";
 import { Icon } from "./Icon";
+import { PRINT } from "../lib/tokens";
 
 // Finding 13: druckbarer Monats-/Zeitraumnachweis. Linux-Portierung (L5):
 // window.print() + Print-CSS (styles.css, #print-report-Regel) bleibt NUR
@@ -38,7 +39,7 @@ function saveName(v: string): void {
 }
 
 const cellStyle: React.CSSProperties = {
-  border: "1px solid #999",
+  border: `1px solid ${PRINT.tableBorder}`,
   padding: "3px 6px",
   textAlign: "left",
 };
@@ -110,15 +111,15 @@ export default function PrintReportPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+      <div className="rounded border border-border bg-surface p-4">
+        <p className="mb-3 text-xs text-secondary-ink">
           Nachweis für einen Zeitraum (Berichtskopf, Zeilen, Summe,
           Freizeitausgleich, Unterschriftsfelder) – als PDF speicherbar auf
           allen Plattformen, unter Windows zusätzlich über den
           Systemdruckdialog.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-sm text-slate-600 dark:text-slate-300">
+          <label className="text-sm text-secondary-ink">
             Name (Berichtskopf)
             <input
               className={field}
@@ -128,7 +129,7 @@ export default function PrintReportPanel() {
             />
           </label>
           <div className="flex items-end gap-2">
-            <label className="flex-1 text-sm text-slate-600 dark:text-slate-300">
+            <label className="flex-1 text-sm text-secondary-ink">
               Von
               <input
                 type="date"
@@ -137,7 +138,7 @@ export default function PrintReportPanel() {
                 onChange={(e) => setFrom(e.target.value)}
               />
             </label>
-            <label className="flex-1 text-sm text-slate-600 dark:text-slate-300">
+            <label className="flex-1 text-sm text-secondary-ink">
               Bis
               <input
                 type="date"
@@ -151,7 +152,7 @@ export default function PrintReportPanel() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+            className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
             onClick={buildReport}
             disabled={busy}
           >
@@ -184,19 +185,19 @@ export default function PrintReportPanel() {
           )}
         </div>
         {status && (
-          <p className="mt-2 break-all text-sm text-green-700 dark:text-green-300">
+          <p className="mt-2 break-all text-sm text-success-ink">
             {status}
           </p>
         )}
         {error && (
-          <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+          <p className="mt-2 text-sm text-error-ink">
             {error}
           </p>
         )}
       </div>
 
       {model && (
-        <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+        <div className="rounded border border-border bg-surface p-3 text-xs text-secondary-ink">
           Vorschau: {model.rows.length} Einträge. Zeigt exakt den Inhalt des
           PDF-Exports (unter Windows auch des Drucks) – nicht die
           App-Oberfläche.
@@ -291,7 +292,11 @@ export default function PrintReportPanel() {
             {model.signatureLabels.map((label) => (
               <div
                 key={label}
-                style={{ width: "30%", borderTop: "1px solid #000", paddingTop: 4 }}
+                style={{
+                  width: "30%",
+                  borderTop: `1px solid ${PRINT.ink}`,
+                  paddingTop: 4,
+                }}
               >
                 {label}
               </div>

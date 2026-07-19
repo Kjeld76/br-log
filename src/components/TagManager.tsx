@@ -87,7 +87,7 @@ export default function TagManager({ onChanged, reloadKey }: Props) {
         />
         <button
           type="button"
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
           disabled={!newLabel.trim() || busy}
           onClick={() => void addTag()}
         >
@@ -95,11 +95,11 @@ export default function TagManager({ onChanged, reloadKey }: Props) {
         </button>
       </div>
       {error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-sm text-danger-ink">{error}</p>
       )}
 
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <h4 className="mb-2 text-sm font-semibold text-primary-ink">
           Aktiv
         </h4>
         <ul className="space-y-1">
@@ -112,7 +112,7 @@ export default function TagManager({ onChanged, reloadKey }: Props) {
             />
           ))}
           {active.length === 0 && (
-            <li className="text-sm text-slate-500 dark:text-slate-400">
+            <li className="text-sm text-secondary-ink">
               Keine aktiven Schlagwörter.
             </li>
           )}
@@ -121,19 +121,19 @@ export default function TagManager({ onChanged, reloadKey }: Props) {
 
       {archived.length > 0 && (
         <div>
-          <h4 className="mb-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          <h4 className="mb-2 text-sm font-semibold text-secondary-ink">
             Archiviert
           </h4>
           <ul className="space-y-1">
             {archived.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400"
+                className="flex items-center justify-between rounded border border-border bg-surface-dim px-3 py-2 text-sm text-secondary-ink"
               >
                 <span>{t.label}</span>
                 <button
                   type="button"
-                  className="text-xs text-sky-700 hover:underline dark:text-sky-400"
+                  className="text-xs text-link hover:underline"
                   onClick={() => mutate(() => setTagArchived(t.id, false))}
                 >
                   Reaktivieren
@@ -160,7 +160,7 @@ function TagRow({
   const [label, setLabel] = useState(tag.label);
 
   return (
-    <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+    <li className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2 text-sm">
       {editing ? (
         <input
           className={inputCls + " flex-1"}
@@ -179,13 +179,13 @@ function TagRow({
           }}
         />
       ) : (
-        <span className="text-slate-800 dark:text-slate-200">{tag.label}</span>
+        <span className="text-primary-ink">{tag.label}</span>
       )}
       <div className="ml-2 flex shrink-0 gap-2">
         {editing ? (
           <button
             type="button"
-            className="text-xs text-sky-700 hover:underline dark:text-sky-400"
+            className="text-xs text-link hover:underline"
             onClick={() => {
               if (label.trim()) onRename(label);
               setEditing(false);
@@ -196,7 +196,7 @@ function TagRow({
         ) : (
           <button
             type="button"
-            className="text-xs text-slate-600 hover:underline dark:text-slate-300"
+            className="text-xs text-secondary-ink hover:underline"
             onClick={() => setEditing(true)}
           >
             Umbenennen
@@ -204,7 +204,7 @@ function TagRow({
         )}
         <button
           type="button"
-          className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+          className="text-xs text-secondary-ink hover:underline"
           onClick={onArchive}
         >
           Archivieren

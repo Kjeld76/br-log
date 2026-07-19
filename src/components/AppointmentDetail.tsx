@@ -29,10 +29,10 @@ export default function AppointmentDetail({
   const a = appointment;
   const row = (label: string, value: React.ReactNode) => (
     <div className="grid grid-cols-3 gap-2 py-1.5">
-      <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+      <div className="text-sm font-medium text-secondary-ink">
         {label}
       </div>
-      <div className="col-span-2 text-sm text-slate-800 dark:text-slate-200">
+      <div className="col-span-2 text-sm text-primary-ink">
         {value}
       </div>
     </div>
@@ -54,12 +54,12 @@ export default function AppointmentDetail({
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <span className={`h-3 w-3 shrink-0 rounded-full ${dotClsFor(a.color)}`} />
-        <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+        <h3 className="text-base font-semibold text-primary-ink">
           {a.title || "(ohne Titel)"}
         </h3>
         {a.isImportant && (
           <span
-            className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+            className="inline-flex items-center gap-1 rounded bg-warning-badge px-1.5 py-0.5 text-xs font-medium text-warning-badge-ink"
             title="Als wichtig markiert"
           >
             <Icon name="alert-triangle" size={12} />
@@ -68,7 +68,7 @@ export default function AppointmentDetail({
         )}
       </div>
 
-      <div className="divide-y divide-slate-100 dark:divide-slate-700">
+      <div className="divide-y divide-border">
         {row("Datum", dateValue)}
         {row("Zeit", timeValue)}
         {a.location && row("Ort", a.location)}
@@ -115,10 +115,10 @@ export default function AppointmentDetail({
         </p>
       </div>
 
-      <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+      <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-3">
         <button
           type="button"
-          className="min-h-[48px] rounded px-3 py-2 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 sm:min-h-0"
+          className="min-h-touch rounded px-3 py-2 text-sm text-destructive-ink hover:bg-destructive-hover sm:min-h-0"
           onClick={onDelete}
         >
           Löschen
@@ -126,14 +126,14 @@ export default function AppointmentDetail({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className={secondaryBtnCls + " min-h-[48px] sm:min-h-0"}
+            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
             onClick={onClose}
           >
             Schließen
           </button>
           <button
             type="button"
-            className={secondaryBtnCls + " min-h-[48px] sm:min-h-0"}
+            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
             onClick={onDuplicate}
             title="Als Vorlage für einen neuen Termin übernehmen"
           >
@@ -141,7 +141,7 @@ export default function AppointmentDetail({
           </button>
           <button
             type="button"
-            className={secondaryBtnCls + " min-h-[48px] sm:min-h-0"}
+            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
             onClick={onBookTime}
             title="Zeiteintrag mit Datum, Uhrzeit und Schlagwörtern dieses Termins anlegen"
           >
@@ -149,7 +149,7 @@ export default function AppointmentDetail({
           </button>
           <button
             type="button"
-            className="min-h-[48px] rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 sm:min-h-0"
+            className="min-h-touch rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover sm:min-h-0"
             onClick={onEdit}
           >
             Bearbeiten

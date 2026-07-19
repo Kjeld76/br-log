@@ -40,7 +40,7 @@ export default function TagFilterChips({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="rounded-full px-2 py-1 text-xs text-sky-700 hover:underline dark:text-sky-400"
+          className="rounded-full px-2 py-1 text-xs text-link hover:underline"
         >
           {expanded
             ? "Weniger"
@@ -51,7 +51,7 @@ export default function TagFilterChips({
         <button
           type="button"
           onClick={onClear}
-          className="rounded-full px-2 py-1 text-xs text-slate-500 hover:underline dark:text-slate-400"
+          className="rounded-full px-2 py-1 text-xs text-secondary-ink hover:underline"
         >
           Filter zurücksetzen
         </button>

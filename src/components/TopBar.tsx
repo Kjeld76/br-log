@@ -22,8 +22,8 @@ interface Props {
 export default function TopBar({ view, onOpenSettings, onOpenAbout, onLockNow }: Props) {
   const title = NAV.find((n) => n.key === view)?.shortLabel ?? "BR-Log";
   return (
-    <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white py-1.5 pl-4 pr-2 dark:border-slate-700 dark:bg-slate-800">
-      <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+    <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface py-1.5 pl-4 pr-2">
+      <h1 className="text-base font-semibold text-primary-ink">
         {title}
       </h1>
       <AppMenu

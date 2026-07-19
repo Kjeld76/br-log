@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "audit:colors": "node scripts/audit-tokens.mjs colors",
+    "audit:palette": "node scripts/audit-tokens.mjs palette"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

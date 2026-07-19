@@ -22,7 +22,7 @@ export default function HistoryView({
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+        <h2 className="text-lg font-bold text-primary-ink">
           Historie
         </h2>
       </header>

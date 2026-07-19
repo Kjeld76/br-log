@@ -16,6 +16,7 @@ import autoTable from "jspdf-autotable";
 import type { EntryListItem } from "../types";
 import { minutesToHhmm } from "../lib/time";
 import { formatDateDe, todayIso } from "../lib/calendar";
+import { PRINT } from "../lib/tokens";
 
 export interface ReportOpts {
   name: string;
@@ -203,7 +204,7 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     startY: y,
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
     styles: { fontSize: 8.5, cellPadding: 1.5 },
-    headStyles: { fillColor: [71, 85, 105] }, // slate-600
+    headStyles: { fillColor: PRINT.headerBg }, // slate-600 (tokens.ts)
     columnStyles: {
       0: { cellWidth: 22 }, // Datum
       1: { cellWidth: 13 }, // Von
@@ -248,7 +249,7 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
-    doc.setTextColor(100);
+    doc.setTextColor(PRINT.footerMuted);
     doc.text(`Seite ${i} von ${pageCount}`, pageWidth - PAGE_MARGIN, pageHeight - 8, {
       align: "right",
     });
