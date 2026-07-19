@@ -390,21 +390,37 @@ export default function PrintReportPanel() {
               </tr>
             </thead>
             <tbody>
-              {model.rows.map((r, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>{r.date}</td>
-                  <td style={cellStyle}>{r.start}</td>
-                  <td style={cellStyle}>{r.end}</td>
-                  <td style={cellStyle}>{r.pause}</td>
-                  <td style={cellStyle}>{r.duration}</td>
-                  {/* Task 3: an showTags gekoppelt (wie entryRowCells in
-                      reportPdf.ts) -- sonst hätte die Kopfzeile bei
-                      showTags=false eine Spalte weniger als jede Datenzeile. */}
-                  {model.showTags && <td style={cellStyle}>{r.tags}</td>}
-                  <td style={cellStyle}>{r.info}</td>
-                  <td style={cellStyle}>{r.shift}</td>
-                </tr>
-              ))}
+              {/* Task 3b: dayRows (statt rows) -- sonst fehlten die
+                  Tagessummen-Zeilen, die das PDF (toAutoTableInput) an
+                  derselben Stelle bereits zeigt (nach dem letzten Eintrag
+                  jedes Kalendertags). Spaltenanzahl je Zeilenart bleibt an
+                  showTags gekoppelt (wie entryRowCells in reportPdf.ts) --
+                  sonst hätte die Kopfzeile bei showTags=false eine Spalte
+                  weniger als jede Datenzeile. */}
+              {model.dayRows.map((r, i) =>
+                r.kind === "entry" ? (
+                  <tr key={i}>
+                    <td style={cellStyle}>{r.row.date}</td>
+                    <td style={cellStyle}>{r.row.start}</td>
+                    <td style={cellStyle}>{r.row.end}</td>
+                    <td style={cellStyle}>{r.row.pause}</td>
+                    <td style={cellStyle}>{r.row.duration}</td>
+                    {model.showTags && <td style={cellStyle}>{r.row.tags}</td>}
+                    <td style={cellStyle}>{r.row.info}</td>
+                    <td style={cellStyle}>{r.row.shift}</td>
+                  </tr>
+                ) : (
+                  <tr key={i}>
+                    <td
+                      style={cellStyle}
+                      colSpan={model.columns.length}
+                      className="bg-surface-2 font-medium"
+                    >
+                      {r.label}
+                    </td>
+                  </tr>
+                )
+              )}
               {model.rows.length === 0 && (
                 <tr>
                   <td style={cellStyle} colSpan={model.columns.length}>
@@ -430,6 +446,23 @@ export default function PrintReportPanel() {
             <strong>Freizeitausgleich in diesem Zeitraum: </strong>
             {model.compensationLabel}
           </p>
+
+          {/* Task 3b: objectionLines (Task 2) waren bislang nur im PDF
+              sichtbar (renderReportPdf druckt "Widersprüche der
+              Geschäftsleitung" + Zeilen), nicht in dieser Vorschau --
+              Reihenfolge/Überschrift exakt wie im PDF-Renderer. */}
+          {model.objectionLines.length > 0 && (
+            <div style={{ fontSize: "9pt", marginTop: 8 }}>
+              <p style={{ fontWeight: 600, marginBottom: 4 }}>
+                Widersprüche der Geschäftsleitung
+              </p>
+              {model.objectionLines.map((line, i) => (
+                <p key={i} style={{ margin: 0 }}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
 
           <div
             style={{
