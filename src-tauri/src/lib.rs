@@ -618,7 +618,7 @@ fn crypto_unlock(
     let kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
-        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden")),
+        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden.")),
     };
     let dek = if kind == "recovery" {
         // normalize_recovery liefert bewusst weiter einen plain String (reine,
@@ -655,7 +655,7 @@ fn crypto_change_password(
     let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
-        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden")),
+        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden.")),
     };
     let dek = crypto::unwrap_with_password(&kf, &old_password)?;
     crypto::rewrap_password(&mut kf, &dek, &new_password).map_err(db_err)?;
@@ -674,7 +674,7 @@ fn crypto_regenerate_recovery(
     let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
-        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden")),
+        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden.")),
     };
     let dek = crypto::unwrap_with_password(&kf, &password)?;
     let recovery = crypto::gen_recovery_canonical();
@@ -692,7 +692,7 @@ fn crypto_set_autolock(
     let mut kf = match crypto::classify_keyfile(&loc.0.data_dir) {
         crypto::KeyfileState::V2(kf) => kf,
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
-        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden")),
+        _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden.")),
     };
     kf.auto_lock_minutes = minutes.clamp(1, 120);
     crypto::write_keyfile_atomic(&loc.0.data_dir, &kf).map_err(db_err)
