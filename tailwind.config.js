@@ -67,6 +67,7 @@ export default {
         "archived-surface": "var(--color-archived-surface)",
         "hover-accent-line": "var(--color-hover-accent-line)",
         "hover-accent-surface": "var(--color-hover-accent-surface)",
+        "tile-hover": "var(--color-tile-hover)",
         "hover-accent-surface-soft": "var(--color-hover-accent-surface-soft)",
         "warning-badge": "var(--color-warning-badge-surface)",
         "warning-badge-ink": "var(--color-warning-badge-ink)",

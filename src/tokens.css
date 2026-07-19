@@ -98,6 +98,7 @@
   /* Interaktive Zeilen/Zellen: Hover-Akzent (Sky-Rahmen, Licht-Sky/Dunkel-Slate-Flaeche) */
   --color-hover-accent-line: #7dd3fc;
   --color-hover-accent-surface: #f0f9ff;
+  --color-tile-hover: #ffffff;                                    /* Aktionskacheln (ExportPanel): aufhellender Hover */
   --color-hover-accent-surface-soft: rgba(240, 249, 255, .4);
   /* Warn-Badge (Pendant zu error-badge) */
   --color-warning-badge-surface: #fef3c7;
@@ -232,6 +233,7 @@
     /* --- Ergänzungs-Tokens (Fix-Runde, Task-8-Restfälle) --- */
     --color-hover-accent-line: #0369a1;
     --color-hover-accent-surface: #334155;
+    --color-tile-hover: #334155;
     --color-hover-accent-surface-soft: rgba(51, 65, 85, .6);
     --color-warning-badge-surface: rgba(120, 53, 15, .4);
     --color-warning-badge-ink: #fcd34d;
@@ -318,6 +320,7 @@
   /* --- Ergänzungs-Tokens (Fix-Runde, Task-8-Restfälle) --- */
   --color-hover-accent-line: #0369a1;
   --color-hover-accent-surface: #334155;
+  --color-tile-hover: #334155;
   --color-hover-accent-surface-soft: rgba(51, 65, 85, .6);
   --color-warning-badge-surface: rgba(120, 53, 15, .4);
   --color-warning-badge-ink: #fcd34d;

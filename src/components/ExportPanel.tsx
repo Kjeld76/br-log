@@ -341,7 +341,7 @@ export default function ExportPanel({ onImported }: Props) {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-white dark:hover:bg-slate-700"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
               onClick={() => setPending(null)}
               disabled={busy}
             >
@@ -392,7 +392,7 @@ export default function ExportPanel({ onImported }: Props) {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-white dark:hover:bg-slate-700"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm text-primary-ink hover:bg-tile-hover"
               onClick={() => setIcsPending(null)}
               disabled={busy}
             >
