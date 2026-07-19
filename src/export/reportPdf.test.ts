@@ -58,6 +58,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows).toHaveLength(2);
@@ -74,6 +78,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows).toHaveLength(0);
@@ -88,6 +96,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.compensationLabel).toBe("keiner.");
@@ -98,6 +110,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.periodLabel).toBe("Anfang – Ende");
@@ -108,6 +124,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "2026-06-01",
       to: "2026-06-30",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.periodLabel).toBe("Mo., 01.06.2026 – Di., 30.06.2026");
@@ -121,6 +141,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     // todayIso() liefert YYYY-MM-DD -- ohne Zeitraumauswahl trägt der
@@ -142,6 +166,10 @@ describe("buildReportModel", () => {
       name: "Björn Müller",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.name).toBe("Björn Müller");
@@ -156,6 +184,10 @@ describe("buildReportModel", () => {
       name: "   ",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.name).toBe("—");
@@ -171,6 +203,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows.map((r) => r.pause)).toEqual(["30", "0"]);
@@ -186,6 +222,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows.map((r) => r.shift)).toEqual(["ja", "nein"]);
@@ -201,6 +241,10 @@ describe("buildReportModel", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows.map((r) => r.date)).toEqual([
@@ -223,6 +267,10 @@ describe("buildReportModel: Tagessummen (dayRows)", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     // 2 Tage à 2 Einträge -> 2 Summenzeilen, Minuten exakt (90+30=120 -> 2:00,
@@ -250,6 +298,10 @@ describe("buildReportModel: Tagessummen (dayRows)", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(summaryLabels(model)).toEqual(["Summe 03.06.2026 — 2:05"]);
@@ -260,6 +312,10 @@ describe("buildReportModel: Tagessummen (dayRows)", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.dayRows).toEqual([]);
@@ -283,6 +339,10 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.rows[0].date).toBe("Mo., 01.06.2026 ⚠");
@@ -311,6 +371,10 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.objectionLines).toEqual([
@@ -324,6 +388,10 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.objectionLines).toEqual([]);
@@ -342,6 +410,10 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.objectionLines).toEqual(["ohne Datum — Zu spät gemeldet (Team GL)"]);
@@ -356,6 +428,8 @@ describe("buildReportModel: Kopfzeilen Funktion/Betrieb", () => {
       to: "",
       funktion: "BR-Vorsitzender",
       betrieb: "Musterwerk GmbH",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.headerExtras).toEqual([
@@ -371,6 +445,8 @@ describe("buildReportModel: Kopfzeilen Funktion/Betrieb", () => {
       to: "",
       funktion: "   ",
       betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.headerExtras).toEqual([]);
@@ -381,7 +457,10 @@ describe("buildReportModel: Kopfzeilen Funktion/Betrieb", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
       betrieb: "Musterwerk GmbH",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.headerExtras).toEqual([{ label: "Betrieb/Firma", value: "Musterwerk GmbH" }]);
@@ -392,6 +471,10 @@ describe("buildReportModel: Kopfzeilen Funktion/Betrieb", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.headerExtras).toEqual([]);
@@ -405,6 +488,9 @@ describe("buildReportModel: fileBaseName", () => {
       from: "2026-06-01",
       to: "2026-06-30",
       nachname: "König",
+      funktion: "",
+      betrieb: "",
+      showTags: true,
     });
 
     expect(model.fileBaseName).toBe("BR-Stundennachweis_2026-06_König");
@@ -416,6 +502,9 @@ describe("buildReportModel: fileBaseName", () => {
       from: "2026-06-05",
       to: "2026-06-20",
       nachname: "König",
+      funktion: "",
+      betrieb: "",
+      showTags: true,
     });
 
     expect(model.fileBaseName).toBe("BR-Stundennachweis_2026-06-05_bis_2026-06-20_König");
@@ -427,6 +516,9 @@ describe("buildReportModel: fileBaseName", () => {
       from: "2026-06-15",
       to: "2026-07-14",
       nachname: "König",
+      funktion: "",
+      betrieb: "",
+      showTags: true,
     });
 
     expect(model.fileBaseName).toBe("BR-Stundennachweis_2026-06-15_bis_2026-07-14_König");
@@ -437,6 +529,10 @@ describe("buildReportModel: fileBaseName", () => {
       name: "Mario König",
       from: "2026-06-01",
       to: "2026-06-30",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.fileBaseName).toBe("BR-Stundennachweis_2026-06");
@@ -448,6 +544,9 @@ describe("buildReportModel: fileBaseName", () => {
       from: "2026-06-01",
       to: "2026-06-30",
       nachname: 'Müller/Schön:Schmidt*Ärger?"<>|',
+      funktion: "",
+      betrieb: "",
+      showTags: true,
     });
 
     expect(model.fileBaseName).toBe(
@@ -462,6 +561,10 @@ describe("buildReportModel: showTags", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     expect(model.columns).toContain("Schlagwörter");
@@ -474,6 +577,9 @@ describe("buildReportModel: showTags", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
       showTags: false,
     });
 
@@ -514,6 +620,10 @@ describe("toAutoTableInput", () => {
       from: "2026-06-01",
       to: "2026-06-30",
       createdAt: "2026-07-02",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     const input = toAutoTableInput(model);
@@ -527,6 +637,10 @@ describe("toAutoTableInput", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     const { head, body } = toAutoTableInput(model);
@@ -541,6 +655,10 @@ describe("toAutoTableInput", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
 
     const { body } = toAutoTableInput(model);
@@ -587,6 +705,10 @@ describe("renderReportPdf", () => {
       name: "Mario König",
       from: "",
       to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
     });
     const bytes = renderReportPdf(model);
 
@@ -610,6 +732,8 @@ describe("renderReportPdf", () => {
       to: "",
       funktion: "BR-Vorsitzender",
       betrieb: "Musterwerk GmbH",
+      nachname: "",
+      showTags: true,
     });
 
     expect(() => renderReportPdf(model)).not.toThrow();

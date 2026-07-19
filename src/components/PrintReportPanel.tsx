@@ -4,11 +4,13 @@ import { listEntries } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
 import { inputCls, secondaryBtnCls } from "../lib/ui";
 import { isWindows } from "../lib/platform";
+import { monthRangeIso, todayIso } from "../lib/calendar";
 // Nur der Typ wird statisch importiert (wird wegkompiliert) -- das Modul
 // selbst kommt per dynamic import, damit jsPDF (~420 kB) nicht im
 // Haupt-Chunk landet und den App-Start nicht verlangsamt.
 import type { ReportModel } from "../export/reportPdf";
 import { Icon } from "./Icon";
+import SegmentedControl from "./SegmentedControl";
 import { PRINT } from "../lib/tokens";
 
 // Finding 13: druckbarer Monats-/Zeitraumnachweis. Linux-Portierung (L5):
@@ -20,22 +22,75 @@ import { PRINT } from "../lib/tokens";
 // über denselben export_binary_file-Command wie andere Binärexporte.
 // Nutzt listEntries (GL-taugliche Spalten ohne secretDetails), da der
 // Nachweis typischerweise zur Vorlage gedacht ist.
+//
+// Issue #16 (Task 3): Monats-/Zeitraum-Umschalter plus die Report-
+// Einstellungen (Funktion, Betrieb/Firma, Nachname, Schlagwörter-Toggle) aus
+// ReportOpts (Task 2) werden hier verdrahtet. localStorage-Persistenz folgt
+// exakt dem bestehenden Name-Muster (NAME_KEY): geladen beim Mount, gesichert
+// erst bei einer tatsächlichen Aktion (Drucken/PDF speichern) -- nicht bei
+// jedem Tastendruck.
+
+type Mode = "monat" | "zeitraum";
+
+const MODE_OPTIONS: { value: Mode; label: string }[] = [
+  { value: "monat", label: "Monat" },
+  { value: "zeitraum", label: "Zeitraum" },
+];
 
 const NAME_KEY = "brlog.reportName";
+const FUNKTION_KEY = "brlog.reportFunktion";
+const BETRIEB_KEY = "brlog.reportBetrieb";
+const NACHNAME_KEY = "brlog.reportNachname";
+const SHOW_TAGS_KEY = "brlog.reportShowTags";
 
-function loadName(): string {
+function loadStr(key: string): string {
   try {
-    return localStorage.getItem(NAME_KEY) ?? "";
+    return localStorage.getItem(key) ?? "";
   } catch {
     return "";
   }
 }
-function saveName(v: string): void {
+function saveStr(key: string, v: string): void {
   try {
-    localStorage.setItem(NAME_KEY, v);
+    localStorage.setItem(key, v);
   } catch {
     // Persistenz ist nur Komfort, kein Pflichtpfad.
   }
+}
+function loadBool(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+function saveBool(key: string, v: boolean): void {
+  try {
+    localStorage.setItem(key, String(v));
+  } catch {
+    // Persistenz ist nur Komfort, kein Pflichtpfad.
+  }
+}
+
+/**
+ * Wert von `<input type="month">` ("YYYY-MM") -> voller Kalendermonat als
+ * Von/Bis-Zeitraum (siehe `monthRangeIso`). Fällt auf einen leeren Zeitraum
+ * zurück (= "gesamter Bestand", identische Semantik wie leere Von/Bis-Felder
+ * im Zeitraum-Modus), wenn der Wert leer ist ODER nicht dem erwarteten
+ * Format entspricht -- relevant für WebViews ohne natives
+ * Monats-Picker-Rendering, die `type="month"` als Freitextfeld darstellen
+ * und damit beliebige oder leere Werte liefern können. Bewusst kein Wurf/
+ * keine Fehlermeldung für diesen Randfall, sondern derselbe stille
+ * Fallback wie ein leeres Von/Bis-Feld.
+ */
+function monthRangeFromValue(value: string): { from: string; to: string } {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return { from: "", to: "" };
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return { from: "", to: "" };
+  return monthRangeIso(new Date(year, monthIndex, 1));
 }
 
 const cellStyle: React.CSSProperties = {
@@ -45,13 +100,27 @@ const cellStyle: React.CSSProperties = {
 };
 
 export default function PrintReportPanel() {
-  const [name, setName] = useState(() => loadName());
+  const [mode, setMode] = useState<Mode>("monat");
+  const [month, setMonth] = useState(() => todayIso().slice(0, 7));
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [name, setName] = useState(() => loadStr(NAME_KEY));
+  const [funktion, setFunktion] = useState(() => loadStr(FUNKTION_KEY));
+  const [betrieb, setBetrieb] = useState(() => loadStr(BETRIEB_KEY));
+  const [nachname, setNachname] = useState(() => loadStr(NACHNAME_KEY));
+  const [showTags, setShowTags] = useState(() => loadBool(SHOW_TAGS_KEY, true));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [model, setModel] = useState<ReportModel | null>(null);
+
+  const persistSettings = () => {
+    saveStr(NAME_KEY, name);
+    saveStr(FUNKTION_KEY, funktion);
+    saveStr(BETRIEB_KEY, betrieb);
+    saveStr(NACHNAME_KEY, nachname);
+    saveBool(SHOW_TAGS_KEY, showTags);
+  };
 
   const buildReport = async () => {
     setError(null);
@@ -59,15 +128,20 @@ export default function PrintReportPanel() {
     setBusy(true);
     try {
       const { buildReportModel } = await import("../export/reportPdf");
+      const range = mode === "monat" ? monthRangeFromValue(month) : { from, to };
       const entries = await listEntries({
-        from: from || undefined,
-        to: to || undefined,
+        from: range.from || undefined,
+        to: range.to || undefined,
       });
       setModel(
         buildReportModel(entries, (e) => e.tagLabels.join(", "), {
           name,
-          from,
-          to,
+          from: range.from,
+          to: range.to,
+          funktion,
+          betrieb,
+          nachname,
+          showTags,
         })
       );
     } catch (e) {
@@ -78,13 +152,13 @@ export default function PrintReportPanel() {
   };
 
   const doPrint = () => {
-    saveName(name);
+    persistSettings();
     window.print();
   };
 
   const doSavePdf = async () => {
     if (!model) return;
-    saveName(name);
+    persistSettings();
     setError(null);
     setStatus(null);
     setBusy(true);
@@ -128,31 +202,95 @@ export default function PrintReportPanel() {
               placeholder="Vor- und Nachname"
             />
           </label>
-          <div className="flex items-end gap-2">
-            <label className="flex-1 text-sm text-secondary-ink">
-              Von
-              <input
-                type="date"
-                className={field}
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </label>
-            <label className="flex-1 text-sm text-secondary-ink">
-              Bis
-              <input
-                type="date"
-                className={field}
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </label>
+          <div>
+            <span className="mb-1 block text-sm text-secondary-ink">
+              Zeitraum
+            </span>
+            <SegmentedControl
+              options={MODE_OPTIONS}
+              value={mode}
+              onChange={setMode}
+            />
+            <div className="mt-2 flex items-end gap-2">
+              {mode === "monat" ? (
+                <label className="flex-1 text-sm text-secondary-ink">
+                  Monat
+                  <input
+                    type="month"
+                    className={field}
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="flex-1 text-sm text-secondary-ink">
+                    Von
+                    <input
+                      type="date"
+                      className={field}
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex-1 text-sm text-secondary-ink">
+                    Bis
+                    <input
+                      type="date"
+                      className={field}
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
           </div>
         </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label className="text-sm text-secondary-ink">
+            Funktion
+            <input
+              className={field}
+              value={funktion}
+              onChange={(e) => setFunktion(e.target.value)}
+              placeholder="z. B. BR-Vorsitzender"
+            />
+          </label>
+          <label className="text-sm text-secondary-ink">
+            Betrieb/Firma
+            <input
+              className={field}
+              value={betrieb}
+              onChange={(e) => setBetrieb(e.target.value)}
+              placeholder="z. B. Musterwerk GmbH"
+            />
+          </label>
+          <label className="text-sm text-secondary-ink">
+            Nachname für Dateinamen
+            <input
+              className={field}
+              value={nachname}
+              onChange={(e) => setNachname(e.target.value)}
+              placeholder="z. B. König"
+            />
+          </label>
+        </div>
+
+        <label className="mt-3 flex min-h-touch-pointer items-center gap-2 text-sm text-secondary-ink">
+          <input
+            type="checkbox"
+            checked={showTags}
+            onChange={(e) => setShowTags(e.target.checked)}
+          />
+          Schlagwörter im Report
+        </label>
+
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
+            className="min-h-touch rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:min-h-0"
             onClick={buildReport}
             disabled={busy}
           >
@@ -228,6 +366,16 @@ export default function PrintReportPanel() {
                 <td>Erstellt am</td>
                 <td>{model.createdAtLabel}</td>
               </tr>
+              {/* Task 3: Funktion/Betrieb (headerExtras, Task 2) waren bislang
+                  nur im PDF sichtbar, nicht in dieser Vorschau -- ohne diese
+                  Zeilen hätten die neuen Felder oben keine sichtbare Wirkung
+                  auf dem Bildschirm, nur im gespeicherten PDF. */}
+              {model.headerExtras.map((h) => (
+                <tr key={h.label}>
+                  <td>{h.label}</td>
+                  <td>{h.value}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -249,7 +397,10 @@ export default function PrintReportPanel() {
                   <td style={cellStyle}>{r.end}</td>
                   <td style={cellStyle}>{r.pause}</td>
                   <td style={cellStyle}>{r.duration}</td>
-                  <td style={cellStyle}>{r.tags}</td>
+                  {/* Task 3: an showTags gekoppelt (wie entryRowCells in
+                      reportPdf.ts) -- sonst hätte die Kopfzeile bei
+                      showTags=false eine Spalte weniger als jede Datenzeile. */}
+                  {model.showTags && <td style={cellStyle}>{r.tags}</td>}
                   <td style={cellStyle}>{r.info}</td>
                   <td style={cellStyle}>{r.shift}</td>
                 </tr>

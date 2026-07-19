@@ -11,14 +11,17 @@
 // speist sich aus genau demselben Modell -- Vorschau und PDF können dadurch
 // nicht auseinanderlaufen.
 //
-// Issue #16 (unterschriftsfähiger GL-Monatsnachweis, Task 2): das Modell
+// Issue #16 (unterschriftsfähiger GL-Monatsnachweis, Task 2/3): das Modell
 // bekommt zusätzlich Tagessummen (`dayRows`), eine Widerspruchs-Kennzeichnung
 // (Datums-Suffix + eigener Block, Daten aus `GlEntryView.objections`), zwei
 // statt drei Unterschriftsfelder und einen an Monats-/Zeitraum-Modus sowie
 // Nachname gekoppelten Dateinamen. `funktion`/`betrieb`/`nachname`/`showTags`
-// sind bewusst OPTIONAL in `ReportOpts` (mit Defaults) -- so bleibt
-// PrintReportPanel.tsx (verdrahtet erst in Task 3) kompilierbar, ohne dass
-// dieser Task dort schon Hand anlegen muss.
+// waren in Task 2 übergangsweise OPTIONAL in `ReportOpts` (mit Defaults),
+// damit PrintReportPanel.tsx (verdrahtet erst in Task 3) kompilierbar blieb,
+// ohne dass dieser Task dort schon Hand anlegen musste. Seit Task 3 reicht
+// PrintReportPanel.tsx alle vier Werte durch -- die Felder sind deshalb
+// wieder PFLICHTFELDER (kein `?`); der einzige verbleibende Default liegt in
+// der UI (React-State/localStorage), nicht mehr im Modell-Builder.
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -34,14 +37,14 @@ export interface ReportOpts {
   to: string; // YYYY-MM-DD oder "" (= "Ende")
   /** Nur für Tests: fester "Erstellt am"-Stempel statt todayIso(). */
   createdAt?: string;
-  /** Kopfzeile "Funktion: …" -- weggelassen, wenn leer/undefined. */
-  funktion?: string;
-  /** Kopfzeile "Betrieb/Firma: …" -- weggelassen, wenn leer/undefined. */
-  betrieb?: string;
+  /** Kopfzeile "Funktion: …" -- weggelassen, wenn leer (nach trim()). */
+  funktion: string;
+  /** Kopfzeile "Betrieb/Firma: …" -- weggelassen, wenn leer (nach trim()). */
+  betrieb: string;
   /** Nachname für den Dateinamen (siehe fileBaseName) -- KEIN Kopfzeilenfeld. */
-  nachname?: string;
-  /** Schlagwörter-Spalte anzeigen. Default true. */
-  showTags?: boolean;
+  nachname: string;
+  /** Schlagwörter-Spalte anzeigen. */
+  showTags: boolean;
 }
 
 export interface ReportRow {
@@ -248,7 +251,7 @@ export function buildReportModel(
     0
   );
 
-  const showTags = opts.showTags ?? true;
+  const showTags = opts.showTags;
   const columns = buildColumns(showTags);
 
   const rows: ReportRow[] = workEntries.map((e) => {
@@ -287,10 +290,10 @@ export function buildReportModel(
       : "keiner.";
 
   const headerExtras: ReportHeaderLine[] = [];
-  if (opts.funktion?.trim()) {
+  if (opts.funktion.trim()) {
     headerExtras.push({ label: "Funktion", value: opts.funktion.trim() });
   }
-  if (opts.betrieb?.trim()) {
+  if (opts.betrieb.trim()) {
     headerExtras.push({ label: "Betrieb/Firma", value: opts.betrieb.trim() });
   }
 
@@ -309,7 +312,7 @@ export function buildReportModel(
     compensationLabel,
     objectionLines,
     signatureLabels: SIGNATURE_LABELS,
-    fileBaseName: fileBaseName(opts.from, opts.to, opts.nachname ?? ""),
+    fileBaseName: fileBaseName(opts.from, opts.to, opts.nachname),
   };
 }
 
