@@ -42,6 +42,7 @@ const FUNKTION_KEY = "brlog.reportFunktion";
 const BETRIEB_KEY = "brlog.reportBetrieb";
 const NACHNAME_KEY = "brlog.reportNachname";
 const SHOW_TAGS_KEY = "brlog.reportShowTags";
+const ARCHIVE_KEY = "brlog.reportArchive";
 
 function loadStr(key: string): string {
   try {
@@ -93,6 +94,19 @@ function monthRangeFromValue(value: string): { from: string; to: string } {
   return monthRangeIso(new Date(year, monthIndex, 1));
 }
 
+/**
+ * Letztes Pfadsegment eines vom Systemdialog gelieferten absoluten Pfads --
+ * für den Dateinamen der Archivkopie (Task 4), die exakt so heißen soll wie
+ * die vom Nutzer im Speichern-Dialog tatsächlich gewählte Datei (falls dort
+ * umbenannt), nicht wie der ursprüngliche Vorschlagsname. Prüft BEIDE
+ * Trenner, nicht nur den des laufenden Betriebssystems: der Desktop-Build
+ * läuft auf Windows (Backslash) UND Linux (Slash).
+ */
+function baseNameOfPath(path: string): string {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
 const cellStyle: React.CSSProperties = {
   border: `1px solid ${PRINT.tableBorder}`,
   padding: "3px 6px",
@@ -109,9 +123,20 @@ export default function PrintReportPanel() {
   const [betrieb, setBetrieb] = useState(() => loadStr(BETRIEB_KEY));
   const [nachname, setNachname] = useState(() => loadStr(NACHNAME_KEY));
   const [showTags, setShowTags] = useState(() => loadBool(SHOW_TAGS_KEY, true));
+  // Task 4 (Issue #16): Default AUS -- Archivkopie ist bewusst Opt-in, nicht
+  // jeder will automatisch eine Zweitkopie neben der (ggf. auf einem
+  // portablen USB-Stick liegenden) Datenbank ansammeln.
+  const [archiveEnabled, setArchiveEnabled] = useState(() =>
+    loadBool(ARCHIVE_KEY, false)
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Archivkopie-Fehler sind nicht-fatal (Nutzer-Entscheid, Issue #16): das PDF
+  // liegt zu diesem Zeitpunkt bereits sicher am gewählten Ort -- deshalb ein
+  // eigener Warnhinweis statt `error` (der die Vorschau/den Erfolg überdecken
+  // würde).
+  const [archiveWarning, setArchiveWarning] = useState<string | null>(null);
   const [model, setModel] = useState<ReportModel | null>(null);
 
   const persistSettings = () => {
@@ -120,6 +145,7 @@ export default function PrintReportPanel() {
     saveStr(BETRIEB_KEY, betrieb);
     saveStr(NACHNAME_KEY, nachname);
     saveBool(SHOW_TAGS_KEY, showTags);
+    saveBool(ARCHIVE_KEY, archiveEnabled);
   };
 
   const buildReport = async () => {
@@ -161,6 +187,7 @@ export default function PrintReportPanel() {
     persistSettings();
     setError(null);
     setStatus(null);
+    setArchiveWarning(null);
     setBusy(true);
     try {
       const { renderReportPdf, uint8ToBase64 } = await import(
@@ -173,7 +200,31 @@ export default function PrintReportPanel() {
         extension: "pdf",
         contentsBase64: uint8ToBase64(bytes),
       });
-      setStatus(path ? `PDF gespeichert: ${path}` : "Abgebrochen.");
+      if (!path) {
+        setStatus("Abgebrochen.");
+        return;
+      }
+
+      let message = `PDF gespeichert: ${path}`;
+      // Task 4 (Issue #16): läuft bei aktivierter Checkbox bei JEDEM
+      // erfolgreichen Speichern automatisch mit. Eigener try/catch -- ein
+      // Archivfehler ist nicht-fatal (das PDF liegt bereits sicher am oben
+      // gewählten Ort) und darf den Erfolgsstatus des Haupt-Speicherns nicht
+      // verdrängen.
+      if (archiveEnabled) {
+        try {
+          const archivePath = await invoke<string>("report_archive_copy", {
+            fileName: baseNameOfPath(path),
+            bytes: Array.from(bytes),
+          });
+          message += ` – Archivkopie: ${archivePath}`;
+        } catch (e) {
+          setArchiveWarning(
+            `Archivkopie in reports/ fehlgeschlagen: ${toUserMessage(e)}`
+          );
+        }
+      }
+      setStatus(message);
     } catch (e) {
       setError(toUserMessage(e));
     } finally {
@@ -287,6 +338,23 @@ export default function PrintReportPanel() {
           Schlagwörter im Report
         </label>
 
+        <div>
+          <label className="mt-2 flex min-h-touch-pointer items-center gap-2 text-sm text-secondary-ink">
+            <input
+              type="checkbox"
+              checked={archiveEnabled}
+              onChange={(e) => setArchiveEnabled(e.target.checked)}
+            />
+            Archivkopie in reports/ ablegen
+          </label>
+          <p className="mt-1 text-xs text-disabled-ink">
+            Legt bei jedem „Als PDF speichern" zusätzlich eine Kopie im Ordner
+            reports/ neben der Datenbank ab (im portablen Modus auf dem
+            USB-Stick statt in %APPDATA%). Vorhandene Dateien werden nie
+            überschrieben, sondern durchnummeriert.
+          </p>
+        </div>
+
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
@@ -325,6 +393,11 @@ export default function PrintReportPanel() {
         {status && (
           <p className="mt-2 break-all text-sm text-success-ink">
             {status}
+          </p>
+        )}
+        {archiveWarning && (
+          <p className="mt-2 break-all rounded border border-warning-banner-line bg-warning-banner px-3 py-2 text-sm text-warning-banner-ink">
+            {archiveWarning}
           </p>
         )}
         {error && (
