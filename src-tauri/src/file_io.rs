@@ -416,14 +416,27 @@ pub async fn import_text_file(
 // Muster von `db_backup` in lib.rs, das ebenfalls ungated ist.
 
 /// Prüft den vom Frontend gelieferten Dateinamen: nicht leer, kein
-/// Pfadtrenner/`.`/`..`. Der Name landet als reiner Dateiname unter
+/// Pfadtrenner/`.`/`..`/`:`. Der Name landet als reiner Dateiname unter
 /// `reports/`, kein vom Nutzer im Dialog gewählter Pfad wie bei
 /// `check_user_path` oben -- trotzdem kein blindes Vertrauen in die
 /// IPC-Eingabe.
+///
+/// `:` ist zusätzlich zu `/`/`\` verboten (Review-Finding): ein Name wie
+/// `"C:evil.pdf"` enthält KEINEN Pfadtrenner, trägt aber einen Windows-
+/// Laufwerksbuchstaben-Präfix. `PathBuf::push`/`join` ERSETZT laut
+/// Dokumentation von `std::path::Path::push` den kompletten Basis-Pfad,
+/// sobald das angehängte Segment einen Präfix OHNE Root trägt ("if path has
+/// a prefix but no root (e.g., C:windows), it replaces self.") -- ohne
+/// diesen Check würde `dir.join(file_name)` unterhalb von `unique_report_path`
+/// dann außerhalb von `reports/` schreiben. Gültige Report-Dateinamen
+/// brauchen ohnehin nie einen Doppelpunkt (`fileBaseName` im Frontend ersetzt
+/// ihn schon vorher durch `-`).
 fn sanitized_report_file_name(file_name: &str) -> Result<&str, String> {
     let trimmed = file_name.trim();
-    let unsafe_name =
-        trimmed.is_empty() || trimmed == "." || trimmed == ".." || trimmed.contains(['/', '\\']);
+    let unsafe_name = trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.contains(['/', '\\', ':']);
     if unsafe_name {
         return Err("Ungültiger Dateiname für die Archivkopie".to_string());
     }
@@ -434,10 +447,27 @@ fn sanitized_report_file_name(file_name: &str) -> Result<&str, String> {
 /// bereits, wird VOR der Endung ` (2)`, ` (3)`, … angehängt (Windows-Explorer-
 /// Konvention) -- nie überschreiben. Reine Pfadlogik (kein Dateisystemzugriff
 /// außer den `.exists()`-Prüfungen), deshalb ohne Tauri-State testbar.
-fn unique_report_path(dir: &Path, file_name: &str) -> PathBuf {
+///
+/// Zweite Verteidigungslinie (Review-Finding, zusätzlich zur Zeichen-Prüfung
+/// in `sanitized_report_file_name`): JEDER via `dir.join(...)` gebildete
+/// Kandidat wird per `starts_with(dir)` bestätigt, bevor er zurückgegeben
+/// wird. Ein bloßer Zeichen-Check kann künftig lückenhaft sein/übersehen
+/// werden -- diese Prüfung fängt jedes `PathBuf::push`-Ersetzungsverhalten
+/// ab (s. Kommentar bei `sanitized_report_file_name`), unabhängig davon, wie
+/// es zustande kam.
+fn unique_report_path(dir: &Path, file_name: &str) -> Result<PathBuf, String> {
+    let escapes_dir = |candidate: &Path| -> Result<(), String> {
+        if candidate.starts_with(dir) {
+            Ok(())
+        } else {
+            Err("Ungültiger Dateiname für die Archivkopie".to_string())
+        }
+    };
+
     let wanted = dir.join(file_name);
+    escapes_dir(&wanted)?;
     if !wanted.exists() {
-        return wanted;
+        return Ok(wanted);
     }
     let name_path = Path::new(file_name);
     let stem = name_path
@@ -454,8 +484,9 @@ fn unique_report_path(dir: &Path, file_name: &str) -> PathBuf {
             None => format!("{stem} ({n})"),
         };
         let candidate = dir.join(candidate_name);
+        escapes_dir(&candidate)?;
         if !candidate.exists() {
-            return candidate;
+            return Ok(candidate);
         }
         n += 1;
     }
@@ -469,7 +500,7 @@ fn write_report_archive(dir: &Path, file_name: &str, bytes: &[u8]) -> Result<Pat
     let file_name = sanitized_report_file_name(file_name)?;
     std::fs::create_dir_all(dir)
         .map_err(|e| format!("Archivordner \"reports\" konnte nicht angelegt werden: {e}"))?;
-    let target = unique_report_path(dir, file_name);
+    let target = unique_report_path(dir, file_name)?;
     write_atomic(&target, bytes)?;
     Ok(target)
 }
@@ -624,7 +655,7 @@ mod tests {
 // `loc.0.data_dir.join("reports")` tut.
 #[cfg(test)]
 mod report_archive_tests {
-    use super::{unique_report_path, write_report_archive};
+    use super::{sanitized_report_file_name, unique_report_path, write_report_archive};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -645,7 +676,7 @@ mod report_archive_tests {
     #[test]
     fn unique_report_path_gibt_wunschnamen_wenn_frei() {
         let dir = temp_test_dir("free");
-        let result = unique_report_path(&dir, "Nachweis.pdf");
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
         assert_eq!(result, dir.join("Nachweis.pdf"));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -655,7 +686,7 @@ mod report_archive_tests {
         let dir = temp_test_dir("dup1");
         fs::write(dir.join("Nachweis.pdf"), b"alt").unwrap();
 
-        let result = unique_report_path(&dir, "Nachweis.pdf");
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
 
         assert_eq!(result, dir.join("Nachweis (2).pdf"));
         let _ = fs::remove_dir_all(&dir);
@@ -667,7 +698,7 @@ mod report_archive_tests {
         fs::write(dir.join("Nachweis.pdf"), b"alt").unwrap();
         fs::write(dir.join("Nachweis (2).pdf"), b"alt2").unwrap();
 
-        let result = unique_report_path(&dir, "Nachweis.pdf");
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
 
         assert_eq!(result, dir.join("Nachweis (3).pdf"));
         let _ = fs::remove_dir_all(&dir);
@@ -678,7 +709,7 @@ mod report_archive_tests {
         let dir = temp_test_dir("noext");
         fs::write(dir.join("Nachweis"), b"alt").unwrap();
 
-        let result = unique_report_path(&dir, "Nachweis");
+        let result = unique_report_path(&dir, "Nachweis").unwrap();
 
         assert_eq!(result, dir.join("Nachweis (2)"));
         let _ = fs::remove_dir_all(&dir);
@@ -691,10 +722,55 @@ mod report_archive_tests {
         let dir = temp_test_dir("multidot");
         fs::write(dir.join("Nachweis.2026.pdf"), b"alt").unwrap();
 
-        let result = unique_report_path(&dir, "Nachweis.2026.pdf");
+        let result = unique_report_path(&dir, "Nachweis.2026.pdf").unwrap();
 
         assert_eq!(result, dir.join("Nachweis.2026 (2).pdf"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---------- Review-Finding: Windows-Laufwerksbuchstaben-Präfix ----------
+    //
+    // "C:evil.pdf" enthält weder "/" noch "\" und passiert die bisherige
+    // Zeichen-Prüfung in `sanitized_report_file_name` -- ABER
+    // `PathBuf::push`/`join` ERSETZT unter Windows den kompletten Basis-Pfad,
+    // wenn das angehängte Segment einen Präfix (z. B. "C:") OHNE Root trägt
+    // (dokumentiertes std::path::Path::push-Verhalten: "if path has a prefix
+    // but no root (e.g., C:windows), it replaces self."). Das Schreibziel
+    // würde dann außerhalb von reports/ landen, statt dort abgelehnt zu
+    // werden.
+
+    #[test]
+    fn sanitized_report_file_name_lehnt_windows_laufwerksbuchstaben_praefix_ab() {
+        assert!(sanitized_report_file_name("C:evil.pdf").is_err());
+    }
+
+    #[test]
+    fn sanitized_report_file_name_lehnt_windows_laufwerksbuchstaben_praefix_kleinschreibung_ab() {
+        assert!(sanitized_report_file_name("c:evil.pdf").is_err());
+    }
+
+    #[test]
+    fn unique_report_path_lehnt_kandidaten_ausserhalb_von_dir_ab() {
+        // Zweite Verteidigungslinie: selbst ein Aufruf, der die
+        // Zeichen-Sanitisierung umgeht, darf unique_report_path nicht dazu
+        // bringen, einen Pfad außerhalb von `dir` zurückzugeben.
+        let dir = temp_test_dir("escape-check");
+
+        let result = unique_report_path(&dir, "C:evil.pdf");
+
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_report_archive_lehnt_windows_laufwerksbuchstaben_praefix_ab() {
+        let base = temp_test_dir("write-drive-prefix");
+        let reports_dir = base.join("reports");
+
+        let result = write_report_archive(&reports_dir, "C:evil.pdf", b"Inhalt");
+
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&base);
     }
 
     // ---------- write_report_archive ----------
