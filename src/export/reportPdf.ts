@@ -10,6 +10,15 @@
 // einzige Ort, der jsPDF anfasst. Die HTML-Vorschau in PrintReportPanel.tsx
 // speist sich aus genau demselben Modell -- Vorschau und PDF können dadurch
 // nicht auseinanderlaufen.
+//
+// Issue #16 (unterschriftsfähiger GL-Monatsnachweis, Task 2): das Modell
+// bekommt zusätzlich Tagessummen (`dayRows`), eine Widerspruchs-Kennzeichnung
+// (Datums-Suffix + eigener Block, Daten aus `GlEntryView.objections`), zwei
+// statt drei Unterschriftsfelder und einen an Monats-/Zeitraum-Modus sowie
+// Nachname gekoppelten Dateinamen. `funktion`/`betrieb`/`nachname`/`showTags`
+// sind bewusst OPTIONAL in `ReportOpts` (mit Defaults) -- so bleibt
+// PrintReportPanel.tsx (verdrahtet erst in Task 3) kompilierbar, ohne dass
+// dieser Task dort schon Hand anlegen muss.
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -25,10 +34,18 @@ export interface ReportOpts {
   to: string; // YYYY-MM-DD oder "" (= "Ende")
   /** Nur für Tests: fester "Erstellt am"-Stempel statt todayIso(). */
   createdAt?: string;
+  /** Kopfzeile "Funktion: …" -- weggelassen, wenn leer/undefined. */
+  funktion?: string;
+  /** Kopfzeile "Betrieb/Firma: …" -- weggelassen, wenn leer/undefined. */
+  betrieb?: string;
+  /** Nachname für den Dateinamen (siehe fileBaseName) -- KEIN Kopfzeilenfeld. */
+  nachname?: string;
+  /** Schlagwörter-Spalte anzeigen. Default true. */
+  showTags?: boolean;
 }
 
 export interface ReportRow {
-  date: string; // bereits deutsch formatiert (formatDateDe)
+  date: string; // bereits deutsch formatiert (formatDateDe), ggf. mit " ⚠"-Suffix bei Widerspruch
   start: string;
   end: string;
   pause: string; // Pause in Minuten als String, "0" ohne Pause (Konsistenz mit CSV-Export)
@@ -38,43 +55,164 @@ export interface ReportRow {
   shift: string; // "ja" | "nein" -- geplante Schicht (Finding-Parallele zur CSV-Spalte)
 }
 
+/** Eine zusätzliche, optionale Kopfzeile (Funktion/Betrieb) -- leer = weggelassen. */
+export interface ReportHeaderLine {
+  label: string;
+  value: string;
+}
+
+/**
+ * Eine Zeile der Tabelle, wie sie tatsächlich gerendert wird: entweder ein
+ * Eintrag (`row`, identisch zu den Objekten in `ReportModel.rows`) oder die
+ * Tagessummen-Zeile "Summe TT.MM.JJJJ — H:MM", die nach den Einträgen eines
+ * Kalendertags eingefügt wird. Eigener Unions-Typ statt Wiederverwendung von
+ * `ReportRow` mit Leerspalten -- eine Summenzeile hat konzeptionell keine
+ * Von/Bis/Pause/etc.-Werte und soll in `toAutoTableInput` als EINE über alle
+ * Spalten gespannte Zelle landen, kein 8-spaltiges Zeilenformat mit
+ * Blindwerten.
+ */
+export type ReportTableRow =
+  | { kind: "entry"; row: ReportRow }
+  | { kind: "day-summary"; label: string };
+
 export interface ReportModel {
   title: string;
   name: string;
   periodLabel: string;
   createdAtLabel: string;
+  /** Zusätzliche Kopfzeilen (Funktion/Betrieb) -- leer, wenn beide leer sind. */
+  headerExtras: ReportHeaderLine[];
   columns: string[];
+  /** Ob die Schlagwörter-Spalte in `columns`/den Tabellenzeilen enthalten ist. */
+  showTags: boolean;
+  /** Reine Eintragszeilen, sortiert nach Datum -- OHNE Tagessummen (Bestand). */
   rows: ReportRow[];
+  /**
+   * Eintragszeilen UND Tagessummen-Zeilen in Render-Reihenfolge (nach jedem
+   * Kalendertag folgt dessen Summenzeile). Das ist die Eingabe für
+   * `toAutoTableInput` -- `rows` bleibt daneben bestehen, weil es die
+   * Bestandsschnittstelle für Konsumenten ist, die nur die reinen Einträge
+   * brauchen (z. B. eine künftige Vorschau ohne Tagessummen).
+   */
+  dayRows: ReportTableRow[];
   totalLabel: string;
   totalValue: string;
   compensationLabel: string;
-  signatureLabels: [string, string, string];
-  /** Dateiname ohne Endung, z. B. "BR-Nachweis_2026-06-01_bis_2026-06-30". */
+  /**
+   * "TT.MM.JJJJ — Begründung (Name)" je Widerspruch, aus
+   * `GlEntryView.objections` alle Arbeitszeit-Einträge zusammengetragen
+   * (Reihenfolge = Zeilenreihenfolge). Leer = kein Block im PDF.
+   */
+  objectionLines: string[];
+  /**
+   * Zwei Unterschriftsfelder (Betriebsratsmitglied, Geschäftsleitung/
+   * Vorgesetzte:r) -- ersetzt die bisherigen drei Linien (Datum getrennt von
+   * den beiden Unterschriften). Jedes Feld trägt seine eigene "Datum,
+   * Unterschrift"-Beschriftung samt Rollenname in einem String, damit
+   * PrintReportPanel.tsx (Task 3) ohne Anpassung weiter über
+   * `.map(label => ...)` rendern kann.
+   */
+  signatureLabels: [string, string];
+  /** Dateiname ohne Endung, z. B. "BR-Stundennachweis_2026-06_König". */
   fileBaseName: string;
 }
 
-const COLUMNS = [
-  "Datum",
-  "Von",
-  "Bis",
-  "Pause (Min)",
-  "Dauer",
-  "Schlagwörter",
-  "Info für Geschäftsleitung",
-  "Geplante Schicht",
+function buildColumns(showTags: boolean): string[] {
+  return [
+    "Datum",
+    "Von",
+    "Bis",
+    "Pause (Min)",
+    "Dauer",
+    ...(showTags ? ["Schlagwörter"] : []),
+    "Info für Geschäftsleitung",
+    "Geplante Schicht",
+  ];
+}
+
+const SIGNATURE_LABELS: [string, string] = [
+  "Datum, Unterschrift Betriebsratsmitglied",
+  "Datum, Unterschrift Geschäftsleitung/Vorgesetzte:r",
 ];
 
-const SIGNATURE_LABELS: [string, string, string] = [
-  "Datum",
-  "Unterschrift BR-Mitglied",
-  "Unterschrift Geschäftsleitung",
-];
+/** ISO (YYYY-MM-DD) -> "TT.MM.JJJJ", OHNE Wochentag (Unterschied zu formatDateDe). */
+function formatDateDdMmYyyy(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+}
 
-function fileBaseName(from: string, to: string): string {
-  if (from || to) {
-    return `BR-Nachweis_${from || "Anfang"}_bis_${to || "Ende"}`;
+/** Zeichen, die in Windows/Linux/Android-Dateinamen verboten oder problematisch sind. */
+const UNSAFE_FILENAME_CHARS = /[/\\:*?"<>|]/g;
+
+/**
+ * Prüft, ob `from`..`to` exakt einen vollen Kalendermonat abdeckt (from = 1.
+ * des Monats, to = letzter Tag desselben Monats) -- Grundlage für den
+ * Monatsmodus-Dateinamen. `new Date(year, month, 0).getDate()` ist der
+ * Standard-Trick für "Tage im Monat `month`" bei 1-basiertem `month`: Tag 0
+ * des (0-basiert um eins höheren) Folgemonats ist der letzte Tag des
+ * gesuchten Monats.
+ */
+function isFullCalendarMonth(from: string, to: string): boolean {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  if (fy !== ty || fm !== tm || fd !== 1) return false;
+  const daysInMonth = new Date(fy, fm, 0).getDate();
+  return td === daysInMonth;
+}
+
+/**
+ * Dateiname (ohne Endung): Monatsmodus -> "BR-Stundennachweis_JJJJ-MM[_Nachname]";
+ * freier Zeitraum -> "BR-Stundennachweis_JJJJ-MM-TT_bis_JJJJ-MM-TT[_Nachname]";
+ * kein Zeitraum gewählt -> "BR-Stundennachweis_<heute>[_Nachname]". Ohne
+ * Nachname entfällt das Suffix samt Unterstrich vollständig. Nachname wird
+ * NICHT auf ASCII beschränkt (Umlaute bleiben erhalten) -- nur die für
+ * Dateisysteme kritischen Zeichen `/\:*?"<>|` werden durch "-" ersetzt.
+ */
+function fileBaseName(from: string, to: string, nachname: string): string {
+  const sanitized = nachname.trim().replace(UNSAFE_FILENAME_CHARS, "-");
+  const suffix = sanitized ? `_${sanitized}` : "";
+
+  if (from && to && isFullCalendarMonth(from, to)) {
+    return `BR-Stundennachweis_${from.slice(0, 7)}${suffix}`;
   }
-  return `BR-Nachweis_${todayIso()}`;
+  if (from || to) {
+    return `BR-Stundennachweis_${from || "Anfang"}_bis_${to || "Ende"}${suffix}`;
+  }
+  return `BR-Stundennachweis_${todayIso()}${suffix}`;
+}
+
+/** "TT.MM.JJJJ — Begründung (Name)"; "ohne Datum", wenn das Widerspruchsdatum fehlt. */
+function formatObjectionLine(o: { reason: string; byWhom: string; date: string | null }): string {
+  const dateLabel = o.date ? formatDateDdMmYyyy(o.date) : "ohne Datum";
+  return `${dateLabel} — ${o.reason} (${o.byWhom})`;
+}
+
+/**
+ * Gruppiert die (bereits nach Datum sortierten) Arbeitszeit-Einträge und ihre
+ * fertig gebauten Zeilen zu der Render-Reihenfolge aus `ReportModel.dayRows`:
+ * nach den Einträgen jedes Kalendertags folgt dessen Summenzeile. `entries`
+ * und `rows` sind parallele Arrays (gleicher Index = derselbe Eintrag) --
+ * die Tagessumme wird aus den ROHEN Minuten (`durationMinutes`) gebildet,
+ * nicht aus den bereits formatierten "H:MM"-Strings, damit keine
+ * Rundungs-/Parsing-Differenz zur Gesamtsumme entstehen kann.
+ */
+function buildDayRows(entries: EntryListItem[], rows: ReportRow[]): ReportTableRow[] {
+  const result: ReportTableRow[] = [];
+  let i = 0;
+  while (i < entries.length) {
+    const date = entries[i].date;
+    let dayMinutes = 0;
+    while (i < entries.length && entries[i].date === date) {
+      result.push({ kind: "entry", row: rows[i] });
+      dayMinutes += entries[i].durationMinutes;
+      i++;
+    }
+    result.push({
+      kind: "day-summary",
+      label: `Summe ${formatDateDdMmYyyy(date)} — ${minutesToHhmm(dayMinutes)}`,
+    });
+  }
+  return result;
 }
 
 /**
@@ -110,10 +248,15 @@ export function buildReportModel(
     0
   );
 
+  const showTags = opts.showTags ?? true;
+  const columns = buildColumns(showTags);
+
   const rows: ReportRow[] = workEntries.map((e) => {
     const view = glEntryView(e);
+    const dateLabel =
+      formatDateDe(view.date) + (view.objections.length > 0 ? " ⚠" : "");
     return {
-      date: formatDateDe(view.date),
+      date: dateLabel,
       start: view.startTime ?? "",
       end: view.endTime ?? "",
       pause: String(view.pauseMinutes),
@@ -123,6 +266,12 @@ export function buildReportModel(
       shift: view.hadPlannedShift ? "ja" : "nein",
     };
   });
+
+  const dayRows = buildDayRows(workEntries, rows);
+
+  const objectionLines = workEntries.flatMap(
+    (e) => glEntryView(e).objections.map(formatObjectionLine)
+  );
 
   const periodLabel = `${opts.from ? formatDateDe(opts.from) : "Anfang"} – ${
     opts.to ? formatDateDe(opts.to) : "Ende"
@@ -137,46 +286,84 @@ export function buildReportModel(
           .join(", ")})`
       : "keiner.";
 
+  const headerExtras: ReportHeaderLine[] = [];
+  if (opts.funktion?.trim()) {
+    headerExtras.push({ label: "Funktion", value: opts.funktion.trim() });
+  }
+  if (opts.betrieb?.trim()) {
+    headerExtras.push({ label: "Betrieb/Firma", value: opts.betrieb.trim() });
+  }
+
   return {
     title: "Nachweis Betriebsratszeiten",
     name: opts.name.trim() || "—",
     periodLabel,
     createdAtLabel: formatDateDe(opts.createdAt ?? todayIso()),
-    columns: COLUMNS,
+    headerExtras,
+    columns,
+    showTags,
     rows,
+    dayRows,
     totalLabel: "Summe",
     totalValue: `${minutesToHhmm(totalMinutes)} Std`,
     compensationLabel,
+    objectionLines,
     signatureLabels: SIGNATURE_LABELS,
-    fileBaseName: fileBaseName(opts.from, opts.to),
+    fileBaseName: fileBaseName(opts.from, opts.to, opts.nachname ?? ""),
   };
+}
+
+/** autotable-Zellenformat für eine Eintragszeile, in exakt der Spaltenreihenfolge von `columns`. */
+function entryRowCells(r: ReportRow, showTags: boolean): string[] {
+  const cells = [r.date, r.start, r.end, r.pause, r.duration];
+  if (showTags) cells.push(r.tags);
+  cells.push(r.info, r.shift);
+  return cells;
 }
 
 /**
  * Reine Übersetzung des Modells in die {head, body}-Struktur, die
  * jspdf-autotable erwartet. Eigenständig exportiert, damit Tests die
  * Spalten-/Zeilenstruktur ohne echtes PDF-Rendering prüfen können.
+ * Tagessummen-Zeilen werden als EINE über alle Spalten gespannte Zelle
+ * (`colSpan`) kodiert -- jspdf-autotable akzeptiert das nativ als eigene
+ * `RowInput` mit nur einem `CellDef`.
  */
 export function toAutoTableInput(model: ReportModel): {
   head: string[][];
-  body: string[][];
+  body: (string | { content: string; colSpan: number })[][];
 } {
   return {
     head: [model.columns],
-    body: model.rows.map((r) => [
-      r.date,
-      r.start,
-      r.end,
-      r.pause,
-      r.duration,
-      r.tags,
-      r.info,
-      r.shift,
-    ]),
+    body: model.dayRows.map((r) =>
+      r.kind === "entry"
+        ? entryRowCells(r.row, model.showTags)
+        : [{ content: r.label, colSpan: model.columns.length }]
+    ),
   };
 }
 
 const PAGE_MARGIN = 14; // mm
+
+/** mm-Spaltenbreiten je Spaltenbeschriftung -- indexunabhängig, damit `showTags:false` (weniger Spalten) keine hartkodierten Positionen verschiebt. Spalte "Info für Geschäftsleitung" bleibt bewusst ohne Eintrag ("auto" -- nimmt den Rest). */
+const COLUMN_WIDTHS_MM: Record<string, number> = {
+  Datum: 22,
+  Von: 13,
+  Bis: 13,
+  "Pause (Min)": 15,
+  Dauer: 15,
+  Schlagwörter: 30,
+  "Geplante Schicht": 22,
+};
+
+function buildColumnStyles(columns: string[]): Record<number, { cellWidth: number }> {
+  const styles: Record<number, { cellWidth: number }> = {};
+  columns.forEach((col, i) => {
+    const width = COLUMN_WIDTHS_MM[col];
+    if (width !== undefined) styles[i] = { cellWidth: width };
+  });
+  return styles;
+}
 
 /**
  * Rendert das Modell zu PDF-Bytes (A4 hochkant). Deutsche Umlaute laufen über
@@ -185,6 +372,22 @@ const PAGE_MARGIN = 14; // mm
  * mit Seitenzahl wird NACH dem Tabellenaufbau in einem zweiten Durchlauf über
  * alle bereits erzeugten Seiten gesetzt (die Gesamtseitenzahl steht erst dann
  * fest).
+ *
+ * Pagination-Entscheidung (Tagessummen, Selbst-Review Task 2): im
+ * jspdf-autotable-Quelltext (shouldPrintOnCurrentPage/printFullRow,
+ * node_modules/jspdf-autotable/dist/jspdf.plugin.autotable.js) nachgesehen
+ * statt vermutet -- der DEFAULT `rowPageBreak: "auto"` kann den Inhalt einer
+ * zu hohen Zeile (z. B. ein stark umbrechender "Info für
+ * Geschäftsleitung"-Text) mitten durchschneiden und auf zwei Seiten
+ * verteilen. Deshalb hier explizit `rowPageBreak: "avoid"`: jede Zeile
+ * (Eintrag WIE Tagessummen-Zeile) wird als Ganzes entweder auf die aktuelle
+ * oder komplett auf die nächste Seite gesetzt, nie mittendrin geteilt. Was
+ * das NICHT verhindert: dass eine Tagessummen-Zeile auf eine ANDERE Seite
+ * rutscht als die letzten Einträge desselben Tages (jspdf-autotable kennt
+ * kein zeilenübergreifendes "bleib zusammen", nur pro-Zeile-Regeln) --
+ * analog zu Zwischensummen in mehrseitigen Rechnungen und bei den hier
+ * üblichen wenigen Tageszeilen ein seltener Randfall, der bewusst nicht
+ * durch eine eigene Gruppierungslogik zusätzlich erzwungen wird.
  */
 export function renderReportPdf(model: ReportModel): Uint8Array {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -202,7 +405,12 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
   doc.text(`Zeitraum: ${model.periodLabel}`, PAGE_MARGIN, y);
   y += 5;
   doc.text(`Erstellt am: ${model.createdAtLabel}`, PAGE_MARGIN, y);
-  y += 6;
+  y += 5;
+  model.headerExtras.forEach(({ label, value }) => {
+    doc.text(`${label}: ${value}`, PAGE_MARGIN, y);
+    y += 5;
+  });
+  y += 1; // Abstand vor der Tabelle (entspricht dem bisherigen "+6" nach der letzten Kopfzeile)
 
   const { head, body } = toAutoTableInput(model);
   autoTable(doc, {
@@ -212,16 +420,8 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
     styles: { fontSize: 8.5, cellPadding: 1.5 },
     headStyles: { fillColor: PRINT.headerBg }, // slate-600 (tokens.ts)
-    columnStyles: {
-      0: { cellWidth: 22 }, // Datum
-      1: { cellWidth: 13 }, // Von
-      2: { cellWidth: 13 }, // Bis
-      3: { cellWidth: 15 }, // Pause (Min)
-      4: { cellWidth: 15 }, // Dauer
-      5: { cellWidth: 30 }, // Schlagwörter
-      7: { cellWidth: 22 }, // Geplante Schicht
-      // Spalte 6 (Info für Geschäftsleitung) bleibt "auto" -- nimmt den Rest.
-    },
+    columnStyles: buildColumnStyles(model.columns),
+    rowPageBreak: "avoid", // siehe Pagination-Kommentar oben (Tagessummen/Selbst-Review)
   });
 
   // finalY steht erst nach dem autoTable-Aufruf zur Verfügung.
@@ -229,7 +429,15 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
       .finalY + 8;
 
-  const neededForFooterBlock = 8 + 24; // Freizeitausgleich-Zeile + Unterschriftsfelder
+  // Grobe Höhenschätzung für Freizeitausgleich-Zeile + optionalen
+  // Widerspruchs-Block + Unterschriftsfelder -- analog zur bisherigen
+  // Heuristik (kein exaktes Text-Measuring, siehe Kommentar oben zu
+  // "avoid"/"auto"). Bei sehr vielen Widersprüchen kann der Block dennoch
+  // über die Seite hinausragen; das teilt die bisherige Vereinfachung
+  // dieses Blocks (kein Mehrseiten-Fließtext-Layout für den Footer).
+  const objectionsBlockHeight =
+    model.objectionLines.length > 0 ? 6 + model.objectionLines.length * 5 + 2 : 0;
+  const neededForFooterBlock = 8 + objectionsBlockHeight + 24;
   if (afterTableY + neededForFooterBlock > pageHeight - PAGE_MARGIN) {
     doc.addPage();
     afterTableY = 18;
@@ -243,12 +451,28 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     { maxWidth: pageWidth - 2 * PAGE_MARGIN }
   );
 
-  const sigY = afterTableY + 24;
-  const colWidth = (pageWidth - 2 * PAGE_MARGIN - 2 * 8) / 3;
+  let footerY = afterTableY + 8;
+  if (model.objectionLines.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Widersprüche der Geschäftsleitung", PAGE_MARGIN, footerY);
+    doc.setFont("helvetica", "normal");
+    footerY += 5;
+    model.objectionLines.forEach((line) => {
+      doc.text(line, PAGE_MARGIN, footerY, {
+        maxWidth: pageWidth - 2 * PAGE_MARGIN,
+      });
+      footerY += 5;
+    });
+    footerY += 2;
+  }
+
+  const sigY = footerY + 20;
+  const gapCount = model.signatureLabels.length - 1;
+  const colWidth = (pageWidth - 2 * PAGE_MARGIN - gapCount * 8) / model.signatureLabels.length;
   model.signatureLabels.forEach((label, i) => {
     const x = PAGE_MARGIN + i * (colWidth + 8);
     doc.line(x, sigY, x + colWidth, sigY);
-    doc.text(label, x, sigY + 4);
+    doc.text(label, x, sigY + 4, { maxWidth: colWidth });
   });
 
   // Seitenfuß mit Seitenzahl -- über ALLE mittlerweile feststehenden Seiten.
