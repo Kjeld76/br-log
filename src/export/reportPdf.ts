@@ -17,6 +17,7 @@ import type { EntryListItem } from "../types";
 import { minutesToHhmm } from "../lib/time";
 import { formatDateDe, todayIso } from "../lib/calendar";
 import { PRINT } from "../lib/tokens";
+import { glEntryView } from "./glProjection";
 
 export interface ReportOpts {
   name: string;
@@ -78,7 +79,10 @@ function fileBaseName(from: string, to: string): string {
 
 /**
  * Baut das Berichtsmodell aus den (bereits GL-tauglich geladenen, d. h. ohne
- * secretDetails) Einträgen. Übernimmt die Spaltenlogik/Trennung der
+ * secretDetails) Einträgen. Die Zeilen (ReportRow) lesen ausschließlich aus
+ * glEntryView(e) -- dieselbe Projektion wie die GL-CSV (exporters.ts
+ * publicColumns), siehe glProjection.ts (Issue #16: kein zweiter, parallel
+ * gepflegter Feld-Filter). Übernimmt die Spaltenlogik/Trennung der
  * bisherigen Druck-Vorschau: Freizeitausgleich-Einträge sind keine
  * BR-Tätigkeit und laufen NICHT in die Zeilen/Summe der Arbeitszeit-Tabelle
  * ein, sondern in eine eigene Zusammenfassungszeile.
@@ -106,16 +110,19 @@ export function buildReportModel(
     0
   );
 
-  const rows: ReportRow[] = workEntries.map((e) => ({
-    date: formatDateDe(e.date),
-    start: e.startTime ?? "",
-    end: e.endTime ?? "",
-    pause: String(e.pauseMinutes),
-    duration: minutesToHhmm(e.durationMinutes),
-    tags: tagLabels(e),
-    info: e.infoForManagement,
-    shift: e.hadPlannedShift ? "ja" : "nein",
-  }));
+  const rows: ReportRow[] = workEntries.map((e) => {
+    const view = glEntryView(e);
+    return {
+      date: formatDateDe(view.date),
+      start: view.startTime ?? "",
+      end: view.endTime ?? "",
+      pause: String(view.pauseMinutes),
+      duration: minutesToHhmm(view.durationMinutes),
+      tags: tagLabels(e),
+      info: view.infoForManagement,
+      shift: view.hadPlannedShift ? "ja" : "nein",
+    };
+  });
 
   const periodLabel = `${opts.from ? formatDateDe(opts.from) : "Anfang"} – ${
     opts.to ? formatDateDe(opts.to) : "Ende"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReportModel,
+  renderReportPdf,
   toAutoTableInput,
   uint8ToBase64,
   type ReportModel,
@@ -234,6 +235,49 @@ describe("toAutoTableInput", () => {
 
     expect(head[0]).toEqual(model.columns);
     expect(body[0]).toHaveLength(head[0].length);
+  });
+});
+
+describe("renderReportPdf", () => {
+  // Latin1-Dekodierung wie uint8ToBase64.ts (chunkweise -- vermeidet das
+  // Aufrufstack-Limit von String.fromCharCode(...bytes) bei größeren PDFs).
+  function toLatin1String(bytes: Uint8Array): string {
+    let s = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      s += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return s;
+  }
+
+  // Roh-Byte-Suche unabhängig von jeder Zeichenkodierungs-Annahme: sucht die
+  // ASCII-Codes des Canary-Markers direkt in der Byte-Sequenz.
+  function containsAsciiBytes(haystack: Uint8Array, needle: string): boolean {
+    const pattern = Array.from(needle, (c) => c.charCodeAt(0));
+    outer: for (let i = 0; i <= haystack.length - pattern.length; i++) {
+      for (let j = 0; j < pattern.length; j++) {
+        if (haystack[i + j] !== pattern[j]) continue outer;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  it("CANARY: secretDetails auf einem Listen-Item (künftige Regression -- EntryListItem trägt es heute strukturell nicht) landet weder als Roh-Bytes noch als Latin1-String im PDF", () => {
+    const withSecret = {
+      ...entry({ infoForManagement: "BR-Sitzung" }),
+      secretDetails: "VERTRAULICH_CANARY_12345",
+    } as EntryListItem;
+
+    const model = buildReportModel([withSecret], joinTags, {
+      name: "Mario König",
+      from: "",
+      to: "",
+    });
+    const bytes = renderReportPdf(model);
+
+    expect(containsAsciiBytes(bytes, "VERTRAULICH_CANARY_12345")).toBe(false);
+    expect(toLatin1String(bytes)).not.toContain("VERTRAULICH_CANARY_12345");
   });
 });
 

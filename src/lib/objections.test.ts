@@ -9,17 +9,14 @@ describe("formatObjectionMeta", () => {
   });
 
   it("lässt fehlende Teile weg statt eines leeren Segments", () => {
-    expect(
-      formatObjectionMeta({ id: "1", reason: "x", byWhom: "GL", date: null }, " · ")
-    ).toBe("GL");
-    expect(
-      formatObjectionMeta({ id: "1", reason: "x", byWhom: "", date: "2026-01-15" }, " · ")
-    ).toBe("2026-01-15");
+    const withoutDate = { id: "1", reason: "x", byWhom: "GL", date: null };
+    const withoutByWhom = { id: "1", reason: "x", byWhom: "", date: "2026-01-15" };
+    expect(formatObjectionMeta(withoutDate, " · ")).toBe("GL");
+    expect(formatObjectionMeta(withoutByWhom, " · ")).toBe("2026-01-15");
   });
 
   it("liefert einen leeren String ohne byWhom/date", () => {
-    expect(
-      formatObjectionMeta({ id: "1", reason: "x", byWhom: "", date: null }, " · ")
-    ).toBe("");
+    const empty = { id: "1", reason: "x", byWhom: "", date: null };
+    expect(formatObjectionMeta(empty, " · ")).toBe("");
   });
 });

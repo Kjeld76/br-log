@@ -74,6 +74,35 @@ describe("exportGlCsv", () => {
     expect(args.filterName).toBe("CSV");
     expect(args.extension).toBe("csv");
   });
+
+  it("CANARY: secretDetails auf einem Listen-Item (künftige Regression -- EntryListItem trägt es heute strukturell nicht) landet nicht im GL-CSV-Inhalt", async () => {
+    invokeMock.mockResolvedValue("/home/mario/BR-Log_GL.csv");
+    listEntriesMock.mockResolvedValue([
+      {
+        id: "1",
+        date: "2026-06-01",
+        startTime: "08:00",
+        endTime: "10:00",
+        durationMinutes: 120,
+        pauseMinutes: 0,
+        infoForManagement: "BR-Sitzung",
+        hadPlannedShift: true,
+        shiftCompensationNote: "",
+        isCompensation: false,
+        tagIds: [],
+        objections: [],
+        createdAt: "2026-06-01T08:00:00.000Z",
+        updatedAt: "2026-06-01T08:00:00.000Z",
+        tagLabels: [],
+        secretDetails: "VERTRAULICH_CANARY_12345",
+      },
+    ]);
+
+    await exporters.exportGlCsv();
+
+    const [, args] = invokeMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(args.contents).not.toContain("VERTRAULICH_CANARY_12345");
+  });
 });
 
 describe("pickAndReadBackup", () => {
