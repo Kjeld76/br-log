@@ -115,6 +115,13 @@
      des Monatsrasters via body { color }, s. mapping.md/task-8-report.md) */
   --color-day-number-ink: #0f172a;
 
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-9-Restfälle) --- */
+  /* Info-Badge (z. B. "Verschlüsselt") — Werte bewusst identisch zur
+     appt-sky-Chipfarbe, semantisch eigenständig (kein Termin-Farbchip). */
+  --color-info-badge-surface: #e0f2fe;
+  /* Transluzente Unterbox auf Statusflächen (Konflikt-/Warnungslisten) */
+  --color-veil-surface: rgba(255, 255, 255, .6);
+
   /* --- Vertraulich (BR-Geheimnis) — eigene semantische Gruppe --- */
   --color-confidential-surface: #fef2f2;
   --color-confidential-border: #fecaca;
@@ -232,6 +239,9 @@
     --color-cell-muted-surface: rgba(15, 23, 42, .4);
     --color-cell-muted-ink: #475569;
     --color-day-number-ink: #cbd5e1;
+    /* --- Ergänzungs-Tokens (Fix-Runde, Task-9-Restfälle) --- */
+    --color-info-badge-surface: rgba(12, 74, 110, .4);
+    --color-veil-surface: rgba(0, 0, 0, .2);
     --color-confidential-surface: rgba(190, 18, 60, .16);
     --color-confidential-border: #be123c;
     --color-confidential-ink: #fecdd3;
@@ -315,6 +325,9 @@
   --color-cell-muted-surface: rgba(15, 23, 42, .4);
   --color-cell-muted-ink: #475569;
   --color-day-number-ink: #cbd5e1;
+  /* --- Ergänzungs-Tokens (Fix-Runde, Task-9-Restfälle) --- */
+  --color-info-badge-surface: rgba(12, 74, 110, .4);
+  --color-veil-surface: rgba(0, 0, 0, .2);
   --color-confidential-surface: rgba(190, 18, 60, .16);
   --color-confidential-border: #be123c;
   --color-confidential-ink: #fecdd3;

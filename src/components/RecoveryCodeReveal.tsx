@@ -81,7 +81,7 @@ export default function RecoveryCodeReveal({ code, onConfirmed, confirmLabel }: 
         </button>
       </div>
 
-      <p className="rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+      <p className="rounded bg-warning-banner p-2 text-xs text-warning-banner-ink">
         Achtung: Gehen Passwort <strong>und</strong> Wiederherstellungs-Code
         verloren, sind die verschlüsselten Daten unwiderruflich verloren – es gibt
         keine Hintertür. Bewahren Sie den Code getrennt von der Datenbank auf.

@@ -76,6 +76,8 @@ export default {
         "selected-ring": "var(--color-selected-ring)",
         "time-dot": "var(--color-time-dot)",
         "day-number-ink": "var(--color-day-number-ink)",
+        "info-badge": "var(--color-info-badge-surface)",
+        veil: "var(--color-veil-surface)",
       },
       minHeight: {
         touch: "var(--touch-min)",

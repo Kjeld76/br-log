@@ -320,7 +320,7 @@ export default function ExportPanel({ onImported }: Props) {
           </ul>
 
           {pending.summary.conflictItems.length > 0 && (
-            <div className="mt-2 rounded border border-warning-banner-line bg-white/60 p-2 dark:bg-black/20">
+            <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
               <p className="text-xs font-semibold text-warning-banner-ink">
                 Diese {pending.summary.conflictItems.length} lokalen Einträge
                 würden überschrieben:
@@ -375,7 +375,7 @@ export default function ExportPanel({ onImported }: Props) {
           </ul>
 
           {icsPending.warnings.length > 0 && (
-            <div className="mt-2 rounded border border-warning-banner-line bg-white/60 p-2 dark:bg-black/20">
+            <div className="mt-2 rounded border border-warning-banner-line bg-veil p-2">
               <p className="text-xs font-semibold text-warning-banner-ink">
                 Hinweise:
               </p>
@@ -411,12 +411,12 @@ export default function ExportPanel({ onImported }: Props) {
       )}
 
       {status && (
-        <p className="break-all rounded bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
+        <p className="break-all rounded bg-success-surface px-3 py-2 text-sm text-success-ink">
           {status}
         </p>
       )}
       {error && (
-        <p className="break-all rounded bg-red-50 px-3 py-2 text-sm text-error-ink dark:bg-red-900/30">
+        <p className="break-all rounded bg-error-surface px-3 py-2 text-sm text-error-ink">
           {error}
         </p>
       )}

@@ -185,7 +185,7 @@ export default function PrintReportPanel() {
           )}
         </div>
         {status && (
-          <p className="mt-2 break-all text-sm text-green-700 dark:text-green-300">
+          <p className="mt-2 break-all text-sm text-success-ink">
             {status}
           </p>
         )}
