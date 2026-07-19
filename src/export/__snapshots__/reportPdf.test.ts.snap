@@ -20,6 +20,14 @@ exports[`toAutoTableInput > liefert Kopf- und Datenzeilen (inkl. Tagessumme) in 
       },
     ],
   ],
+  "foot": [
+    [
+      {
+        "colSpan": 8,
+        "content": "Summe: 2:00 Std",
+      },
+    ],
+  ],
   "head": [
     [
       "Datum",

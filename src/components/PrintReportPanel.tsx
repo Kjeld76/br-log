@@ -160,7 +160,9 @@ export default function PrintReportPanel() {
         to: range.to || undefined,
       });
       setModel(
-        buildReportModel(entries, (e) => e.tagLabels.join(", "), {
+        // Projektor bekommt die GlEntryView (nicht das rohe Listen-Item,
+        // Finding M1) -- tagLabels ist dort identisch benannt/typisiert.
+        buildReportModel(entries, (view) => view.tagLabels.join(", "), {
           name,
           from: range.from,
           to: range.to,
@@ -503,6 +505,14 @@ export default function PrintReportPanel() {
               )}
             </tbody>
             <tfoot>
+              {/* Finding I1: die drei Zellen hier müssen IMMER exakt
+                  model.columns.length Spalten ergeben, sonst bricht die
+                  Tabellenbreite bei showTags=false (7 statt 8 Spalten). Die
+                  ersten 4 Spalten (Datum/Von/Bis/Pause) und die 5. Spalte
+                  (Dauer, trägt hier den Summenwert) sind unabhängig von
+                  showTags fix -- nur die letzte Zelle muss den Rest
+                  (Schlagwörter? + Info + Geplante Schicht) dynamisch
+                  aufnehmen. */}
               <tr>
                 <td style={cellStyle} colSpan={4}>
                   <strong>{model.totalLabel}</strong>
@@ -510,7 +520,9 @@ export default function PrintReportPanel() {
                 <td style={cellStyle}>
                   <strong>{model.totalValue}</strong>
                 </td>
-                <td style={cellStyle} colSpan={3}></td>
+                {model.columns.length > 5 && (
+                  <td style={cellStyle} colSpan={model.columns.length - 5}></td>
+                )}
               </tr>
             </tfoot>
           </table>

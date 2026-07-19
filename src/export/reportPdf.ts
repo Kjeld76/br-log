@@ -29,7 +29,7 @@ import type { EntryListItem } from "../types";
 import { minutesToHhmm } from "../lib/time";
 import { formatDateDe, todayIso } from "../lib/calendar";
 import { PRINT } from "../lib/tokens";
-import { glEntryView } from "./glProjection";
+import { glEntryView, type GlEntryView } from "./glProjection";
 
 export interface ReportOpts {
   name: string;
@@ -48,7 +48,7 @@ export interface ReportOpts {
 }
 
 export interface ReportRow {
-  date: string; // bereits deutsch formatiert (formatDateDe), ggf. mit " ⚠"-Suffix bei Widerspruch
+  date: string; // bereits deutsch formatiert (formatDateDe), ggf. mit " *"-Suffix bei Widerspruch (Legende: OBJECTION_LEGEND, erste Zeile von ReportModel.objectionLines)
   start: string;
   end: string;
   pause: string; // Pause in Minuten als String, "0" ohne Pause (Konsistenz mit CSV-Export)
@@ -102,9 +102,13 @@ export interface ReportModel {
   totalValue: string;
   compensationLabel: string;
   /**
+   * Widerspruchs-Block: bei mindestens einem Widerspruch steht als ERSTE
+   * Zeile die Legende `OBJECTION_LEGEND` ("* = Eintrag mit Widerspruch" --
+   * erklärt das " *"-Suffix in `ReportRow.date`, siehe dort), gefolgt von
    * "TT.MM.JJJJ — Begründung (Name)" je Widerspruch, aus
-   * `GlEntryView.objections` alle Arbeitszeit-Einträge zusammengetragen
-   * (Reihenfolge = Zeilenreihenfolge). Leer = kein Block im PDF.
+   * `GlEntryView.objections` aller Arbeitszeit-Einträge zusammengetragen
+   * (Reihenfolge = Zeilenreihenfolge). Leer = kein Block im PDF (auch keine
+   * Legende, dann bräuchte sie niemand).
    */
   objectionLines: string[];
   /**
@@ -137,6 +141,16 @@ const SIGNATURE_LABELS: [string, string] = [
   "Datum, Unterschrift Betriebsratsmitglied",
   "Datum, Unterschrift Geschäftsleitung/Vorgesetzte:r",
 ];
+
+/**
+ * Erste Zeile des Widerspruchs-Blocks, erklärt das " *"-Suffix in der
+ * Datums-Zelle. War ursprünglich "⚠" (U+26A0) statt " *" -- das schaltet
+ * jsPDF-intern von WinAnsi auf UTF-16BE um, während die Helvetica-
+ * Standardfonts WinAnsi-kodiert bleiben: alle Zeichen NACH dem Suffix
+ * wurden dadurch zu Zeichensalat (Finding C2, empirisch belegt). Ein reines
+ * ASCII-Suffix plus dieser Legende vermeidet das.
+ */
+const OBJECTION_LEGEND = "* = Eintrag mit Widerspruch";
 
 /** ISO (YYYY-MM-DD) -> "TT.MM.JJJJ", OHNE Wochentag (Unterschied zu formatDateDe). */
 function formatDateDdMmYyyy(iso: string): string {
@@ -228,15 +242,18 @@ function buildDayRows(entries: EntryListItem[], rows: ReportRow[]): ReportTableR
  * BR-Tätigkeit und laufen NICHT in die Zeilen/Summe der Arbeitszeit-Tabelle
  * ein, sondern in eine eigene Zusammenfassungszeile.
  *
- * `tagLabels` ist bewusst ein Projektor (Entry -> Anzeigetext) statt eines
- * hart einprogrammierten `e.tagLabels.join(", ")`: dieselbe Idee wie
+ * `tagLabels` ist bewusst ein Projektor (GlEntryView -> Anzeigetext) statt
+ * eines hart einprogrammierten `view.tagLabels.join(", ")`: dieselbe Idee wie
  * `CsvColumn.value` in toCsv.ts (siehe dortiger Kopfkommentar "weitere
  * Formatter können dieselben Spaltendefinitionen nutzen") -- hält das Modell
  * unabhängig von einer festen Trennzeichen-Konvention und leicht testbar.
+ * Bekommt bewusst die GlEntryView (NICHT das rohe `EntryListItem`, Finding
+ * M1): sonst würde ausgerechnet diese eine Spalte NICHT mehr ausschließlich
+ * aus `glEntryView(e)` lesen wie der Rest der Zeile.
  */
 export function buildReportModel(
   entries: EntryListItem[],
-  tagLabels: (entry: EntryListItem) => string,
+  tagLabels: (view: GlEntryView) => string,
   opts: ReportOpts
 ): ReportModel {
   const sorted = [...entries].sort((a, b) =>
@@ -257,14 +274,14 @@ export function buildReportModel(
   const rows: ReportRow[] = workEntries.map((e) => {
     const view = glEntryView(e);
     const dateLabel =
-      formatDateDe(view.date) + (view.objections.length > 0 ? " ⚠" : "");
+      formatDateDe(view.date) + (view.objections.length > 0 ? " *" : "");
     return {
       date: dateLabel,
       start: view.startTime ?? "",
       end: view.endTime ?? "",
       pause: String(view.pauseMinutes),
       duration: minutesToHhmm(view.durationMinutes),
-      tags: tagLabels(e),
+      tags: tagLabels(view),
       info: view.infoForManagement,
       shift: view.hadPlannedShift ? "ja" : "nein",
     };
@@ -272,9 +289,15 @@ export function buildReportModel(
 
   const dayRows = buildDayRows(workEntries, rows);
 
-  const objectionLines = workEntries.flatMap(
+  const objectionDetailLines = workEntries.flatMap(
     (e) => glEntryView(e).objections.map(formatObjectionLine)
   );
+  // Legende nur voranstellen, wenn es überhaupt einen Widerspruch gibt --
+  // sonst gäbe es einen Ein-Zeilen-"Block" ohne jeden Widerspruch darunter.
+  const objectionLines =
+    objectionDetailLines.length > 0
+      ? [OBJECTION_LEGEND, ...objectionDetailLines]
+      : [];
 
   const periodLabel = `${opts.from ? formatDateDe(opts.from) : "Anfang"} – ${
     opts.to ? formatDateDe(opts.to) : "Ende"
@@ -335,6 +358,13 @@ function entryRowCells(r: ReportRow, showTags: boolean): string[] {
 export function toAutoTableInput(model: ReportModel): {
   head: string[][];
   body: (string | { content: string; colSpan: number })[][];
+  /**
+   * Fußzeile mit der Monatssumme, eine über alle Spalten gespannte Zelle
+   * (Finding C1: `totalLabel`/`totalValue` standen bislang nur im Modell,
+   * ohne je gedruckt zu werden -- die Vorschau zeigt dieselbe Summe in ihrem
+   * `<tfoot>`, siehe PrintReportPanel.tsx).
+   */
+  foot: (string | { content: string; colSpan: number })[][];
 } {
   return {
     head: [model.columns],
@@ -343,7 +373,41 @@ export function toAutoTableInput(model: ReportModel): {
         ? entryRowCells(r.row, model.showTags)
         : [{ content: r.label, colSpan: model.columns.length }]
     ),
+    foot: [
+      [
+        {
+          content: `${model.totalLabel}: ${model.totalValue}`,
+          colSpan: model.columns.length,
+        },
+      ],
+    ],
   };
+}
+
+/**
+ * Reine Berechnung für den Widerspruchs-Block im PDF-Footer (Finding I2):
+ * bricht jede Zeile aus `objectionLines` einzeln um (via injizierter
+ * `splitToLines`, damit die Funktion ohne echtes jsPDF-Dokument testbar
+ * bleibt -- die tatsächliche Zeilenbreite hängt von Font/Fontgröße ab, die
+ * nur ein echtes Dokument kennt) und liefert sowohl die flache Liste ALLER
+ * Druckzeilen (Reihenfolge = Eingabereihenfolge, jede Eingabezeile kann zu
+ * mehreren Ausgabezeilen werden) als auch die daraus resultierende
+ * Blockhöhe in mm (Überschrift + `printLines.length * 5` + Nachlaufabstand).
+ * Dieselbe Zeilenanzahl fließt in BEIDE Werte ein, damit die
+ * Seitenumbruch-Schätzung (`neededForFooterBlock` in renderReportPdf) nie
+ * von der tatsächlich gedruckten Höhe abweicht -- vorher nahm die Schätzung
+ * pauschal eine Druckzeile pro Widerspruch an, obwohl `doc.text(..., {
+ * maxWidth })` lange Begründungen intern umbricht, ohne die Y-Position
+ * entsprechend mitzuführen (Zeilen überlappten sich sichtbar).
+ */
+export function buildObjectionsBlockLayout(
+  objectionLines: string[],
+  splitToLines: (line: string) => string[]
+): { printLines: string[]; blockHeight: number } {
+  if (objectionLines.length === 0) return { printLines: [], blockHeight: 0 };
+  const printLines = objectionLines.flatMap((line) => splitToLines(line));
+  const blockHeight = 6 + printLines.length * 5 + 2;
+  return { printLines, blockHeight };
 }
 
 const PAGE_MARGIN = 14; // mm
@@ -415,14 +479,22 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
   });
   y += 1; // Abstand vor der Tabelle (entspricht dem bisherigen "+6" nach der letzten Kopfzeile)
 
-  const { head, body } = toAutoTableInput(model);
+  const { head, body, foot } = toAutoTableInput(model);
   autoTable(doc, {
     head,
     body,
+    foot,
+    // "lastPage" statt des Default ("everyPage"): die Monatssumme ist ein
+    // EINMALIGER Gesamtwert, kein Seiten-Zwischenstand -- sie soll deshalb
+    // nur einmal erscheinen, direkt unter der letzten Tabellenzeile (genau
+    // dort, wo auch die Vorschau ihr <tfoot> zeigt), nicht auf jeder Seite
+    // erneut (Finding C1).
+    showFoot: "lastPage",
     startY: y,
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
     styles: { fontSize: 8.5, cellPadding: 1.5 },
     headStyles: { fillColor: PRINT.headerBg }, // slate-600 (tokens.ts)
+    footStyles: { fontStyle: "bold" },
     columnStyles: buildColumnStyles(model.columns),
     rowPageBreak: "avoid", // siehe Pagination-Kommentar oben (Tagessummen/Selbst-Review)
   });
@@ -432,26 +504,38 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
       .finalY + 8;
 
+  // Ab hier gilt 9pt für Freizeitausgleich-Zeile und Widerspruchs-Block --
+  // VOR der Höhenschätzung gesetzt (nicht erst kurz vor dem Druck), damit
+  // `buildObjectionsBlockLayout` unten mit derselben Fontgröße umbricht, mit
+  // der später tatsächlich gedruckt wird (Finding I2: die Schätzung muss zur
+  // Druckgröße passen, sonst weicht sie wieder von der echten Höhe ab).
+  doc.setFontSize(9);
+
+  const objectionsWidth = pageWidth - 2 * PAGE_MARGIN;
+  const objectionsLayout = buildObjectionsBlockLayout(model.objectionLines, (line) =>
+    doc.splitTextToSize(line, objectionsWidth)
+  );
+
   // Grobe Höhenschätzung für Freizeitausgleich-Zeile + optionalen
   // Widerspruchs-Block + Unterschriftsfelder -- analog zur bisherigen
   // Heuristik (kein exaktes Text-Measuring, siehe Kommentar oben zu
-  // "avoid"/"auto"). Bei sehr vielen Widersprüchen kann der Block dennoch
-  // über die Seite hinausragen; das teilt die bisherige Vereinfachung
-  // dieses Blocks (kein Mehrseiten-Fließtext-Layout für den Footer).
-  const objectionsBlockHeight =
-    model.objectionLines.length > 0 ? 6 + model.objectionLines.length * 5 + 2 : 0;
-  const neededForFooterBlock = 8 + objectionsBlockHeight + 24;
+  // "avoid"/"auto"). Bei sehr vielen (oder sehr langen) Widersprüchen kann
+  // der Block dennoch über die Seite hinausragen; das teilt die bisherige
+  // Vereinfachung dieses Blocks (kein Mehrseiten-Fließtext-Layout für den
+  // Footer) -- `objectionsLayout.blockHeight` beruht aber jetzt auf der
+  // tatsächlichen (umgebrochenen) Druckzeilenzahl statt pauschal einer Zeile
+  // je Widerspruch (Finding I2).
+  const neededForFooterBlock = 8 + objectionsLayout.blockHeight + 24;
   if (afterTableY + neededForFooterBlock > pageHeight - PAGE_MARGIN) {
     doc.addPage();
     afterTableY = 18;
   }
 
-  doc.setFontSize(9);
   doc.text(
     `Freizeitausgleich in diesem Zeitraum: ${model.compensationLabel}`,
     PAGE_MARGIN,
     afterTableY,
-    { maxWidth: pageWidth - 2 * PAGE_MARGIN }
+    { maxWidth: objectionsWidth }
   );
 
   let footerY = afterTableY + 8;
@@ -460,10 +544,13 @@ export function renderReportPdf(model: ReportModel): Uint8Array {
     doc.text("Widersprüche der Geschäftsleitung", PAGE_MARGIN, footerY);
     doc.setFont("helvetica", "normal");
     footerY += 5;
-    model.objectionLines.forEach((line) => {
-      doc.text(line, PAGE_MARGIN, footerY, {
-        maxWidth: pageWidth - 2 * PAGE_MARGIN,
-      });
+    // `printLines` ist bereits auf `objectionsWidth` umgebrochen (siehe
+    // buildObjectionsBlockLayout oben) -- kein `maxWidth` mehr nötig, UND
+    // footerY wandert um `printLines.length * 5` statt um einer Zeile je
+    // Widerspruch mit, sonst überlappten sich Folgezeilen langer
+    // Begründungen (Finding I2).
+    objectionsLayout.printLines.forEach((line) => {
+      doc.text(line, PAGE_MARGIN, footerY);
       footerY += 5;
     });
     footerY += 2;

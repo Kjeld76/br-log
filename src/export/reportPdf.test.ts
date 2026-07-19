@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildObjectionsBlockLayout,
   buildReportModel,
   renderReportPdf,
   toAutoTableInput,
@@ -8,6 +9,7 @@ import {
   type ReportTableRow,
 } from "./reportPdf";
 import type { EntryListItem } from "../types";
+import type { GlEntryView } from "./glProjection";
 
 // Kein PDF-Byte-Snapshot (siehe reportPdf.ts-Kommentar) -- getestet wird
 // ausschließlich das reine Modell (buildReportModel) und die daraus
@@ -34,7 +36,7 @@ function entry(overrides: Partial<EntryListItem> = {}): EntryListItem {
   };
 }
 
-const joinTags = (e: EntryListItem) => e.tagLabels.join(", ");
+const joinTags = (v: GlEntryView) => v.tagLabels.join(", ");
 
 function dayRowKinds(model: ReportModel): ReportTableRow["kind"][] {
   return model.dayRows.map((r) => r.kind);
@@ -323,7 +325,12 @@ describe("buildReportModel: Tagessummen (dayRows)", () => {
 });
 
 describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
-  it("kennzeichnet Zeilen mit Widerspruch durch das Suffix ' ⚠' in der Datums-Zelle", () => {
+  // Finding C2 (empirisch belegt): "⚠" (U+26A0) schaltet jsPDF intern von
+  // WinAnsi auf UTF-16BE um, Helvetica bleibt aber WinAnsi-kodiert -- alle
+  // Zeichen NACH dem Suffix wurden dadurch zu Zeichensalat. Das Suffix ist
+  // deshalb reines ASCII (" *"); die Legende dazu steht als erste Zeile im
+  // Widerspruchs-Block (siehe nächster Test).
+  it("kennzeichnet Zeilen mit Widerspruch durch das Suffix ' *' in der Datums-Zelle", () => {
     const entries = [
       entry({
         id: "a",
@@ -345,11 +352,11 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       showTags: true,
     });
 
-    expect(model.rows[0].date).toBe("Mo., 01.06.2026 ⚠");
+    expect(model.rows[0].date).toBe("Mo., 01.06.2026 *");
     expect(model.rows[1].date).toBe("Mi., 03.06.2026");
   });
 
-  it("listet Widersprüche unter der Tabelle als 'TT.MM.JJJJ — Begründung (Name)' je Zeile", () => {
+  it("listet Widersprüche unter der Tabelle als 'TT.MM.JJJJ — Begründung (Name)' je Zeile, mit der Legende zum ' *'-Suffix als erster Zeile", () => {
     const entries = [
       entry({
         id: "a",
@@ -378,6 +385,7 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
     });
 
     expect(model.objectionLines).toEqual([
+      "* = Eintrag mit Widerspruch",
       "02.06.2026 — Frist versäumt (GL)",
       "06.06.2026 — Unklare Angabe (Team GL)",
     ]);
@@ -416,7 +424,10 @@ describe("buildReportModel: Widerspruchs-Kennzeichnung", () => {
       showTags: true,
     });
 
-    expect(model.objectionLines).toEqual(["ohne Datum — Zu spät gemeldet (Team GL)"]);
+    expect(model.objectionLines).toEqual([
+      "* = Eintrag mit Widerspruch",
+      "ohne Datum — Zu spät gemeldet (Team GL)",
+    ]);
   });
 });
 
@@ -601,6 +612,42 @@ describe("buildReportModel: showTags", () => {
   });
 });
 
+describe("buildReportModel: tagLabels-Projektor (M1)", () => {
+  // Finding M1: `tags: tagLabels(e)` reichte bislang das ROHE Listen-Item an
+  // den Projektor durch, nicht die GL-Sicht -- der Doc-Kommentar "Die Zeilen
+  // lesen ausschließlich aus glEntryView(e)" stimmte an dieser einen Stelle
+  // nicht. Der Projektor bekommt jetzt dieselbe GlEntryView wie alle anderen
+  // Felder der Zeile.
+  it("übergibt dem tagLabels-Projektor die GlEntryView (ohne rohe Zusatzfelder wie secretDetails), nicht das rohe Listen-Item", () => {
+    let received: GlEntryView | undefined;
+    const spy = (view: GlEntryView) => {
+      received = view;
+      return view.tagLabels.join(", ");
+    };
+    const withExtraField = {
+      ...entry({ tagLabels: ["Sitzung"] }),
+      secretDetails: "SHOULD_NOT_LEAK",
+    } as EntryListItem;
+
+    const model = buildReportModel([withExtraField], spy, {
+      name: "Mario König",
+      from: "",
+      to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
+    });
+
+    expect(received).toBeDefined();
+    expect(
+      (received as unknown as { secretDetails?: string }).secretDetails
+    ).toBeUndefined();
+    expect(received?.tagLabels).toEqual(["Sitzung"]);
+    expect(model.rows[0].tags).toBe("Sitzung");
+  });
+});
+
 describe("toAutoTableInput", () => {
   it("liefert Kopf- und Datenzeilen (inkl. Tagessumme) in der von jspdf-autotable erwarteten {head, body}-Struktur", () => {
     const entries = [
@@ -668,6 +715,84 @@ describe("toAutoTableInput", () => {
       { content: "Summe 01.06.2026 — 1:30", colSpan: model.columns.length },
     ]);
   });
+
+  // Finding C1: totalLabel/totalValue standen bislang nur im Modell, wurden
+  // aber nirgends gedruckt -- die Vorschau (PrintReportPanel.tsx) zeigt die
+  // Summe in ihrem <tfoot>, das PDF gar nicht. Fix: autotable bekommt ein
+  // `foot` mit genau dieser Summe, eine über alle Spalten gespannte Zelle
+  // (analog zu den bereits vorhandenen Tagessummen-Zeilen im `body`).
+  it("liefert eine Fußzeile mit der Monatssumme als eine über alle Spalten gespannte Zelle (C1)", () => {
+    const entries = [
+      entry({ id: "a", date: "2026-06-01", durationMinutes: 90 }),
+      entry({ id: "b", date: "2026-06-02", durationMinutes: 120 }),
+    ];
+    const model = buildReportModel(entries, joinTags, {
+      name: "Mario König",
+      from: "",
+      to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
+    });
+
+    const { foot } = toAutoTableInput(model);
+
+    expect(foot).toEqual([
+      [
+        {
+          content: `${model.totalLabel}: ${model.totalValue}`,
+          colSpan: model.columns.length,
+        },
+      ],
+    ]);
+  });
+});
+
+describe("buildObjectionsBlockLayout (I2)", () => {
+  // Finding I2: der Widerspruchs-Block nahm bislang pauschal EINE Druckzeile
+  // pro Widerspruch an (`footerY += 5` je Eintrag), obwohl `doc.text(..., {
+  // maxWidth })` lange Begründungen intern in mehrere Zeilen umbricht, ohne
+  // dass footerY entsprechend mitwandert -- Folgezeilen überlappten sich.
+  // `buildObjectionsBlockLayout` bekommt die Umbruch-Funktion injiziert
+  // (`splitToLines`), damit sie ohne echtes jsPDF-Dokument testbar bleibt --
+  // die tatsächliche Zeilenbreite hängt von Font/Fontgröße ab, die nur ein
+  // echtes Dokument kennt.
+  it("gibt jede Zeile unverändert durch und berechnet die Blockhöhe aus genau dieser (unveränderten) Zeilenzahl, wenn splitToLines nicht umbricht", () => {
+    const { printLines, blockHeight } = buildObjectionsBlockLayout(
+      ["Zeile 1", "Zeile 2"],
+      (line) => [line]
+    );
+
+    expect(printLines).toEqual(["Zeile 1", "Zeile 2"]);
+    expect(blockHeight).toBe(6 + 2 * 5 + 2);
+  });
+
+  it("zählt umgebrochene Zeilen einzeln in printLines UND in der Blockhöhe, nicht nur die Rohanzahl der Widersprüche", () => {
+    const { printLines, blockHeight } = buildObjectionsBlockLayout(
+      ["kurz", "eine sehr lange Begründung, die umbricht"],
+      (line) =>
+        line === "kurz" ? [line] : ["eine sehr lange Begründung,", "die umbricht"]
+    );
+
+    expect(printLines).toEqual([
+      "kurz",
+      "eine sehr lange Begründung,",
+      "die umbricht",
+    ]);
+    // 1 (kurz) + 2 (umgebrochen) = 3 Druckzeilen -- NICHT 2 (Rohanzahl der
+    // Widersprüche), sonst reicht die Seitenumbruch-Schätzung wieder nicht.
+    expect(blockHeight).toBe(6 + 3 * 5 + 2);
+  });
+
+  it("liefert Blockhöhe 0 und keine Druckzeilen bei leerer Widerspruchsliste, ohne splitToLines aufzurufen", () => {
+    const { printLines, blockHeight } = buildObjectionsBlockLayout([], () => {
+      throw new Error("splitToLines darf bei leerer Liste nie aufgerufen werden");
+    });
+
+    expect(printLines).toEqual([]);
+    expect(blockHeight).toBe(0);
+  });
 });
 
 describe("renderReportPdf", () => {
@@ -695,9 +820,22 @@ describe("renderReportPdf", () => {
     return false;
   }
 
+  // Finding I3: das Canary-Fixture lief bislang OHNE Widerspruch und OHNE
+  // Funktion/Betrieb -- der Widerspruchs-Block und die Kopf-Zusatzzeilen
+  // (jeweils eigene doc.text-Aufrufe im Footer) liefen im Canary-Rendering
+  // also nie mit. Erweitert um genau das, PLUS eine Positivkontrolle: ohne
+  // sie würde der Negativtest (Zeilen 840f.) still erblinden, sobald das PDF
+  // z. B. künftig mit `compress: true` erzeugt würde -- dann fänden sich
+  // WEDER der Canary-String NOCH irgendein anderer Klartext mehr in den
+  // Roh-Bytes, und der Test würde fälschlich weiter grün bleiben.
   it("CANARY: secretDetails auf einem Listen-Item (künftige Regression -- EntryListItem trägt es heute strukturell nicht) landet weder als Roh-Bytes noch als Latin1-String im PDF", () => {
     const withSecret = {
-      ...entry({ infoForManagement: "BR-Sitzung" }),
+      ...entry({
+        infoForManagement: "BR-Sitzung",
+        objections: [
+          { id: "o1", reason: "Frist versäumt", byWhom: "GL", date: "2026-06-02" },
+        ],
+      }),
       secretDetails: "VERTRAULICH_CANARY_12345",
     } as EntryListItem;
 
@@ -705,8 +843,8 @@ describe("renderReportPdf", () => {
       name: "Mario König",
       from: "",
       to: "",
-      funktion: "",
-      betrieb: "",
+      funktion: "BR-Vorsitzender",
+      betrieb: "Musterwerk GmbH",
       nachname: "",
       showTags: true,
     });
@@ -714,6 +852,12 @@ describe("renderReportPdf", () => {
 
     expect(containsAsciiBytes(bytes, "VERTRAULICH_CANARY_12345")).toBe(false);
     expect(toLatin1String(bytes)).not.toContain("VERTRAULICH_CANARY_12345");
+
+    // Positivkontrolle: ein sicher vorhandener, sichtbarer String MUSS
+    // gefunden werden -- belegt, dass containsAsciiBytes/toLatin1String
+    // tatsächlich gegen lesbaren PDF-Inhalt prüfen, nicht gegen leere oder
+    // komprimierte Bytes.
+    expect(containsAsciiBytes(bytes, "BR-Sitzung")).toBe(true);
   });
 
   it("rendert ohne zu werfen, wenn Widersprüche, Kopf-Zusatzzeilen und Tagessummen gemeinsam vorkommen", () => {
@@ -732,6 +876,60 @@ describe("renderReportPdf", () => {
       to: "",
       funktion: "BR-Vorsitzender",
       betrieb: "Musterwerk GmbH",
+      nachname: "",
+      showTags: true,
+    });
+
+    expect(() => renderReportPdf(model)).not.toThrow();
+  });
+
+  // Finding C1: totalLabel/totalValue standen bislang nur im Modell, ohne je
+  // gedruckt zu werden.
+  it("druckt die Monatssumme als sichtbaren String im PDF", () => {
+    const entries = [
+      entry({ id: "a", date: "2026-06-01", durationMinutes: 90 }),
+      entry({ id: "b", date: "2026-06-02", durationMinutes: 120 }),
+    ];
+    const model = buildReportModel(entries, joinTags, {
+      name: "Mario König",
+      from: "",
+      to: "",
+      funktion: "",
+      betrieb: "",
+      nachname: "",
+      showTags: true,
+    });
+
+    const bytes = renderReportPdf(model);
+
+    expect(containsAsciiBytes(bytes, model.totalValue)).toBe(true);
+  });
+
+  // Finding I2: eine lange Widerspruchsbegründung, die intern umbricht, darf
+  // die Seitenumbruch-Schätzung nicht mehr unterlaufen (vorher: pauschal
+  // eine Zeile pro Widerspruch angenommen) -- reines Rauchtest-Kriterium
+  // (kein Wurf), die eigentliche Arithmetik prüft buildObjectionsBlockLayout
+  // oben isoliert.
+  it("rendert ohne zu werfen, wenn eine Widerspruchsbegründung sehr lang ist und intern umbricht", () => {
+    const longReason =
+      "Diese Begründung ist absichtlich sehr lang, damit sie beim Rendern " +
+      "innerhalb der Seitenbreite garantiert in mehrere Zeilen umgebrochen " +
+      "wird und die Seitenumbruch-Schätzung des Widerspruchs-Blocks auf die " +
+      "Probe stellt, statt nur eine einzige kurze Zeile anzunehmen.";
+    const entries = [
+      entry({
+        id: "a",
+        date: "2026-06-01",
+        objections: [{ id: "o1", reason: longReason, byWhom: "GL", date: "2026-06-02" }],
+      }),
+    ];
+
+    const model = buildReportModel(entries, joinTags, {
+      name: "Mario König",
+      from: "",
+      to: "",
+      funktion: "",
+      betrieb: "",
       nachname: "",
       showTags: true,
     });
