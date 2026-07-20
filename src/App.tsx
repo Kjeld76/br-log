@@ -870,6 +870,7 @@ export default function App() {
           {view === "daten" && (
             <DataView
               reloadKey={reloadKey}
+              mobile={mobile}
               onChanged={() => {
                 loadTags();
                 loadAllTags();
