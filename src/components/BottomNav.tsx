@@ -22,6 +22,8 @@ interface Props {
 export default function BottomNav({ view, onNavigate }: Props) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-surface">
+      {/* Leiste 64px (vorher 48px) und Pille 32x56px (vorher 28x56px) --
+          größere Touch-Ziele für die Daumenzone (Design-Handoff #27, 1a). */}
       {NAV.map((n) => {
         const active = view === n.key;
         return (
@@ -31,7 +33,7 @@ export default function BottomNav({ view, onNavigate }: Props) {
             onClick={() => onNavigate(n.key)}
             aria-current={active ? "page" : undefined}
             className={
-              "flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-xs transition " +
+              "flex min-h-[64px] flex-1 flex-col items-center justify-center gap-1 py-2 text-xs transition " +
               (active
                 ? "font-medium text-primary-outline-ink"
                 : "text-secondary-ink")
@@ -39,11 +41,11 @@ export default function BottomNav({ view, onNavigate }: Props) {
           >
             <span
               className={
-                "flex h-7 w-14 items-center justify-center rounded-full transition " +
+                "flex h-8 w-14 items-center justify-center rounded-full transition " +
                 (active ? "bg-info-badge" : "")
               }
             >
-              <Icon name={n.icon} size={20} />
+              <Icon name={n.icon} size={22} />
             </span>
             <span className="leading-none">{n.shortLabel}</span>
           </button>
