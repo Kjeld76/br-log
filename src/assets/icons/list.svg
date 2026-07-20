@@ -1,17 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#brGradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <defs>
-    <!-- userSpaceOnUse: der Default (objectBoundingBox) kollabiert auf reinen
-         Linien-Icons (Hoehe 0) und laesst den Stroke unsichtbar werden. -->
-    <linearGradient id="brGradient" x1="0" y1="24" x2="24" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1e3a8a" />
-      <stop offset="50%" stop-color="#2563eb" />
-      <stop offset="100%" stop-color="#10b981" />
-    </linearGradient>
-  </defs>
-  <line x1="8" y1="6" x2="21" y2="6" />
-  <line x1="8" y1="12" x2="21" y2="12" />
-  <line x1="8" y1="18" x2="21" y2="18" />
-  <line x1="3" y1="6" x2="3.01" y2="6" />
-  <line x1="3" y1="12" x2="3.01" y2="12" />
-  <line x1="3" y1="18" x2="3.01" y2="18" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"></path><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>
