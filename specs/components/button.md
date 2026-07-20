@@ -36,8 +36,9 @@ Zustände: default · hover (`hover:bg-primary-hover`) · focus-visible (global)
   im gesamten `src/`, geprüft per Grep).
 
 Verwendung: `src/App.tsx:1026` (Fehler-Retry), `src/App.tsx` „Erneut
-versuchen"; `src/components/EntryForm.tsx:342,717`; `src/components/EntryList.tsx:95`
-(„+ Neuer Eintrag"); `src/components/AppointmentForm.tsx:659`;
+versuchen"; `src/components/EntryForm.tsx:342,717`; `src/components/EntryList.tsx:141-147`
+(„+ Neuer Eintrag", nur `!mobile` -- am Desktop bleibt der Button oben, s.
+Abschnitt „FAB" unten); `src/components/AppointmentForm.tsx:659`;
 `src/views/LockScreen.tsx:185`; `src/components/TagManager.tsx:90`;
 `src/components/RecoveryCodeReveal.tsx:102`; `src/components/SecurityPanel.tsx:164`;
 `src/components/PrintReportPanel.tsx:155`.
@@ -100,6 +101,35 @@ Zustände: default · hover (`hover:bg-surface-2`) · focus-visible (global).
 
 Verwendung: `src/components/AppointmentMonthGrid.tsx` (Monatsnavigation,
 einzige Fundstelle dieses Musters).
+
+## FAB (Historie „+ Neuer Eintrag", `EntryList.tsx`, nur Android)
+
+Tokens:
+  Fläche/Text: `bg-primary text-on-primary`, `hover:bg-primary-hover` --
+    dieselbe Primär-Farbfamilie wie der Standard-Primär-Button oben, nur als
+    Kreis statt Text-Pille.
+  Form/Größe: `rounded-full`, feste `h-14 w-14` (56×56px, Vorgabe aus dem
+    Design-Handoff #27, 1d). Inhalt: `Icon name="plus" size={24}`, kein
+    sichtbarer Text.
+  Position: `fixed bottom-[5.5rem] right-4 z-sticky` -- bildschirmfest in der
+    Daumenzone, unabhängig vom Scroll-Container. `bottom-[5.5rem]` (88px)
+    hält bewusst mehr Abstand als die BottomNav braucht (real ca. 68-70px
+    hoch, App.tsx reserviert dafür `pb-[4.5rem]`/72px Scrollraum) -- ein
+    zusätzliches Sicherheitspolster (Material-FAB-Gutter), damit der FAB die
+    Leiste auch bei größerer Systemschrift nie verdeckt.
+  a11y: `aria-label="Neuer Eintrag"` + `title` (kein sichtbarer Text).
+  focus: lokal `focus-visible:outline focus-visible:outline-2
+    focus-visible:outline-offset-2 focus-visible:outline-focus` (dupliziert
+    statt global, weil der Button außerhalb des normalen Dokumentflusses
+    `fixed` positioniert ist).
+  height/touch: `h-14 w-14` = 56px, deutlich über `min-h-touch` (48px).
+
+Zustände: default · hover (`hover:bg-primary-hover`) · focus-visible (lokal,
+  s. o.). disabled/active/loading — nicht vorhanden.
+
+Verwendung: `src/components/EntryList.tsx:335-343`, nur wenn `mobile` true
+ist (Android); am Desktop bleibt stattdessen der Standard-Primär-Button oben
+in der Suchzeile (s. o., „Primär").
 
 ## Danger (bg-danger)
 

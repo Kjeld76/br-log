@@ -41,7 +41,7 @@ Verwendung: `src/components/OccurrenceListRow.tsx:28-32` (Varianten-Definition
 (Tages-Panel: `variant="panel"`) und Agenda-Suchtreffern (`variant="card"`,
 Default).
 
-## EntryList-Zeile (`src/components/EntryList.tsx:167-238`)
+## EntryList-Zeile (`src/components/EntryList.tsx:238-315`)
 
 Tokens:
   Rahmen/Fläche: `rounded border border-border bg-surface p-3`
@@ -50,27 +50,40 @@ Tokens:
     Hover auf die Akzent-Token (`--color-hover-accent-line`,
     `--color-hover-accent-surface-soft`), nicht nur die neutrale
     `surface-2`-Fläche
-  Status-Badges in der Zeile (s. auch error-box.md): `bg-success-surface
-    text-success-ink` (Freizeitausgleich), `bg-warning-badge
-    text-warning-badge-ink` (keine geplante Schicht), `bg-error-badge
-    text-error-badge-ink` (Widerspruch-Zähler)
-  Tags: `TagChip variant="readonly"` (s. chip.md)
+  Innere Reihenfolge seit dem Historie-Redesign (Design-Handoff #27, 1d):
+    Anker-Zeile Datum + Uhrzeit oben (Duration bleibt rechts daneben, s. u.),
+    darunter die Info (`truncate`, einzeilig), darunter EINE gemeinsame
+    Pillen-Zeile mit Tags + allen Status-Badges (vorher: Status-Badges inline
+    mit dem Datum, Tags in einer eigenen Zeile darunter, Info zuletzt --
+    „Badges einheitlich als Pillen" ersetzt diese Mischung durch eine
+    konsistente Reihenfolge)
+  Status-Badges in der Pillen-Zeile (s. auch error-box.md): `rounded-full
+    bg-success-surface text-success-ink` (Freizeitausgleich), `rounded-full
+    bg-warning-badge text-warning-badge-ink` (keine geplante Schicht),
+    `rounded-full bg-error-badge text-error-badge-ink` (Widerspruch-Zähler)
+    — alle drei jetzt einheitlich `rounded-full` (vorher trugen die ersten
+    beiden nur `rounded`, der Objections-Badge war bereits `rounded-full`;
+    Design-Handoff #27, 1d: „Badges einheitlich als kleine Pillen")
+  Tags: `TagChip variant="readonly"` (s. chip.md), Teil derselben Pillen-Zeile
   Vertraulich-Treffer: `text-confidential` (identisches Muster wie
-    OccurrenceListRow)
+    OccurrenceListRow), steht als letztes Element der Karte (nach der
+    Pillen-Zeile)
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus`
-    (`EntryList.tsx:171`) — identisches Muster/Token wie OccurrenceListRow,
+    (`EntryList.tsx:242`) — identisches Muster/Token wie OccurrenceListRow,
     unabhängig dupliziert (kein gemeinsamer Import)
   height/touch: keine `min-h-touch`-Klasse
 
 Zustände: default · hover (Akzent-Rahmen + -Fläche, s. o.) · focus-visible
   (lokal dupliziert) · aktiviert per Klick/Enter/Leertaste. Leerzustand:
   eigene Zeile `border-dashed border-empty-line` („Keine Einträge
-  gefunden.", `EntryList.tsx:240`) — kein interaktives Element, nur Hinweis.
+  gefunden.", `EntryList.tsx:321`) — kein interaktives Element, nur Hinweis.
   disabled/loading/active — nicht vorhanden.
 
-Verwendung: `src/components/EntryList.tsx:167-238` (Haupt-Listenansicht der
-Einträge, inkl. Duration-Summe rechts, Tag-Chips, Objections-Badge).
+Verwendung: `src/components/EntryList.tsx:238-315` (Haupt-Listenansicht der
+Einträge, inkl. Duration-Summe rechts, Tag-Chips, Objections-Badge). Die
+Suchleiste darüber (großes Suchfeld, Filter-Chip/Disclosure) und der FAB
+darunter sind kein List-Row-Muster, s. `input.md`/`chip.md`/`button.md`.
 
 ## Verifikation der Utilities (Grep-Gegenprobe)
 

@@ -863,6 +863,7 @@ export default function App() {
               reloadKey={reloadKey}
               onOpenEntry={openDetail}
               onNewEntry={openNew}
+              mobile={mobile}
             />
           )}
           {view === "auswertung" && <StatsView reloadKey={reloadKey} />}
