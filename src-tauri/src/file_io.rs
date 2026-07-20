@@ -20,12 +20,11 @@
 //   Rückgabe ist dort statt eines Pfads der Anzeigename (SAF-URIs sind
 //   kryptisch und für Nutzer wertlos).
 
-use std::path::PathBuf;
-// Nur Desktop: `Path` (Borrow-Form) wird ausschließlich von den unten
-// `#[cfg(desktop)]`-gated Funktionen check_user_path/write_atomic gebraucht --
-// auf Android sonst "unused import".
-#[cfg(desktop)]
-use std::path::Path;
+// `Path` (Borrow-Form) wird von `check_user_path`/`write_atomic` (Desktop-
+// Dialog-Commands) UND von der Archivkopie-Logik weiter unten gebraucht
+// (`report_archive_copy` läuft -- anders als die Dialog-Commands -- auf allen
+// Plattformen, siehe Kommentar dort) -- deshalb ungated.
+use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -65,11 +64,12 @@ fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
 /// Rename über das Ziel. Verhindert eine halb geschriebene Export-/Backup-/
 /// Recovery-Datei bei Absturz/Stromausfall mitten im Schreiben.
 ///
-/// Nur Desktop: setzt einen echten Dateisystem-Ordner voraus (Nachbardatei +
-/// Rename). Android schreibt stattdessen direkt über die vom SAF-Dialog
-/// gelieferte content://-URI (siehe `mod android`) -- dort gibt es keine
-/// Nachbardatei, in die atomar geschrieben werden könnte.
-#[cfg(desktop)]
+/// Setzt einen echten Dateisystem-Ordner voraus (Nachbardatei + Rename) --
+/// gilt für die Desktop-Dialog-Commands (dort schreibt Android stattdessen
+/// direkt über die vom SAF-Dialog gelieferte content://-URI, siehe `mod
+/// android`, keine Nachbardatei möglich) UND für `report_archive_copy`
+/// (dort ist `data_dir` -- anders als eine SAF-URI -- auf JEDER Plattform ein
+/// normaler, per std::fs beschreibbarer Ordner, deshalb hier ungated).
 fn write_atomic(target: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = target
         .parent()
@@ -400,6 +400,137 @@ pub async fn import_text_file(
     android::open_text(&app, &extension).await
 }
 
+// ---------- Archivkopie des Stundennachweises (Issue #16, Task 4) ----------
+//
+// Optionale, zusätzliche Kopie des per Systemdialog gespeicherten PDF-
+// Stundennachweises im Unterordner `reports/` neben der Datenbank (Opt-in-
+// Checkbox in PrintReportPanel.tsx, Default AUS). Nutzt DASSELBE `data_dir`
+// wie `db_backup`/`delete_plaintext_backup` (lib.rs) -> im portablen Modus
+// (USB-Stick, siehe db_location.rs) landet der Ordner automatisch dort statt
+// in %APPDATA%, ohne dass dieser Code etwas von "portabel" wissen muss.
+//
+// Plattformunabhängig (kein cfg(desktop)): anders als die Dialog-Commands
+// oben (Android schreibt dort über eine vom Nutzer erst noch zu bestätigende
+// SAF-content://-URI) ist `data_dir` auf JEDER Plattform bereits ein realer,
+// per std::fs beschreibbarer Ordner in der App-eigenen Ablage -- exakt das
+// Muster von `db_backup` in lib.rs, das ebenfalls ungated ist.
+
+/// Prüft den vom Frontend gelieferten Dateinamen: nicht leer, kein
+/// Pfadtrenner/`.`/`..`/`:`. Der Name landet als reiner Dateiname unter
+/// `reports/`, kein vom Nutzer im Dialog gewählter Pfad wie bei
+/// `check_user_path` oben -- trotzdem kein blindes Vertrauen in die
+/// IPC-Eingabe.
+///
+/// `:` ist zusätzlich zu `/`/`\` verboten (Review-Finding): ein Name wie
+/// `"C:evil.pdf"` enthält KEINEN Pfadtrenner, trägt aber einen Windows-
+/// Laufwerksbuchstaben-Präfix. `PathBuf::push`/`join` ERSETZT laut
+/// Dokumentation von `std::path::Path::push` den kompletten Basis-Pfad,
+/// sobald das angehängte Segment einen Präfix OHNE Root trägt ("if path has
+/// a prefix but no root (e.g., C:windows), it replaces self.") -- ohne
+/// diesen Check würde `dir.join(file_name)` unterhalb von `unique_report_path`
+/// dann außerhalb von `reports/` schreiben. Gültige Report-Dateinamen
+/// brauchen ohnehin nie einen Doppelpunkt (`fileBaseName` im Frontend ersetzt
+/// ihn schon vorher durch `-`).
+fn sanitized_report_file_name(file_name: &str) -> Result<&str, String> {
+    let trimmed = file_name.trim();
+    let unsafe_name = trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.contains(['/', '\\', ':']);
+    if unsafe_name {
+        return Err("Ungültiger Dateiname für die Archivkopie".to_string());
+    }
+    Ok(trimmed)
+}
+
+/// Findet für `file_name` in `dir` einen freien Namen: existiert die Datei
+/// bereits, wird VOR der Endung ` (2)`, ` (3)`, … angehängt (Windows-Explorer-
+/// Konvention) -- nie überschreiben. Reine Pfadlogik (kein Dateisystemzugriff
+/// außer den `.exists()`-Prüfungen), deshalb ohne Tauri-State testbar.
+///
+/// Zweite Verteidigungslinie (Review-Finding, zusätzlich zur Zeichen-Prüfung
+/// in `sanitized_report_file_name`): JEDER via `dir.join(...)` gebildete
+/// Kandidat wird per `starts_with(dir)` bestätigt, bevor er zurückgegeben
+/// wird. Ein bloßer Zeichen-Check kann künftig lückenhaft sein/übersehen
+/// werden -- diese Prüfung fängt jedes `PathBuf::push`-Ersetzungsverhalten
+/// ab (s. Kommentar bei `sanitized_report_file_name`), unabhängig davon, wie
+/// es zustande kam.
+fn unique_report_path(dir: &Path, file_name: &str) -> Result<PathBuf, String> {
+    let escapes_dir = |candidate: &Path| -> Result<(), String> {
+        if candidate.starts_with(dir) {
+            Ok(())
+        } else {
+            Err("Ungültiger Dateiname für die Archivkopie".to_string())
+        }
+    };
+
+    let wanted = dir.join(file_name);
+    escapes_dir(&wanted)?;
+    if !wanted.exists() {
+        return Ok(wanted);
+    }
+    let name_path = Path::new(file_name);
+    let stem = name_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = name_path
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned());
+    let mut n: u32 = 2;
+    loop {
+        let candidate_name = match &extension {
+            Some(ext) => format!("{stem} ({n}).{ext}"),
+            None => format!("{stem} ({n})"),
+        };
+        let candidate = dir.join(candidate_name);
+        escapes_dir(&candidate)?;
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+        n += 1;
+    }
+}
+
+/// Kernlogik von `report_archive_copy`: legt `dir` an (idempotent), findet
+/// einen freien Namen (siehe `unique_report_path`) und schreibt `bytes`
+/// ATOMAR dorthin. Ohne Tauri-State testbar -- der Command darunter reicht
+/// nur `loc.0.data_dir.join("reports")` als `dir` herein.
+fn write_report_archive(dir: &Path, file_name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let file_name = sanitized_report_file_name(file_name)?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Archivordner \"reports\" konnte nicht angelegt werden: {e}"))?;
+    let target = unique_report_path(dir, file_name)?;
+    write_atomic(&target, bytes)?;
+    Ok(target)
+}
+
+/// Speichert `bytes` (das PDF) zusätzlich im Archivordner `reports/` neben der
+/// Datenbank. Wird von PrintReportPanel.tsx nach jedem erfolgreichen
+/// Systemdialog-Speichern zusätzlich aufgerufen, wenn die Checkbox
+/// „Archivkopie in reports/ ablegen" aktiv ist (Default AUS). Gibt den vollen
+/// Pfad der Archivkopie zurück; ein Fehler hier ist im Frontend nicht-fatal
+/// (das PDF liegt zu diesem Zeitpunkt bereits sicher am vom Nutzer gewählten
+/// Ort).
+///
+/// Kein eigener Sperr-Check: der Nachweis (das `model` in PrintReportPanel.tsx)
+/// existiert überhaupt erst, wenn `buildReport` zuvor erfolgreich Einträge aus
+/// der ENTSPERRTEN Datenbank gelesen hat (`listEntries`) -- bei gesperrter App
+/// zeigt `App.tsx` (`if (locked) return <LockScreen .../>`) das Panel gar
+/// nicht erst an. `loc.0.data_dir` bleibt aber unabhängig vom Sperrzustand
+/// gültig (reine Pfad-/Modus-Auflösung beim Programmstart, siehe
+/// db_location.rs), deshalb braucht dieser Command selbst keinen DbState-Zugriff.
+#[tauri::command]
+pub fn report_archive_copy(
+    loc: tauri::State<'_, crate::AppDbLocation>,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let reports_dir = loc.0.data_dir.join("reports");
+    let target = write_report_archive(&reports_dir, &file_name, &bytes)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 // ---------- Tests: reine Dateisystemlogik (kein echter Dialog, kein Tauri-Setup) ----------
 //
 // Nur Desktop: prüft check_user_path/write_atomic, die es auf Android nicht
@@ -512,5 +643,185 @@ mod tests {
         assert!(result.is_err());
         assert!(!dir.join("export.txt.brtmp").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+// ---------- Tests: Archivkopie in reports/ (Issue #16, Task 4) ----------
+//
+// Reine Pfad-/Dateisystemlogik (kein Tauri-State, kein AppHandle) -- deshalb
+// ungated (anders als das `tests`-Modul oben, das echte Desktop-Dialog-
+// Commands wie `check_user_path` prüft): `write_report_archive` bekommt sein
+// Zielverzeichnis als `&Path` hereingereicht, genau wie der Command es via
+// `loc.0.data_dir.join("reports")` tut.
+#[cfg(test)]
+mod report_archive_tests {
+    use super::{sanitized_report_file_name, unique_report_path, write_report_archive};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn temp_test_dir(label: &str) -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "br-log-report-archive-test-{label}-{}-{n}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("Temp-Testverzeichnis anlegen");
+        dir
+    }
+
+    // ---------- unique_report_path ----------
+
+    #[test]
+    fn unique_report_path_gibt_wunschnamen_wenn_frei() {
+        let dir = temp_test_dir("free");
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
+        assert_eq!(result, dir.join("Nachweis.pdf"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_report_path_haengt_2_an_wenn_datei_existiert() {
+        let dir = temp_test_dir("dup1");
+        fs::write(dir.join("Nachweis.pdf"), b"alt").unwrap();
+
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
+
+        assert_eq!(result, dir.join("Nachweis (2).pdf"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_report_path_zaehlt_bis_3_hoch_bei_mehrfacher_kollision() {
+        let dir = temp_test_dir("dup2");
+        fs::write(dir.join("Nachweis.pdf"), b"alt").unwrap();
+        fs::write(dir.join("Nachweis (2).pdf"), b"alt2").unwrap();
+
+        let result = unique_report_path(&dir, "Nachweis.pdf").unwrap();
+
+        assert_eq!(result, dir.join("Nachweis (3).pdf"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_report_path_ohne_endung_haengt_suffix_ohne_punkt_an() {
+        let dir = temp_test_dir("noext");
+        fs::write(dir.join("Nachweis"), b"alt").unwrap();
+
+        let result = unique_report_path(&dir, "Nachweis").unwrap();
+
+        assert_eq!(result, dir.join("Nachweis (2)"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_report_path_behaelt_mehrteiligen_stamm_bei_mehreren_punkten() {
+        // file_stem/extension trennen nur am LETZTEN Punkt -- "Nachweis.2026"
+        // bleibt der Stamm, ".pdf" die Endung, nicht umgekehrt.
+        let dir = temp_test_dir("multidot");
+        fs::write(dir.join("Nachweis.2026.pdf"), b"alt").unwrap();
+
+        let result = unique_report_path(&dir, "Nachweis.2026.pdf").unwrap();
+
+        assert_eq!(result, dir.join("Nachweis.2026 (2).pdf"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---------- Review-Finding: Windows-Laufwerksbuchstaben-Präfix ----------
+    //
+    // "C:evil.pdf" enthält weder "/" noch "\" und passiert die bisherige
+    // Zeichen-Prüfung in `sanitized_report_file_name` -- ABER
+    // `PathBuf::push`/`join` ERSETZT unter Windows den kompletten Basis-Pfad,
+    // wenn das angehängte Segment einen Präfix (z. B. "C:") OHNE Root trägt
+    // (dokumentiertes std::path::Path::push-Verhalten: "if path has a prefix
+    // but no root (e.g., C:windows), it replaces self."). Das Schreibziel
+    // würde dann außerhalb von reports/ landen, statt dort abgelehnt zu
+    // werden.
+
+    #[test]
+    fn sanitized_report_file_name_lehnt_windows_laufwerksbuchstaben_praefix_ab() {
+        assert!(sanitized_report_file_name("C:evil.pdf").is_err());
+    }
+
+    #[test]
+    fn sanitized_report_file_name_lehnt_windows_laufwerksbuchstaben_praefix_kleinschreibung_ab() {
+        assert!(sanitized_report_file_name("c:evil.pdf").is_err());
+    }
+
+    #[test]
+    fn unique_report_path_lehnt_kandidaten_ausserhalb_von_dir_ab() {
+        // Zweite Verteidigungslinie: selbst ein Aufruf, der die
+        // Zeichen-Sanitisierung umgeht, darf unique_report_path nicht dazu
+        // bringen, einen Pfad außerhalb von `dir` zurückzugeben.
+        let dir = temp_test_dir("escape-check");
+
+        let result = unique_report_path(&dir, "C:evil.pdf");
+
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_report_archive_lehnt_windows_laufwerksbuchstaben_praefix_ab() {
+        let base = temp_test_dir("write-drive-prefix");
+        let reports_dir = base.join("reports");
+
+        let result = write_report_archive(&reports_dir, "C:evil.pdf", b"Inhalt");
+
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    // ---------- write_report_archive ----------
+
+    #[test]
+    fn write_report_archive_legt_ordner_an_und_schreibt_datei() {
+        let base = temp_test_dir("write-base");
+        let reports_dir = base.join("reports");
+
+        let path = write_report_archive(&reports_dir, "Nachweis.pdf", b"Inhalt").unwrap();
+
+        assert_eq!(path, reports_dir.join("Nachweis.pdf"));
+        assert_eq!(fs::read(&path).unwrap(), b"Inhalt");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_report_archive_ueberschreibt_nie_sondern_haengt_suffix_an() {
+        let base = temp_test_dir("write-suffix");
+        let reports_dir = base.join("reports");
+        fs::create_dir_all(&reports_dir).unwrap();
+        fs::write(reports_dir.join("Nachweis.pdf"), b"alt").unwrap();
+
+        let path = write_report_archive(&reports_dir, "Nachweis.pdf", b"neu").unwrap();
+
+        assert_eq!(path, reports_dir.join("Nachweis (2).pdf"));
+        assert_eq!(fs::read(reports_dir.join("Nachweis.pdf")).unwrap(), b"alt");
+        assert_eq!(fs::read(&path).unwrap(), b"neu");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_report_archive_lehnt_leeren_dateinamen_ab() {
+        let base = temp_test_dir("write-empty-name");
+        let reports_dir = base.join("reports");
+
+        let result = write_report_archive(&reports_dir, "   ", b"Inhalt");
+
+        assert!(result.is_err());
+        assert!(!reports_dir.exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_report_archive_lehnt_pfadtrenner_im_dateinamen_ab() {
+        let base = temp_test_dir("write-traversal");
+        let reports_dir = base.join("reports");
+
+        let result = write_report_archive(&reports_dir, "../evil.pdf", b"Inhalt");
+
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&base);
     }
 }

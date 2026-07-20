@@ -5,7 +5,12 @@
 
 import type { Objection } from "../types";
 
+// Nur byWhom/date werden gebraucht -- als Pick statt volles Objection, damit
+// auch die GL-Projektion (glProjection.ts GlEntryView.objections, ohne `id`)
+// hier ohne Anpassung durchgereicht werden kann.
+type ObjectionMeta = Pick<Objection, "byWhom" | "date">;
+
 /** [byWhom, date] gefiltert und mit dem übergebenen Separator gejoint. */
-export function formatObjectionMeta(o: Objection, separator: string): string {
+export function formatObjectionMeta(o: ObjectionMeta, separator: string): string {
   return [o.byWhom, o.date].filter(Boolean).join(separator);
 }

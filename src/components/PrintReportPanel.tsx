@@ -4,11 +4,13 @@ import { listEntries } from "../db/repository";
 import { toUserMessage } from "../lib/errors";
 import { inputCls, secondaryBtnCls } from "../lib/ui";
 import { isWindows } from "../lib/platform";
+import { monthRangeIso, todayIso } from "../lib/calendar";
 // Nur der Typ wird statisch importiert (wird wegkompiliert) -- das Modul
 // selbst kommt per dynamic import, damit jsPDF (~420 kB) nicht im
 // Haupt-Chunk landet und den App-Start nicht verlangsamt.
 import type { ReportModel } from "../export/reportPdf";
 import { Icon } from "./Icon";
+import SegmentedControl from "./SegmentedControl";
 import { PRINT } from "../lib/tokens";
 
 // Finding 13: druckbarer Monats-/Zeitraumnachweis. Linux-Portierung (L5):
@@ -20,22 +22,89 @@ import { PRINT } from "../lib/tokens";
 // über denselben export_binary_file-Command wie andere Binärexporte.
 // Nutzt listEntries (GL-taugliche Spalten ohne secretDetails), da der
 // Nachweis typischerweise zur Vorlage gedacht ist.
+//
+// Issue #16 (Task 3): Monats-/Zeitraum-Umschalter plus die Report-
+// Einstellungen (Funktion, Betrieb/Firma, Nachname, Schlagwörter-Toggle) aus
+// ReportOpts (Task 2) werden hier verdrahtet. localStorage-Persistenz folgt
+// exakt dem bestehenden Name-Muster (NAME_KEY): geladen beim Mount, gesichert
+// erst bei einer tatsächlichen Aktion (Drucken/PDF speichern) -- nicht bei
+// jedem Tastendruck.
+
+type Mode = "monat" | "zeitraum";
+
+const MODE_OPTIONS: { value: Mode; label: string }[] = [
+  { value: "monat", label: "Monat" },
+  { value: "zeitraum", label: "Zeitraum" },
+];
 
 const NAME_KEY = "brlog.reportName";
+const FUNKTION_KEY = "brlog.reportFunktion";
+const BETRIEB_KEY = "brlog.reportBetrieb";
+const NACHNAME_KEY = "brlog.reportNachname";
+const SHOW_TAGS_KEY = "brlog.reportShowTags";
+const ARCHIVE_KEY = "brlog.reportArchive";
 
-function loadName(): string {
+function loadStr(key: string): string {
   try {
-    return localStorage.getItem(NAME_KEY) ?? "";
+    return localStorage.getItem(key) ?? "";
   } catch {
     return "";
   }
 }
-function saveName(v: string): void {
+function saveStr(key: string, v: string): void {
   try {
-    localStorage.setItem(NAME_KEY, v);
+    localStorage.setItem(key, v);
   } catch {
     // Persistenz ist nur Komfort, kein Pflichtpfad.
   }
+}
+function loadBool(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+function saveBool(key: string, v: boolean): void {
+  try {
+    localStorage.setItem(key, String(v));
+  } catch {
+    // Persistenz ist nur Komfort, kein Pflichtpfad.
+  }
+}
+
+/**
+ * Wert von `<input type="month">` ("YYYY-MM") -> voller Kalendermonat als
+ * Von/Bis-Zeitraum (siehe `monthRangeIso`). Fällt auf einen leeren Zeitraum
+ * zurück (= "gesamter Bestand", identische Semantik wie leere Von/Bis-Felder
+ * im Zeitraum-Modus), wenn der Wert leer ist ODER nicht dem erwarteten
+ * Format entspricht -- relevant für WebViews ohne natives
+ * Monats-Picker-Rendering, die `type="month"` als Freitextfeld darstellen
+ * und damit beliebige oder leere Werte liefern können. Bewusst kein Wurf/
+ * keine Fehlermeldung für diesen Randfall, sondern derselbe stille
+ * Fallback wie ein leeres Von/Bis-Feld.
+ */
+function monthRangeFromValue(value: string): { from: string; to: string } {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return { from: "", to: "" };
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return { from: "", to: "" };
+  return monthRangeIso(new Date(year, monthIndex, 1));
+}
+
+/**
+ * Letztes Pfadsegment eines vom Systemdialog gelieferten absoluten Pfads --
+ * für den Dateinamen der Archivkopie (Task 4), die exakt so heißen soll wie
+ * die vom Nutzer im Speichern-Dialog tatsächlich gewählte Datei (falls dort
+ * umbenannt), nicht wie der ursprüngliche Vorschlagsname. Prüft BEIDE
+ * Trenner, nicht nur den des laufenden Betriebssystems: der Desktop-Build
+ * läuft auf Windows (Backslash) UND Linux (Slash).
+ */
+function baseNameOfPath(path: string): string {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx >= 0 ? path.slice(idx + 1) : path;
 }
 
 const cellStyle: React.CSSProperties = {
@@ -45,13 +114,39 @@ const cellStyle: React.CSSProperties = {
 };
 
 export default function PrintReportPanel() {
-  const [name, setName] = useState(() => loadName());
+  const [mode, setMode] = useState<Mode>("monat");
+  const [month, setMonth] = useState(() => todayIso().slice(0, 7));
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [name, setName] = useState(() => loadStr(NAME_KEY));
+  const [funktion, setFunktion] = useState(() => loadStr(FUNKTION_KEY));
+  const [betrieb, setBetrieb] = useState(() => loadStr(BETRIEB_KEY));
+  const [nachname, setNachname] = useState(() => loadStr(NACHNAME_KEY));
+  const [showTags, setShowTags] = useState(() => loadBool(SHOW_TAGS_KEY, true));
+  // Task 4 (Issue #16): Default AUS -- Archivkopie ist bewusst Opt-in, nicht
+  // jeder will automatisch eine Zweitkopie neben der (ggf. auf einem
+  // portablen USB-Stick liegenden) Datenbank ansammeln.
+  const [archiveEnabled, setArchiveEnabled] = useState(() =>
+    loadBool(ARCHIVE_KEY, false)
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Archivkopie-Fehler sind nicht-fatal (Nutzer-Entscheid, Issue #16): das PDF
+  // liegt zu diesem Zeitpunkt bereits sicher am gewählten Ort -- deshalb ein
+  // eigener Warnhinweis statt `error` (der die Vorschau/den Erfolg überdecken
+  // würde).
+  const [archiveWarning, setArchiveWarning] = useState<string | null>(null);
   const [model, setModel] = useState<ReportModel | null>(null);
+
+  const persistSettings = () => {
+    saveStr(NAME_KEY, name);
+    saveStr(FUNKTION_KEY, funktion);
+    saveStr(BETRIEB_KEY, betrieb);
+    saveStr(NACHNAME_KEY, nachname);
+    saveBool(SHOW_TAGS_KEY, showTags);
+    saveBool(ARCHIVE_KEY, archiveEnabled);
+  };
 
   const buildReport = async () => {
     setError(null);
@@ -59,15 +154,22 @@ export default function PrintReportPanel() {
     setBusy(true);
     try {
       const { buildReportModel } = await import("../export/reportPdf");
+      const range = mode === "monat" ? monthRangeFromValue(month) : { from, to };
       const entries = await listEntries({
-        from: from || undefined,
-        to: to || undefined,
+        from: range.from || undefined,
+        to: range.to || undefined,
       });
       setModel(
-        buildReportModel(entries, (e) => e.tagLabels.join(", "), {
+        // Projektor bekommt die GlEntryView (nicht das rohe Listen-Item,
+        // Finding M1) -- tagLabels ist dort identisch benannt/typisiert.
+        buildReportModel(entries, (view) => view.tagLabels.join(", "), {
           name,
-          from,
-          to,
+          from: range.from,
+          to: range.to,
+          funktion,
+          betrieb,
+          nachname,
+          showTags,
         })
       );
     } catch (e) {
@@ -78,15 +180,16 @@ export default function PrintReportPanel() {
   };
 
   const doPrint = () => {
-    saveName(name);
+    persistSettings();
     window.print();
   };
 
   const doSavePdf = async () => {
     if (!model) return;
-    saveName(name);
+    persistSettings();
     setError(null);
     setStatus(null);
+    setArchiveWarning(null);
     setBusy(true);
     try {
       const { renderReportPdf, uint8ToBase64 } = await import(
@@ -99,7 +202,31 @@ export default function PrintReportPanel() {
         extension: "pdf",
         contentsBase64: uint8ToBase64(bytes),
       });
-      setStatus(path ? `PDF gespeichert: ${path}` : "Abgebrochen.");
+      if (!path) {
+        setStatus("Abgebrochen.");
+        return;
+      }
+
+      let message = `PDF gespeichert: ${path}`;
+      // Task 4 (Issue #16): läuft bei aktivierter Checkbox bei JEDEM
+      // erfolgreichen Speichern automatisch mit. Eigener try/catch -- ein
+      // Archivfehler ist nicht-fatal (das PDF liegt bereits sicher am oben
+      // gewählten Ort) und darf den Erfolgsstatus des Haupt-Speicherns nicht
+      // verdrängen.
+      if (archiveEnabled) {
+        try {
+          const archivePath = await invoke<string>("report_archive_copy", {
+            fileName: baseNameOfPath(path),
+            bytes: Array.from(bytes),
+          });
+          message += ` – Archivkopie: ${archivePath}`;
+        } catch (e) {
+          setArchiveWarning(
+            `Archivkopie in reports/ fehlgeschlagen: ${toUserMessage(e)}`
+          );
+        }
+      }
+      setStatus(message);
     } catch (e) {
       setError(toUserMessage(e));
     } finally {
@@ -128,31 +255,112 @@ export default function PrintReportPanel() {
               placeholder="Vor- und Nachname"
             />
           </label>
-          <div className="flex items-end gap-2">
-            <label className="flex-1 text-sm text-secondary-ink">
-              Von
-              <input
-                type="date"
-                className={field}
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </label>
-            <label className="flex-1 text-sm text-secondary-ink">
-              Bis
-              <input
-                type="date"
-                className={field}
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </label>
+          <div>
+            <span className="mb-1 block text-sm text-secondary-ink">
+              Zeitraum
+            </span>
+            <SegmentedControl
+              options={MODE_OPTIONS}
+              value={mode}
+              onChange={setMode}
+            />
+            <div className="mt-2 flex items-end gap-2">
+              {mode === "monat" ? (
+                <label className="flex-1 text-sm text-secondary-ink">
+                  Monat
+                  <input
+                    type="month"
+                    className={field}
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="flex-1 text-sm text-secondary-ink">
+                    Von
+                    <input
+                      type="date"
+                      className={field}
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex-1 text-sm text-secondary-ink">
+                    Bis
+                    <input
+                      type="date"
+                      className={field}
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
           </div>
         </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label className="text-sm text-secondary-ink">
+            Funktion
+            <input
+              className={field}
+              value={funktion}
+              onChange={(e) => setFunktion(e.target.value)}
+              placeholder="z. B. BR-Vorsitzender"
+            />
+          </label>
+          <label className="text-sm text-secondary-ink">
+            Betrieb/Firma
+            <input
+              className={field}
+              value={betrieb}
+              onChange={(e) => setBetrieb(e.target.value)}
+              placeholder="z. B. Musterwerk GmbH"
+            />
+          </label>
+          <label className="text-sm text-secondary-ink">
+            Nachname für Dateinamen
+            <input
+              className={field}
+              value={nachname}
+              onChange={(e) => setNachname(e.target.value)}
+              placeholder="z. B. König"
+            />
+          </label>
+        </div>
+
+        <label className="mt-3 flex min-h-touch-pointer items-center gap-2 text-sm text-secondary-ink">
+          <input
+            type="checkbox"
+            checked={showTags}
+            onChange={(e) => setShowTags(e.target.checked)}
+          />
+          Schlagwörter im Report
+        </label>
+
+        <div>
+          <label className="mt-2 flex min-h-touch-pointer items-center gap-2 text-sm text-secondary-ink">
+            <input
+              type="checkbox"
+              checked={archiveEnabled}
+              onChange={(e) => setArchiveEnabled(e.target.checked)}
+            />
+            Archivkopie in reports/ ablegen
+          </label>
+          <p className="mt-1 text-xs text-disabled-ink">
+            Legt bei jedem „Als PDF speichern" zusätzlich eine Kopie im Ordner
+            reports/ neben der Datenbank ab (im portablen Modus auf dem
+            USB-Stick statt in %APPDATA%). Vorhandene Dateien werden nie
+            überschrieben, sondern durchnummeriert.
+          </p>
+        </div>
+
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
+            className="min-h-touch rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:min-h-0"
             onClick={buildReport}
             disabled={busy}
           >
@@ -187,6 +395,11 @@ export default function PrintReportPanel() {
         {status && (
           <p className="mt-2 break-all text-sm text-success-ink">
             {status}
+          </p>
+        )}
+        {archiveWarning && (
+          <p className="mt-2 break-all rounded border border-warning-banner-line bg-warning-banner px-3 py-2 text-sm text-warning-banner-ink">
+            {archiveWarning}
           </p>
         )}
         {error && (
@@ -228,6 +441,16 @@ export default function PrintReportPanel() {
                 <td>Erstellt am</td>
                 <td>{model.createdAtLabel}</td>
               </tr>
+              {/* Task 3: Funktion/Betrieb (headerExtras, Task 2) waren bislang
+                  nur im PDF sichtbar, nicht in dieser Vorschau -- ohne diese
+                  Zeilen hätten die neuen Felder oben keine sichtbare Wirkung
+                  auf dem Bildschirm, nur im gespeicherten PDF. */}
+              {model.headerExtras.map((h) => (
+                <tr key={h.label}>
+                  <td>{h.label}</td>
+                  <td>{h.value}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -242,18 +465,37 @@ export default function PrintReportPanel() {
               </tr>
             </thead>
             <tbody>
-              {model.rows.map((r, i) => (
-                <tr key={i}>
-                  <td style={cellStyle}>{r.date}</td>
-                  <td style={cellStyle}>{r.start}</td>
-                  <td style={cellStyle}>{r.end}</td>
-                  <td style={cellStyle}>{r.pause}</td>
-                  <td style={cellStyle}>{r.duration}</td>
-                  <td style={cellStyle}>{r.tags}</td>
-                  <td style={cellStyle}>{r.info}</td>
-                  <td style={cellStyle}>{r.shift}</td>
-                </tr>
-              ))}
+              {/* Task 3b: dayRows (statt rows) -- sonst fehlten die
+                  Tagessummen-Zeilen, die das PDF (toAutoTableInput) an
+                  derselben Stelle bereits zeigt (nach dem letzten Eintrag
+                  jedes Kalendertags). Spaltenanzahl je Zeilenart bleibt an
+                  showTags gekoppelt (wie entryRowCells in reportPdf.ts) --
+                  sonst hätte die Kopfzeile bei showTags=false eine Spalte
+                  weniger als jede Datenzeile. */}
+              {model.dayRows.map((r, i) =>
+                r.kind === "entry" ? (
+                  <tr key={i}>
+                    <td style={cellStyle}>{r.row.date}</td>
+                    <td style={cellStyle}>{r.row.start}</td>
+                    <td style={cellStyle}>{r.row.end}</td>
+                    <td style={cellStyle}>{r.row.pause}</td>
+                    <td style={cellStyle}>{r.row.duration}</td>
+                    {model.showTags && <td style={cellStyle}>{r.row.tags}</td>}
+                    <td style={cellStyle}>{r.row.info}</td>
+                    <td style={cellStyle}>{r.row.shift}</td>
+                  </tr>
+                ) : (
+                  <tr key={i}>
+                    <td
+                      style={cellStyle}
+                      colSpan={model.columns.length}
+                      className="bg-surface-2 font-medium"
+                    >
+                      {r.label}
+                    </td>
+                  </tr>
+                )
+              )}
               {model.rows.length === 0 && (
                 <tr>
                   <td style={cellStyle} colSpan={model.columns.length}>
@@ -263,6 +505,14 @@ export default function PrintReportPanel() {
               )}
             </tbody>
             <tfoot>
+              {/* Finding I1: die drei Zellen hier müssen IMMER exakt
+                  model.columns.length Spalten ergeben, sonst bricht die
+                  Tabellenbreite bei showTags=false (7 statt 8 Spalten). Die
+                  ersten 4 Spalten (Datum/Von/Bis/Pause) und die 5. Spalte
+                  (Dauer, trägt hier den Summenwert) sind unabhängig von
+                  showTags fix -- nur die letzte Zelle muss den Rest
+                  (Schlagwörter? + Info + Geplante Schicht) dynamisch
+                  aufnehmen. */}
               <tr>
                 <td style={cellStyle} colSpan={4}>
                   <strong>{model.totalLabel}</strong>
@@ -270,7 +520,9 @@ export default function PrintReportPanel() {
                 <td style={cellStyle}>
                   <strong>{model.totalValue}</strong>
                 </td>
-                <td style={cellStyle} colSpan={3}></td>
+                {model.columns.length > 5 && (
+                  <td style={cellStyle} colSpan={model.columns.length - 5}></td>
+                )}
               </tr>
             </tfoot>
           </table>
@@ -279,6 +531,23 @@ export default function PrintReportPanel() {
             <strong>Freizeitausgleich in diesem Zeitraum: </strong>
             {model.compensationLabel}
           </p>
+
+          {/* Task 3b: objectionLines (Task 2) waren bislang nur im PDF
+              sichtbar (renderReportPdf druckt "Widersprüche der
+              Geschäftsleitung" + Zeilen), nicht in dieser Vorschau --
+              Reihenfolge/Überschrift exakt wie im PDF-Renderer. */}
+          {model.objectionLines.length > 0 && (
+            <div style={{ fontSize: "9pt", marginTop: 8 }}>
+              <p style={{ fontWeight: 600, marginBottom: 4 }}>
+                Widersprüche der Geschäftsleitung
+              </p>
+              {model.objectionLines.map((line, i) => (
+                <p key={i} style={{ margin: 0 }}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
 
           <div
             style={{

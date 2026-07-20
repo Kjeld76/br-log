@@ -1240,6 +1240,7 @@ pub fn run() {
             file_io::export_text_file,
             file_io::export_binary_file,
             file_io::import_text_file,
+            file_io::report_archive_copy,
             db_execute,
             db_select,
             db_batch,

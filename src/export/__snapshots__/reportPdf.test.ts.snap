@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`toAutoTableInput > liefert Kopf- und Datenzeilen in der von jspdf-autotable erwarteten {head, body}-Struktur 1`] = `
+exports[`toAutoTableInput > liefert Kopf- und Datenzeilen (inkl. Tagessumme) in der von jspdf-autotable erwarteten {head, body}-Struktur 1`] = `
 {
   "body": [
     [
@@ -12,6 +12,20 @@ exports[`toAutoTableInput > liefert Kopf- und Datenzeilen in der von jspdf-autot
       "Sitzung",
       "BR-Sitzung",
       "ja",
+    ],
+    [
+      {
+        "colSpan": 8,
+        "content": "Summe 01.06.2026 — 2:00",
+      },
+    ],
+  ],
+  "foot": [
+    [
+      {
+        "colSpan": 8,
+        "content": "Summe: 2:00 Std",
+      },
     ],
   ],
   "head": [

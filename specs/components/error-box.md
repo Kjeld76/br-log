@@ -49,7 +49,11 @@ Erfassungs-Hinweis, beide mit „Ausblenden"-Button); `src/components/EntryForm.
 (Überschneidungswarnung, hier ohne eigenen Ausblenden-Button, dafür mit
 Warn-Aktion-Buttons darunter, s. button.md); `src/components/DbInfoPanel.tsx:180,224`;
 `src/components/ExportPanel.tsx:299,364` (kombiniert mit
-`border-warning-action-line` statt `-banner-line`); `src/components/RecoveryCodeReveal.tsx:84`.
+`border-warning-action-line` statt `-banner-line`); `src/components/RecoveryCodeReveal.tsx:84`;
+`src/components/PrintReportPanel.tsx` (nicht-fataler Archivkopie-Fehler der
+optionalen `reports/`-Kopie, Task 4/Issue #16 -- kein Ausblenden-Button, das
+Banner verschwindet wie die anderen Status-Meldungen des Panels beim
+nächsten Speichern-Versuch).
 
 ## Info-Banner (info-banner-*)
 

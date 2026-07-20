@@ -23,14 +23,14 @@ import {
 import { minutesToHhmm, formatDecimalHoursDe } from "../lib/time";
 import { formatObjectionMeta } from "../lib/objections";
 import { todayIso } from "../lib/calendar";
+import { glEntryView, type GlEntryView } from "./glProjection";
 import type {
   EntryListItem,
   EntryFullItem,
   BackupPayload,
-  Objection,
 } from "../types";
 
-function fmtObjections(objs: Objection[]): string {
+function fmtObjections(objs: GlEntryView["objections"]): string {
   return objs
     .filter((o) => o.reason.trim() || o.byWhom.trim())
     .map((o) => {
@@ -40,38 +40,52 @@ function fmtObjections(objs: Objection[]): string {
     .join(" | ");
 }
 
-// Öffentliche Spalten (GL-tauglich – OHNE secret_details).
+// Öffentliche Spalten (GL-tauglich – OHNE secret_details). Jede Spalte liest
+// AUSSCHLIESSLICH aus glEntryView(e) (Issue #16: dieselbe Projektion wie der
+// PDF-Report in reportPdf.ts, kein zweiter, parallel gepflegter Feld-Filter).
 function publicColumns(): CsvColumn<EntryListItem>[] {
   return [
-    { header: "Datum", value: (e) => e.date },
-    { header: "Von", value: (e) => e.startTime ?? "" },
-    { header: "Bis", value: (e) => e.endTime ?? "" },
+    { header: "Datum", value: (e) => glEntryView(e).date },
+    { header: "Von", value: (e) => glEntryView(e).startTime ?? "" },
+    { header: "Bis", value: (e) => glEntryView(e).endTime ?? "" },
     // Pause bewusst als eigene Spalte statt nur rechnerisch in der Dauer
     // versteckt: der Nachweis muss "Von 9:00 Bis 17:30, Pause 30, BR-Zeit
     // 8:00" konsistent zeigen, statt scheinbar widersprüchliche Von/Bis-
     // Dauer-Angaben (Von-Bis-Spanne != Dauer, ohne dass die Pause sichtbar ist).
-    { header: "Pause (Min)", value: (e) => e.pauseMinutes },
-    { header: "Dauer (Std:Min)", value: (e) => minutesToHhmm(e.durationMinutes) },
+    { header: "Pause (Min)", value: (e) => glEntryView(e).pauseMinutes },
+    {
+      header: "Dauer (Std:Min)",
+      value: (e) => minutesToHhmm(glEntryView(e).durationMinutes),
+    },
     {
       // Finding 11: Komma statt Punkt -- deutsches Excel (Zielformat laut
       // toCsv.ts: Semikolon-Trenner + BOM) interpretiert einen Punkt-String
       // sonst als Text oder sogar als Datum statt als aufsummierbare Zahl.
       header: "Dauer (Dezimalstunden)",
-      value: (e) => formatDecimalHoursDe(e.durationMinutes),
+      value: (e) => formatDecimalHoursDe(glEntryView(e).durationMinutes),
     },
-    { header: "Schlagwörter", value: (e) => e.tagLabels.join(", ") },
-    { header: "Info für Geschäftsleitung", value: (e) => e.infoForManagement },
+    { header: "Schlagwörter", value: (e) => glEntryView(e).tagLabels.join(", ") },
+    {
+      header: "Info für Geschäftsleitung",
+      value: (e) => glEntryView(e).infoForManagement,
+    },
     {
       header: "Geplante Schicht",
-      value: (e) => (e.hadPlannedShift ? "ja" : "nein"),
+      value: (e) => (glEntryView(e).hadPlannedShift ? "ja" : "nein"),
     },
-    { header: "Schichtausgleich", value: (e) => e.shiftCompensationNote },
+    {
+      header: "Schichtausgleich",
+      value: (e) => glEntryView(e).shiftCompensationNote,
+    },
     {
       // Finding 14: Freizeitausgleich-Kennzeichnung auch im Export sichtbar.
       header: "Freizeitausgleich",
-      value: (e) => (e.isCompensation ? "ja" : "nein"),
+      value: (e) => (glEntryView(e).isCompensation ? "ja" : "nein"),
     },
-    { header: "Widersprüche GL", value: (e) => fmtObjections(e.objections) },
+    {
+      header: "Widersprüche GL",
+      value: (e) => fmtObjections(glEntryView(e).objections),
+    },
   ];
 }
 
