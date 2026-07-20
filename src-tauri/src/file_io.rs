@@ -754,9 +754,18 @@ mod report_archive_tests {
         // Zweite Verteidigungslinie: selbst ein Aufruf, der die
         // Zeichen-Sanitisierung umgeht, darf unique_report_path nicht dazu
         // bringen, einen Pfad außerhalb von `dir` zurückzugeben.
+        //
+        // Der Ausbruchs-Name ist plattformabhängig, weil Path::join genau dann
+        // die Basis ERSETZT, wenn der angehängte Pfad eine Wurzel oder ein
+        // Präfix hat -- und was als solches gilt, entscheidet die jeweilige
+        // Pfad-Semantik: unter Windows der Laufwerksbuchstabe ("C:evil.pdf"),
+        // unter Unix der führende Schrägstrich. Ein fest verdrahteter
+        // Windows-Name wäre unter Linux ein ganz normaler Dateiname und der
+        // Test damit wirkungslos (so geschehen im Release-Build v1.7.0).
         let dir = temp_test_dir("escape-check");
+        let ausbruch = if cfg!(windows) { "C:evil.pdf" } else { "/evil.pdf" };
 
-        let result = unique_report_path(&dir, "C:evil.pdf");
+        let result = unique_report_path(&dir, ausbruch);
 
         assert!(result.is_err());
         let _ = fs::remove_dir_all(&dir);
