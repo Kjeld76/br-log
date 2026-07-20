@@ -111,12 +111,17 @@ Tokens:
   Form/Größe: `rounded-full`, feste `h-14 w-14` (56×56px, Vorgabe aus dem
     Design-Handoff #27, 1d). Inhalt: `Icon name="plus" size={24}`, kein
     sichtbarer Text.
-  Position: `fixed bottom-[5.5rem] right-4 z-sticky` -- bildschirmfest in der
-    Daumenzone, unabhängig vom Scroll-Container. `bottom-[5.5rem]` (88px)
-    hält bewusst mehr Abstand als die BottomNav braucht (real ca. 68-70px
-    hoch, App.tsx reserviert dafür `pb-[4.5rem]`/72px Scrollraum) -- ein
-    zusätzliches Sicherheitspolster (Material-FAB-Gutter), damit der FAB die
-    Leiste auch bei größerer Systemschrift nie verdeckt.
+  Position: `fixed bottom-20 right-4 z-sticky` -- bildschirmfest in der
+    Daumenzone, unabhängig vom Scroll-Container. `bottom-20` (5rem/80px,
+    Tailwind-Skalenwert; ersetzt seit dem #27-Review-Fix das vormals
+    geratene `bottom-[5.5rem]`/88px) hält bewusst mehr Abstand als die
+    BottomNav braucht (real ca. 68-70px hoch) -- ein zusätzliches
+    Sicherheitspolster (Material-FAB-Gutter, ca. 10-16px), damit der FAB die
+    Leiste auch bei größerer Systemschrift nie verdeckt. Seit BottomNav kein
+    `fixed`-Overlay mehr ist, sondern reell Platz im Layout einnimmt (s.
+    Kommentar in `BottomNav.tsx`), muss der FAB dafür keine Rücksicht mehr
+    auf ein Scroll-Padding an `main` nehmen -- er ist ohnehin `fixed` und
+    damit unabhängig vom Scroll-Container positioniert.
   a11y: `aria-label="Neuer Eintrag"` + `title` (kein sichtbarer Text).
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus` (dupliziert
@@ -127,7 +132,7 @@ Tokens:
 Zustände: default · hover (`hover:bg-primary-hover`) · focus-visible (lokal,
   s. o.). disabled/active/loading — nicht vorhanden.
 
-Verwendung: `src/components/EntryList.tsx:335-343`, nur wenn `mobile` true
+Verwendung: `src/components/EntryList.tsx:337-347`, nur wenn `mobile` true
 ist (Android); am Desktop bleibt stattdessen der Standard-Primär-Button oben
 in der Suchzeile (s. o., „Primär").
 
@@ -191,8 +196,74 @@ Verwendung: `src/views/LockScreen.tsx:360` (Fingerabdruck-Entsperren,
 einzige Fundstelle dieser vollständigen Button-Kombination). Der reine
 Textton `text-primary-outline-ink` wird davon losgelöst zusätzlich als
 Textfarbe verwendet (kein Button): `src/components/DbInfoPanel.tsx:145`
-(Badge-Text), `src/components/BottomNav.tsx:36` (aktiver Tab),
+(Badge-Text), `src/components/BottomNav.tsx:55` (aktiver Tab),
 `src/views/LockScreen.tsx:450` (Link).
+
+## ActionRow + Empfohlen-Callout (`ExportPanel.tsx`)
+
+Tokens:
+  ActionRow (`ExportPanel.tsx:33-83`, lokale Komponente): kompakte
+    Icon-Titel-Chevron-Zeile, ersetzt frühere Vollbreite-Buttons mit langen
+    Beschreibungsblöcken (Design-Handoff #27, 1f). Klasse: `flex min-h-touch
+    w-full items-center gap-3 rounded border border-empty-line bg-surface
+    px-4 py-2.5 text-left hover:bg-surface-2 disabled:opacity-50`; Titel
+    `block text-sm font-medium text-primary-ink`, optionaler Untertitel
+    `block text-xs text-secondary-ink` (+ `truncate`, außer bei
+    `wrapSubtitle`, s. u.), abschließendes `chevron-right`-Icon.
+  `wrapSubtitle`-Prop (Finding #27-Review): sicherheitsrelevante Untertitel
+    (z. B. „(BR-Geheimnis bleibt geschützt)" bei den CSV-Export-Zeilen)
+    dürfen bei 360px nicht per `truncate` abgeschnitten werden -- die Prop
+    lässt den Untertitel stattdessen normal umbrechen. Gesetzt bei
+    `ExportPanel.tsx` GL- und Voll-CSV-Zeile, alle übrigen `ActionRow`-
+    Aufrufe behalten das `truncate`-Standardverhalten.
+  Empfohlen-Callout (`ExportPanel.tsx:232-269`, kein `ActionRow`-Aufruf,
+    eigener Button): einzige hervorgehobene Zeile des Panels -- optisch wie
+    ein Info-Banner (`border-info-ink bg-info-badge`, s. error-box.md),
+    strukturell aber ein anklickbarer Button wie `ActionRow` (`flex
+    min-h-touch w-full items-start gap-3 rounded-lg ... text-left
+    disabled:opacity-50`). Trägt zusätzlich eine „Empfohlen"-Pille
+    (`rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-info-ink`)
+    und -- nur `mobile` -- einen eigenen Warnhinweis-Block
+    (`bg-warning-banner`, s. error-box.md) zum Datenverlust bei
+    Deinstallation.
+  focus: kein lokales `focus-visible:` an beiden Mustern -- globaler Ring aus
+    `styles.css:22-25`
+  height/touch: `min-h-touch` (48px) an beiden
+
+Zustände: default · hover (`hover:bg-surface-2`, nur `ActionRow`) ·
+  focus-visible (global) · disabled (`disabled:opacity-50`, beide, gesteuert
+  über `busy`). active/loading — nicht vorhanden.
+
+Verwendung: `ActionRow` in `src/components/ExportPanel.tsx:271-277`
+(JSON-Import), `:324-346` (CSV-GL/-Voll, ICS-Export), `:370-376`
+(ICS-Import); Empfohlen-Callout einzige Fundstelle
+`src/components/ExportPanel.tsx:232-269` (JSON-Backup).
+
+## Icon-Button-Trio (`AppointmentDetail.tsx:126-154`)
+
+Tokens:
+  Drei gleich breite Icon-über-Label-Buttons (Zeit buchen/Duplizieren/
+  Löschen) in einer festen Reihe -- ersetzt die frühere Reihe aus
+  Text-Buttons, die auf 360px zusammen mit „Bearbeiten"/„Schließen" zu einem
+  gedrängten Block umbrach (Design-Handoff #27, 1g; „Schließen" ist seither
+  das X im Modal-Kopf, s. modal.md). Klasse (Zeit buchen/Duplizieren):
+  `flex min-h-touch-pointer flex-1 flex-col items-center justify-center
+  gap-1 rounded-lg border border-border-strong px-2 py-2 text-xs
+  text-primary-ink hover:bg-surface-2`; Löschen identisch, aber
+  `text-destructive-ink hover:bg-destructive-hover` statt der neutralen
+  Text-/Hover-Farbe -- einzige rote Aktion der Reihe, aber (anders als vor
+  #27) nicht mehr direkt neben „Bearbeiten".
+  „Bearbeiten" darunter ist der Standard-Primär-Button (volle Breite,
+  `min-h-touch`, s. Abschnitt „Primär" oben) -- kein Teil des Trios selbst.
+  focus: kein lokales `focus-visible:` -- globaler Ring aus `styles.css:22-25`
+  height/touch: `min-h-touch-pointer` (44px) an allen drei Trio-Buttons,
+    `min-h-touch` (48px) am „Bearbeiten"-Button darunter
+
+Zustände: default · hover (je Button, s. o.) · focus-visible (global).
+  disabled/active/loading — nicht vorhanden.
+
+Verwendung: `src/components/AppointmentDetail.tsx:126-162`, einzige
+Fundstelle dieses Musters (Termin-Detailansicht).
 
 ## Verifikation der Utilities (Grep-Gegenprobe)
 

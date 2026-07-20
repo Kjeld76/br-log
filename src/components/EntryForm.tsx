@@ -557,7 +557,12 @@ export default function EntryForm({
             Chips sichtbar werden, sonst Informationsverlust bei einem
             rechtlich definierten Merkmal). Nur die AUSFÜHRLICHE Konsequenz
             darunter (Sperrung von Tags/GL-Info/Vertraulich, Saldo-Zufluss)
-            beschreibt eine Folge und bleibt an den aktiven Chip gebunden. */}
+            beschreibt eine Folge und bleibt an den aktiven Chip gebunden.
+            "Geplante Schicht" trug als Checkbox-Label früher den Zusatz "zu
+            dieser Zeit" -- auf dem kurzen Chip würde das die Pille neben den
+            knappen Nachbar-Labels ("Freizeitausgleich" etc.) sprengen, daher
+            steht der Zusatz stattdessen als eigene, dauerhaft sichtbare Zeile
+            unter der Chip-Reihe (analog zum § 37-Hinweis direkt darunter). */}
         <div>
           <label className={labelCls}>Merkmale</label>
           <div className="flex flex-wrap gap-1.5">
@@ -575,6 +580,10 @@ export default function EntryForm({
             />
           </div>
           <p className="mt-1.5 text-xs text-secondary-ink">
+            Geplante Schicht: bezieht sich auf eine zu dieser Zeit bereits
+            vorgesehene reguläre Schicht.
+          </p>
+          <p className="mt-1 text-xs text-secondary-ink">
             Freizeitausgleich (§ 37 Abs. 3 BetrVG): genommener Ausgleich,
             keine BR-Tätigkeit.
           </p>
@@ -717,12 +726,24 @@ export default function EntryForm({
           wandern. -mx-4 gleicht das p-4 des umgebenden Containers (Karte in
           QuickEntryView bzw. Modal-Box in App.tsx) aus, damit die Leiste
           randlos über die volle Breite reicht; bg-surface + border-t
-          verhindern, dass darunterscrollender Inhalt durchscheint. Kollidiert
-          nicht mit der (fixed) BottomNav: sticky wirkt nur innerhalb des
-          scrollenden Elternbereichs, der bereits per pb-[4.5rem] Platz für
-          die BottomNav reserviert (siehe App.tsx `main`). Portrait-Feinschliff
-          bleibt erhalten: unter der sm-Grenze füllen die Buttons die volle
-          Breite (flex-1) mit 48px Tap-Höhe, ab sm rechtsbündig kompakt. */}
+          verhindern, dass darunterscrollender Inhalt durchscheint.
+          `sticky bottom-0` pinnt an der unteren Kante des NÄCHSTEN scrollenden
+          Vorfahren -- das ist je nach Einbettung ein anderes Element:
+          (1) Im Modal (App.tsx, Bearbeiten/Neu aus Kalender/Historie) ist das
+          der `fixed inset-0 overflow-y-auto`-Backdrop, der ohnehin den ganzen
+          Viewport inkl. BottomNav überdeckt (`z-overlay` > jede Nav-Ebene) --
+          hier gibt es nichts zu verdecken. (2) Direkt in `main` eingebettet
+          (Startseite "Zeit erfassen", QuickEntryView) ist `main` selbst der
+          Scrollport. Früher (Fund #27-Review) lag BottomNav dort `fixed`
+          über `main` -- die Leiste pinnte dadurch UNTER der Nav statt
+          darüber, ein Padding an `main` konnte das nicht beheben, weil
+          Padding nur Inhalt verschiebt, nicht die Sticky-Kante selbst. Jetzt
+          ist BottomNav ein normaler Flex-Bruder unterhalb von `main` (s.
+          Kommentar in BottomNav.tsx) -- `main` endet bereits oberhalb der
+          Leiste, "Speichern" pinnt also korrekt direkt darüber, ganz ohne
+          Sonderbehandlung. Portrait-Feinschliff bleibt erhalten: unter der
+          sm-Grenze füllen die Buttons die volle Breite (flex-1) mit 48px
+          Tap-Höhe, ab sm rechtsbündig kompakt. */}
       <div className="sticky bottom-0 z-sticky -mx-4 flex justify-end gap-2 border-t border-border bg-surface px-4 py-3">
         {onCancel && (
           <button

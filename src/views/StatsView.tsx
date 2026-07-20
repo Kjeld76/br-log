@@ -60,8 +60,15 @@ function BarRow({
   return (
     <div className="flex items-center gap-2">
       <span
+        // w-28 statt w-20 (Finding #27-Review): "September 2026" (längster
+        // deutscher Monatsname + vierstelliges Jahr) wurde bei w-20 (80px)
+        // abgeschnitten -- der title-Tooltip als einziges Rettungsnetz ist
+        // auf Touch (Android) ohnehin nicht erreichbar. `truncate` bleibt als
+        // Schutz für ungewöhnlich lange, frei vergebene Schlagwort-Namen
+        // erhalten (diese Zeile bedient sowohl Monats- als auch
+        // Schlagwort-Summen).
         className={
-          "w-20 shrink-0 truncate text-xs text-secondary-ink " +
+          "w-28 shrink-0 truncate text-xs text-secondary-ink " +
           (capitalize ? "capitalize" : "")
         }
         title={label}

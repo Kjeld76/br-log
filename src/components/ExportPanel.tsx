@@ -36,12 +36,19 @@ function ActionRow({
   subtitle,
   onClick,
   disabled,
+  wrapSubtitle,
 }: {
   icon: IconName;
   title: string;
   subtitle?: string;
   onClick: () => void;
   disabled?: boolean;
+  // Standardmäßig einzeilig mit truncate. Bei sicherheitsrelevanten
+  // Untertiteln (z. B. "(BR-Geheimnis bleibt geschützt)" bei den CSV-
+  // Exporten) darf der Text bei 360px nicht abgeschnitten werden -- dort
+  // entfällt truncate zugunsten von normalem Zeilenumbruch (Finding
+  // #27-Review).
+  wrapSubtitle?: boolean;
 }) {
   return (
     <button
@@ -56,7 +63,12 @@ function ActionRow({
           {title}
         </span>
         {subtitle && (
-          <span className="block truncate text-xs text-secondary-ink">
+          <span
+            className={
+              "block text-xs text-secondary-ink " +
+              (wrapSubtitle ? "" : "truncate")
+            }
+          >
             {subtitle}
           </span>
         )}
@@ -266,9 +278,12 @@ export default function ExportPanel({ onImported, mobile }: Props) {
         </div>
       </section>
 
-      {/* Exportieren: CSV (GL/vollständig) + ICS. Die Zeitraumauswahl gilt
-          NUR für die beiden CSV-Exporte darunter, nicht für ICS oder das
-          JSON-Backup oben -- Hinweistext dazu unverändert. */}
+      {/* Exportieren: CSV (GL/vollständig) + ICS. Die Zeitraumauswahl-Box
+          steht über ALLEN Export-Zeilen dieses Abschnitts inkl. ICS, gilt
+          inhaltlich aber NUR für die beiden CSV-Exporte darunter -- der
+          Hinweistext in der Box (Finding #27-Review: schloss vorher nur das
+          JSON-Backup aus, obwohl ICS ebenso ungefiltert bleibt) nennt jetzt
+          explizit beide Ausnahmen. */}
       <section>
         <h4 className={groupLabel}>Exportieren</h4>
 
@@ -300,8 +315,8 @@ export default function ExportPanel({ onImported, mobile }: Props) {
             </button>
           )}
           <span className="w-full text-xs text-disabled-ink">
-            Leer = gesamter Bestand. Gilt nur für die CSV-Exporte, nicht für das
-            JSON-Backup (immer vollständig).
+            Leer = gesamter Bestand. Gilt nur für die CSV-Exporte, nicht für
+            ICS und das JSON-Backup (beide immer vollständig).
           </span>
         </div>
 
@@ -310,6 +325,7 @@ export default function ExportPanel({ onImported, mobile }: Props) {
             icon="eye"
             title="CSV-Export für die Geschäftsleitung"
             subtitle="Ohne vertrauliche Tätigkeitsdetails (BR-Geheimnis bleibt geschützt)."
+            wrapSubtitle
             disabled={busy}
             onClick={() => onClick("gl")}
           />
@@ -317,6 +333,7 @@ export default function ExportPanel({ onImported, mobile }: Props) {
             icon="lock"
             title="Vollständiger CSV-Export (nur für dich)"
             subtitle="Inklusive vertraulicher Tätigkeitsdetails."
+            wrapSubtitle
             disabled={busy}
             onClick={() => onClick("full")}
           />

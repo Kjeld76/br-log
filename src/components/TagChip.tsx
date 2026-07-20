@@ -58,7 +58,16 @@ export default function TagChip({
       type="button"
       onClick={onClick}
       className={
-        "rounded-full border px-3 py-1 text-xs transition " +
+        // Touch-Ziel 44px (Design-Handoff #27-Review, Finding 2): die
+        // Merkmal-Chips (EntryForm: "Geplante Schicht"/"Freizeitausgleich",
+        // AppointmentForm: "Ganztägig"/"Wichtig") sind die einzige
+        // Bedienmöglichkeit für vier fachlich gewichtige Schalter und waren
+        // vorher Checkboxen mit voller Label-Zeile als Klickfläche -- py-1
+        // allein blieb bei ~26px deutlich darunter. min-h-touch-pointer greift
+        // damit an JEDER Verwendungsstelle dieser Variante (auch Schlagwort-
+        // Picker, Wochentage, Erinnerungs-Presets), Padding minimal auf py-1.5
+        // angehoben, damit die Pille bei der größeren Höhe nicht gestaucht wirkt.
+        "inline-flex min-h-touch-pointer items-center justify-center rounded-full border px-3 py-1.5 text-xs transition " +
         (active
           ? "border-primary bg-primary text-on-primary"
           : "border-border-strong bg-surface text-secondary-ink hover:bg-surface-2")

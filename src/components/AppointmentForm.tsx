@@ -99,6 +99,10 @@ export default function AppointmentForm({
   const endTimeId = `${idPrefix}-end-time`;
   const descriptionId = `${idPrefix}-description`;
   const secretId = `${idPrefix}-secret`;
+  // Panel-Id des Beschreibungs-/Notizen-Disclosures (Finding #27-Review):
+  // aria-controls/-expanded gehören zusammen, EntryList macht es beim
+  // Zeitraum-Filter (rangePanelId) vor.
+  const notesPanelId = `${idPrefix}-notes-panel`;
 
   const baselineRef = useRef(JSON.stringify(appointment));
 
@@ -642,6 +646,7 @@ export default function AppointmentForm({
           className="flex w-full items-center justify-between text-sm font-semibold text-primary-ink"
           onClick={() => setNotesOpen((v) => !v)}
           aria-expanded={notesOpen}
+          aria-controls={notesPanelId}
         >
           <span className="flex items-center gap-1.5">
             Beschreibung &amp; vertrauliche Notizen
@@ -654,7 +659,7 @@ export default function AppointmentForm({
           <span className="text-disabled-ink">{notesOpen ? "▴" : "▾"}</span>
         </button>
         {notesOpen && (
-          <div className="space-y-3 pt-3">
+          <div id={notesPanelId} className="space-y-3 pt-3">
             <div>
               <label htmlFor={descriptionId} className={labelCls}>
                 Beschreibung
@@ -704,12 +709,16 @@ export default function AppointmentForm({
           Daumenzone sichtbar. -mx-4 gleicht das p-4 der Modal-Box in App.tsx
           aus, damit die Leiste randlos über die volle Breite reicht;
           bg-surface + border-t verhindern, dass darunterscrollender Inhalt
-          durchscheint. Kollidiert nicht mit der (fixed) BottomNav: sticky
-          wirkt nur innerhalb des scrollenden Modal-Containers, der bereits
-          eigenen Rand/Abstand zur BottomNav hat (siehe EntryForm-Kommentar
-          für die volle Begründung). Portrait-Feinschliff bleibt erhalten:
-          unter der sm-Grenze füllen die Buttons die volle Breite (flex-1)
-          mit 48px Tap-Höhe, ab sm rechtsbündig kompakt. */}
+          durchscheint. AppointmentForm läuft anders als EntryForm AUSSCHLIESS-
+          LICH im Modal (App.tsx) -- `sticky bottom-0` pinnt hier immer an der
+          unteren Kante des `fixed inset-0 overflow-y-auto`-Backdrops, der
+          ohnehin den kompletten Viewport inkl. BottomNav überdeckt
+          (`z-overlay` liegt über jeder Nav-Ebene); ein Kollisionsfall wie beim
+          direkt in `main` eingebetteten EntryForm (s. dortiger Kommentar für
+          die volle Begründung des früheren Fehlers) existiert hier also gar
+          nicht. Portrait-Feinschliff bleibt erhalten: unter der sm-Grenze
+          füllen die Buttons die volle Breite (flex-1) mit 48px Tap-Höhe, ab
+          sm rechtsbündig kompakt. */}
       <div className="sticky bottom-0 z-sticky -mx-4 flex justify-end gap-2 border-t border-border bg-surface px-4 py-3">
         {onCancel && (
           <button

@@ -60,7 +60,7 @@ export default function AppointmentDetail({
         </h3>
         {a.isImportant && (
           <span
-            className="inline-flex items-center gap-1 rounded bg-warning-badge px-1.5 py-0.5 text-xs font-medium text-warning-badge-ink"
+            className="inline-flex items-center gap-1 rounded-full bg-warning-badge px-1.5 py-0.5 text-xs font-medium text-warning-badge-ink"
             title="Als wichtig markiert"
           >
             <Icon name="alert-triangle" size={12} />

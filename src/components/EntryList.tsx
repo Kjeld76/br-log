@@ -324,20 +324,23 @@ export default function EntryList({
       </ul>
 
       {/* FAB "+ Neuer Eintrag" in der Daumenzone (Design-Handoff #27, 1d) --
-          nur Android; Desktop behält den Button oben (s. o.). bottom-[5.5rem]
-          (88px): die BottomNav ist fix 64px hoch (min-h-[64px]), durch Pille +
-          Label + Innenabstand real ca. 68-70px -- App.tsx reserviert dafür am
-          scrollenden Inhalt bereits pb-[4.5rem] (72px). Der FAB bekommt
-          zusätzlich ein eigenes ca. 16-18px-Sicherheitspolster obendrauf
-          (Material-FAB-Gutter), damit er die Leiste auch bei größerer
-          Systemschrift nie verdeckt oder verdeckt wird. */}
+          nur Android; Desktop behält den Button oben (s. o.). BottomNav ist
+          fix 64px hoch (min-h-[64px]), durch Pille + Label + Innenabstand
+          real ca. 68-70px; `bottom-20` (5rem/80px, Tailwind-Skalenwert statt
+          des vormals geratenen `bottom-[5.5rem]`) lässt darüber ein eigenes
+          ca. 10-16px-Sicherheitspolster (Material-FAB-Gutter), damit der FAB
+          die Leiste auch bei größerer Systemschrift nie verdeckt. Seit die
+          BottomNav kein `fixed`-Overlay mehr ist (s. Kommentar in
+          BottomNav.tsx), braucht der FAB dafür keine Rücksicht mehr auf ein
+          Scroll-Padding zu nehmen -- er ist ohnehin `fixed` und damit
+          unabhängig vom Scroll-Container positioniert. */}
       {mobile && (
         <button
           type="button"
           onClick={onNewEntry}
           aria-label="Neuer Eintrag"
           title="Neuer Eintrag"
-          className="fixed bottom-[5.5rem] right-4 z-sticky flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-token-3 transition hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="fixed bottom-20 right-4 z-sticky flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-token-3 transition hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           <Icon name="plus" size={24} />
         </button>

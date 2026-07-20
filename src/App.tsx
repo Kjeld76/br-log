@@ -830,13 +830,12 @@ export default function App() {
           />
         )}
 
-        <main
-          className={
-            mobile
-              ? "flex-1 overflow-y-auto pb-[4.5rem]"
-              : "flex-1 overflow-y-auto"
-          }
-        >
+        {/* Kein `pb-[4.5rem]` mehr auf Android: BottomNav ist kein `fixed`-
+            Overlay mehr, sondern ein normaler Flex-Bruder unterhalb dieses
+            Wrappers (s. Kommentar in BottomNav.tsx) -- `main` endet dadurch
+            bereits von selbst oberhalb der Leiste, eine Polster-Reservierung
+            entfällt. */}
+        <main className="flex-1 overflow-y-auto">
           {view === "erfassen" && (
             <QuickEntryView
               tags={allTags}

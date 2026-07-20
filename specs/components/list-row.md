@@ -85,6 +85,41 @@ Einträge, inkl. Duration-Summe rechts, Tag-Chips, Objections-Badge). Die
 Suchleiste darüber (großes Suchfeld, Filter-Chip/Disclosure) und der FAB
 darunter sind kein List-Row-Muster, s. `input.md`/`chip.md`/`button.md`.
 
+## BarRow (`src/views/StatsView.tsx:47-92`)
+
+Anders als die beiden Zeilen-Muster oben ist BarRow **kein** interaktives
+`<li role="button">` -- kein Klick-Handler, kein `tabIndex`, kein
+Fokus-Styling. Aufgenommen hier trotzdem, weil sie optisch/strukturell eine
+Zeile aus Label + Inhalt + Wert ist (Design-Handoff #27, 1e/„Auswertung mit
+KPI-Kacheln und Balken") und keiner anderen Spec eindeutiger zuzuordnen ist.
+
+Tokens:
+  Layout: `flex items-center gap-2` -- Label (fest breit) · Balken
+    (`flex-1`) · Zahlenwert (fest breit)
+  Label: `w-28 shrink-0 truncate text-xs text-secondary-ink` (+ `capitalize`
+    bei Monatsnamen, deren de-Locale-Formatierung klein beginnt, Finding 28).
+    `w-28` (112px) ersetzt seit dem #27-Review-Fix ein zu knappes `w-20`
+    (80px), an dem der längste deutsche Monatsname „September 2026"
+    abgeschnitten wurde -- der `title`-Tooltip als einziges Rettungsnetz ist
+    auf Touch (Android) ohnehin nicht erreichbar. `truncate` + `title`
+    bleiben als Schutz für ungewöhnlich lange, frei vergebene
+    Schlagwort-Namen bestehen (dieselbe Zeile bedient Monats- UND
+    Schlagwort-Summen).
+  Balken: `h-2 flex-1 overflow-hidden rounded-full bg-surface-2`
+    (Hintergrund) mit innerem `h-full rounded-full bg-primary`, Breite
+    inline per `style={{ width: ... }}` (`minutes / max * 100 %`, gekappt auf
+    100). Rein dekorativ und daher `aria-hidden="true"` -- Label und
+    Zahlenwert tragen die Information bereits als normaler Text, der Balken
+    verdoppelt sie nur visuell.
+  Zahlenwert: `w-16 shrink-0 text-right text-xs font-medium text-primary-ink`
+  focus/height/touch: nicht zutreffend (keine Interaktion)
+
+Zustände: keine (statische Datenvisualisierung, kein Hover/Focus/Disabled/
+  Active/Loading).
+
+Verwendung: `src/views/StatsView.tsx:286` („Je Monat", mit `capitalize`),
+`:339` („Je Schlagwort", ohne `capitalize`).
+
 ## Verifikation der Utilities (Grep-Gegenprobe)
 
 `bg-surface`, `border-border`, `surface-2`, `hover-accent-line`,
