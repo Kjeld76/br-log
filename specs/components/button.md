@@ -67,11 +67,39 @@ Verwendung: `src/lib/ui.ts:22,26`; groß in `src/App.tsx:1382` (Bestätigungs-
 dialog „Zurück"), `src/components/EntryForm.tsx:708` („Abbrechen"),
 `src/components/SeriesScopeDialog.tsx:73` („Abbrechen"),
 `src/components/PrintReportPanel.tsx`; kompakt in
-`src/views/CalendarPage.tsx:81`, `src/components/AboutPanel.tsx:67,75`,
+`src/views/CalendarPage.tsx:84` („Heute"), `src/components/AboutPanel.tsx:67,75`,
 `src/components/AppointmentAgenda.tsx:221`, `src/components/DbInfoPanel.tsx:128`,
-`src/components/AppointmentMonthGrid.tsx:138`, `src/components/ObjectionEditor.tsx:58`,
+`src/components/ObjectionEditor.tsx:58`,
 `src/components/RecoveryCodeReveal.tsx:56`, `src/components/ReminderSettings.tsx:97`,
 `src/components/SecurityPanel.tsx:165`.
+Ehemals auch `AppointmentMonthGrid.tsx` (Monats-Vor-/Zurück): seit der
+stabilen Kalender-Kopfzeile (#27, 1c) sind die beiden Textbuttons „‹
+Vorheriger"/„Nächster ›" durch die neuen Icon-Only-Pfeilbuttons ersetzt
+(siehe eigener Abschnitt „Icon-Only (Kalender-Monatspfeile)" unten) --
+`secondaryBtnSmCls` wird dort nicht mehr verwendet.
+
+## Icon-Only (Kalender-Monatspfeile, `AppointmentMonthGrid.tsx`)
+
+Tokens:
+  Rahmen/Text: `border border-border-strong text-primary-ink`,
+    `hover:bg-surface-2` (optisch verwandt mit dem Sekundär-Button, aber
+    quadratisch statt Text-Padding)
+  Form/Größe: `rounded`; feste 44×44px -- Breite kommt aus der
+    Grid-Spalte (`grid-cols-[44px_1fr_44px]`, Button selbst `w-full`),
+    Höhe über `min-h-touch-pointer` (44px, `--touch-pointer`). KEINE
+    `sm:`-Reduktion -- die Pfeile bleiben auf allen Breiten 44px, damit sie
+    nie die Position wechseln.
+  Inhalt: `Icon name="chevron-right" size={20}`, Zurück-Pfeil gespiegelt via
+    `rotate-180` (kein eigenes Asset).
+  a11y: `aria-label="Vorheriger Monat"`/„Nächster Monat" (kein sichtbarer
+    Text mehr, Label rein für Screenreader).
+  focus: kein lokales `focus-visible:` — globaler Ring aus `styles.css:22-25`
+
+Zustände: default · hover (`hover:bg-surface-2`) · focus-visible (global).
+  disabled/active/loading — nicht vorhanden.
+
+Verwendung: `src/components/AppointmentMonthGrid.tsx` (Monatsnavigation,
+einzige Fundstelle dieses Musters).
 
 ## Danger (bg-danger)
 

@@ -69,10 +69,13 @@ export default function CalendarPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-primary-ink">
-          Kalender
-        </h2>
+      {/* Titel jetzt allein in der ersten Zeile, die Aktionen darunter in
+          einer eigenen Zeile (statt neben Titel/Pfeilen gedrängt) -- Platz
+          für die feste 3-Spalten-Kopfzeile der Monatsnavigation (siehe
+          AppointmentMonthGrid), die sonst mit um Platz konkurrierte und den
+          Zeilenumbruch mit auslöste (Design-Handoff #27, 1c). */}
+      <header className="space-y-2">
+        <h2 className="text-lg font-bold text-primary-ink">Kalender</h2>
         <div className="flex flex-wrap items-center gap-2">
           {sub === "monat" && (
             <>
@@ -98,7 +101,7 @@ export default function CalendarPage({
           )}
           <button
             type="button"
-            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
+            className="min-h-touch rounded bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
             onClick={() => onNewAppointment(todayIso())}
           >
             + Termin

@@ -8,7 +8,8 @@ import {
 } from "../db/repository";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
-import { errorBoxCls, secondaryBtnSmCls } from "../lib/ui";
+import { errorBoxCls } from "../lib/ui";
+import { Icon } from "./Icon";
 import {
   monthGrid,
   monthLabel,
@@ -135,28 +136,50 @@ export default function AppointmentMonthGrid({
     }
   };
 
-  const navBtn = secondaryBtnSmCls + " min-h-touch-pointer sm:min-h-0";
+  // Feste 3-Spalten-Kopfzeile (Pfeil · Titel · Pfeil, Design-Handoff #27,
+  // 1c): vorher stand die Stundensumme inline im <h3> hinter dem Monatsnamen
+  // und die Zeile war "flex flex-wrap justify-between" -- bei langen
+  // Monatsnamen (z. B. "September 2026 (12:30 Std)") brach das in den
+  // Zweizeilen-Modus um, wodurch die Pfeile je nach Monat an
+  // unterschiedlichen Positionen landeten. Die äußeren Spalten sind per
+  // Grid-Template fest 44px breit, unabhängig vom Titelinhalt; die
+  // Mittelspalte kürzt lange Titel per truncate statt umzubrechen, die
+  // Stundensumme steht als eigene Unterzeile darunter -- die Pfeile können
+  // dadurch strukturell nicht mehr wandern.
+  const arrowBtnCls =
+    "flex min-h-touch-pointer w-full items-center justify-center rounded border border-border-strong text-primary-ink transition hover:bg-surface-2";
   const selectedOccs = selectedDay ? occsByDay.get(selectedDay) ?? [] : [];
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <button type="button" className={navBtn} onClick={() => onShiftMonth(-1)}>
-          ‹ Vorheriger
+      <div className="grid grid-cols-[44px_1fr_44px] items-center gap-2">
+        <button
+          type="button"
+          className={arrowBtnCls}
+          onClick={() => onShiftMonth(-1)}
+          aria-label="Vorheriger Monat"
+        >
+          <Icon name="chevron-right" size={20} className="rotate-180" />
         </button>
-        <h3 className="text-base font-semibold capitalize text-primary-ink">
-          {monthLabel(month)}
+        <div className="min-w-0 text-center">
+          <h3 className="truncate text-base font-semibold capitalize text-primary-ink">
+            {monthLabel(month)}
+          </h3>
           {(monthWorkMinutes > 0 || monthCompensationMinutes > 0) && (
-            <span className="ml-2 text-sm font-normal normal-case text-secondary-ink">
-              ({minutesToHhmm(monthWorkMinutes)} Std
+            <p className="truncate text-sm text-secondary-ink">
+              {minutesToHhmm(monthWorkMinutes)} Std
               {monthCompensationMinutes > 0 &&
                 ` · + ${minutesToHhmm(monthCompensationMinutes)} Std Freizeitausgleich`}
-              )
-            </span>
+            </p>
           )}
-        </h3>
-        <button type="button" className={navBtn} onClick={() => onShiftMonth(1)}>
-          Nächster ›
+        </div>
+        <button
+          type="button"
+          className={arrowBtnCls}
+          onClick={() => onShiftMonth(1)}
+          aria-label="Nächster Monat"
+        >
+          <Icon name="chevron-right" size={20} />
         </button>
       </div>
 
