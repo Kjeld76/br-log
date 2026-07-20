@@ -549,7 +549,15 @@ export default function EntryForm({
             Handoff #27, 1b; Muster TagChip variant="selectable" wie beim
             Schlagwort-Picker oben). Freizeitausgleich (Finding 14, § 37 Abs. 3
             BetrVG): ein genommener Ausgleich ist keine BR-Tätigkeit -- Tags/
-            GL-Info/Vertraulich bleiben wie zuvor gesperrt (s. u.). */}
+            GL-Info/Vertraulich bleiben wie zuvor gesperrt (s. u.). Der
+            Gesetzesbezug stand vorher fest im Checkbox-Label und war damit
+            immer sichtbar -- der kurze Chip-Text allein trüge ihn nicht mehr,
+            daher bleibt er als eigene, dauerhaft sichtbare Zeile erhalten
+            (Controller-Finding: das darf nicht erst nach dem Aktivieren des
+            Chips sichtbar werden, sonst Informationsverlust bei einem
+            rechtlich definierten Merkmal). Nur die AUSFÜHRLICHE Konsequenz
+            darunter (Sperrung von Tags/GL-Info/Vertraulich, Saldo-Zufluss)
+            beschreibt eine Folge und bleibt an den aktiven Chip gebunden. */}
         <div>
           <label className={labelCls}>Merkmale</label>
           <div className="flex flex-wrap gap-1.5">
@@ -566,6 +574,10 @@ export default function EntryForm({
               onClick={() => patch({ isCompensation: !draft.isCompensation })}
             />
           </div>
+          <p className="mt-1.5 text-xs text-secondary-ink">
+            Freizeitausgleich (§ 37 Abs. 3 BetrVG): genommener Ausgleich,
+            keine BR-Tätigkeit.
+          </p>
           {!draft.hadPlannedShift && (
             <div className="mt-2">
               <label htmlFor={shiftNoteId} className={labelCls}>
@@ -584,7 +596,6 @@ export default function EntryForm({
           )}
           {draft.isCompensation && (
             <p className="mt-2 text-xs text-secondary-ink">
-              Freizeitausgleich (§ 37 Abs. 3 BetrVG): keine BR-Tätigkeit –
               Schlagwörter, GL-Info und vertrauliche Details sind hier nicht
               relevant und werden gesperrt. Fließt separat in den
               Freizeitausgleich-Saldo der Auswertung ein.
