@@ -972,14 +972,31 @@ export default function App() {
                 />
               </>
             )}
+            {/* Termin-Details (Design-Handoff #27, 1g): "Schließen" ist hier
+                das X im Modal-Kopf statt eines Footer-Buttons -- die übrigen
+                vier Fußzeilen-Aktionen (Zeit buchen/Duplizieren/Löschen/
+                Bearbeiten) brachen auf 360px sonst zu einem gedrängten Block
+                um. Folgt damit demselben X-Muster wie Einstellungen/Über
+                weiter unten (Begründung dort). */}
             {modal.type === "apptDetail" && (
               <>
-                <h2
-                  id="entry-modal-heading"
-                  className="mb-3 text-base font-semibold text-primary-ink"
-                >
-                  Termin-Details
-                </h2>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2
+                    id="entry-modal-heading"
+                    className="text-base font-semibold text-primary-ink"
+                  >
+                    Termin-Details
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Schließen"
+                    title="Schließen"
+                    onClick={() => setModal(null)}
+                    className="-my-2 -mr-2 flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-lg text-secondary-ink hover:bg-surface-2"
+                  >
+                    <Icon name="x" size={20} />
+                  </button>
+                </div>
                 <AppointmentDetail
                   appointment={modal.appointment}
                   occurrence={modal.occ}
@@ -989,7 +1006,6 @@ export default function App() {
                   onBookTime={() =>
                     bookTimeFromAppointment(modal.appointment, modal.occ)
                   }
-                  onClose={() => setModal(null)}
                 />
               </>
             )}
@@ -999,10 +1015,11 @@ export default function App() {
                 beim Öffnen unsichtbar (unterhalb des Folds), das X oben ist
                 sofort als Ausweg erkennbar. Auf Android (fullscreen-nah, kein
                 sichtbarer Backdrop) ist es der einzige sichtbare Ausweg neben
-                der System-Zurück-Taste. Form/Detail behalten ihre Footer-
-                Aktionsleisten (dort ist Schließen Teil echter Aktionen). Das
-                X ist zudem das erste fokussierbare Element -> die Fokusfalle
-                (useModalFocusTrap) fokussiert es beim Öffnen. */}
+                der System-Zurück-Taste. Das Eintrags-Detail-Modal (EntryDetail)
+                behält seine Footer-Aktionsleiste (dort ist Schließen Teil
+                echter Aktionen, siehe #27 1d -- außerhalb dieses Auftrags).
+                Das X ist zudem das erste fokussierbare Element -> die
+                Fokusfalle (useModalFocusTrap) fokussiert es beim Öffnen. */}
             {modal.type === "settings" && (
               <>
                 <div className="mb-3 flex items-center justify-between gap-2">

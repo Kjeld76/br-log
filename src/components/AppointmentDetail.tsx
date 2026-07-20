@@ -1,7 +1,6 @@
 import type { AppointmentFullItem } from "../types";
 import { formatDateDe } from "../lib/calendar";
 import { reminderLabel, dotClsFor } from "../lib/appointmentUi";
-import { secondaryBtnCls } from "../lib/ui";
 import type { OccurrenceRef } from "../lib/appointments";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -11,7 +10,6 @@ interface Props {
   occurrence: OccurrenceRef;
   onEdit: () => void;
   onDelete: () => void;
-  onClose: () => void;
   onDuplicate: () => void;
   /** Öffnet das Eintragsformular vorbefüllt aus diesem Termin ("Zeit buchen"). */
   onBookTime: () => void;
@@ -22,19 +20,19 @@ export default function AppointmentDetail({
   occurrence,
   onEdit,
   onDelete,
-  onClose,
   onDuplicate,
   onBookTime,
 }: Props) {
   const a = appointment;
+  // Label über Wert statt schmaler 1/3-Spalte (Design-Handoff #27, 1g) --
+  // auf 360px-Breite lesbarer als das frühere 3-Spalten-Raster, dessen
+  // Label-Spalte lange Begriffe ("Erinnerungen") abschnitt.
   const row = (label: string, value: React.ReactNode) => (
-    <div className="grid grid-cols-3 gap-2 py-1.5">
-      <div className="text-sm font-medium text-secondary-ink">
+    <div className="py-1.5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-secondary-ink">
         {label}
       </div>
-      <div className="col-span-2 text-sm text-primary-ink">
-        {value}
-      </div>
+      <div className="mt-0.5 text-sm text-primary-ink">{value}</div>
     </div>
   );
 
@@ -49,6 +47,9 @@ export default function AppointmentDetail({
     : occurrence.startTime && occurrence.endTime
     ? `${occurrence.startTime} – ${occurrence.endTime}`
     : "—";
+  // Datum und Zeit in einer Zeile zusammengefasst (Design-Handoff #27, 1g)
+  // statt zweier eigener Zeilen.
+  const dateTimeValue = `${dateValue} · ${timeValue}`;
 
   return (
     <div className="space-y-3">
@@ -69,8 +70,7 @@ export default function AppointmentDetail({
       </div>
 
       <div className="divide-y divide-border">
-        {row("Datum", dateValue)}
-        {row("Zeit", timeValue)}
+        {row("Datum & Zeit", dateTimeValue)}
         {a.location && row("Ort", a.location)}
         {(a.rrule !== null || a.parentId !== null) &&
           row(
@@ -115,46 +115,50 @@ export default function AppointmentDetail({
         </p>
       </div>
 
-      <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-3">
-        <button
-          type="button"
-          className="min-h-touch rounded px-3 py-2 text-sm text-destructive-ink hover:bg-destructive-hover sm:min-h-0"
-          onClick={onDelete}
-        >
-          Löschen
-        </button>
-        <div className="flex flex-wrap gap-2">
+      {/* Aktionsleiste (Design-Handoff #27, 1g): "Schließen" ist ins X im
+          Modal-Header gewandert (App.tsx) -- die verbleibenden vier Aktionen
+          brachen auf 360px sonst zu einem gedrängten Block um. Drei gleich
+          große Icon-Buttons (Zeit buchen/Duplizieren/Löschen) bilden eine
+          feste Reihe, "Bearbeiten" bleibt als einzige Primär-Aktion volle
+          Breite in der Daumenzone. "Löschen" ist über text-destructive-ink
+          weiterhin die einzige rote Aktion, nur nicht mehr direkt neben
+          "Bearbeiten". */}
+      <div className="space-y-2 border-t border-border pt-3">
+        <div className="flex gap-2">
           <button
             type="button"
-            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
-            onClick={onClose}
-          >
-            Schließen
-          </button>
-          <button
-            type="button"
-            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
-            onClick={onDuplicate}
-            title="Als Vorlage für einen neuen Termin übernehmen"
-          >
-            Duplizieren
-          </button>
-          <button
-            type="button"
-            className={secondaryBtnCls + " min-h-touch sm:min-h-0"}
+            className="flex min-h-touch-pointer flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-border-strong px-2 py-2 text-xs text-primary-ink hover:bg-surface-2"
             onClick={onBookTime}
             title="Zeiteintrag mit Datum, Uhrzeit und Schlagwörtern dieses Termins anlegen"
           >
+            <Icon name="clock" size={18} />
             Zeit buchen
           </button>
           <button
             type="button"
-            className="min-h-touch rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover sm:min-h-0"
-            onClick={onEdit}
+            className="flex min-h-touch-pointer flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-border-strong px-2 py-2 text-xs text-primary-ink hover:bg-surface-2"
+            onClick={onDuplicate}
+            title="Als Vorlage für einen neuen Termin übernehmen"
           >
-            Bearbeiten
+            <Icon name="copy" size={18} />
+            Duplizieren
+          </button>
+          <button
+            type="button"
+            className="flex min-h-touch-pointer flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-border-strong px-2 py-2 text-xs text-destructive-ink hover:bg-destructive-hover"
+            onClick={onDelete}
+          >
+            <Icon name="trash" size={18} />
+            Löschen
           </button>
         </div>
+        <button
+          type="button"
+          className="min-h-touch w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-on-primary hover:bg-primary-hover"
+          onClick={onEdit}
+        >
+          Bearbeiten
+        </button>
       </div>
     </div>
   );
