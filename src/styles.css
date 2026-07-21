@@ -141,6 +141,45 @@ body {
   border-radius: 0.5rem;
 }
 
+/* ----------------------------------------------------------------------------
+   Einstellungen (SettingsPanel): Master-Detail ab ausreichender Panel-Breite
+   (Design-Handoff #28, "Di" -- Desktop-Fassung). Container Query statt
+   Viewport-Breakpoint (CLAUDE.md: "Container Queries für neue
+   platzabhängige Komponenten") -- entscheidend ist die tatsächliche Breite
+   des Panels selbst, nicht die des Viewports oder das mobile-Flag: ein
+   schmales Desktop-Fenster bleibt dadurch bei der einspaltigen Stapelung
+   statt zwei gequetschte Spalten zu bekommen; auf Android ist das Panel
+   ohnehin schmal genug, dass die Query von selbst bei der Stapelung bleibt.
+   640px = derselbe Zahlenwert wie Tailwinds `sm:`-Breakpoint (Deckenwert für
+   "genug Platz"), hier als Container- statt Viewport-Bedingung.
+   Kein Tailwind-Plugin nötig (Tailwind 3.4 hat @container erst per
+   @tailwindcss/container-queries) -- reines CSS wie die übrigen
+   Bestandsklassen dieser Datei (.brand-logo-wrap, .appt-chip-*). */
+.settings-shell {
+  container-type: inline-size;
+  container-name: settings;
+}
+.settings-nav-list {
+  display: none;
+}
+@container settings (min-width: 640px) {
+  .settings-layout {
+    display: grid;
+    grid-template-columns: 12rem 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .settings-nav-list {
+    display: block;
+  }
+  .settings-section {
+    display: none;
+  }
+  .settings-section[data-active="true"] {
+    display: block;
+  }
+}
+
 @media print {
   body * {
     visibility: hidden;

@@ -908,11 +908,20 @@ export default function App() {
               mobile
                 ? "min-h-full w-full rounded-none bg-surface p-4 shadow-xl outline-none"
                 : // "Über BR-Log" ist bewusst ein kleines Modal (siehe Auftrag),
-                  // alle anderen (Formular/Detail/Einstellungen) bleiben beim
-                  // gewohnten max-w-2xl -- selber Container/Mechanismus, nur die
-                  // Breite variiert mit dem Modal-Typ.
+                  // Formular/Detail bleiben beim gewohnten max-w-2xl -- selber
+                  // Container/Mechanismus, nur die Breite variiert mit dem
+                  // Modal-Typ. "Einstellungen" bekommt seit der Desktop-
+                  // Master-Detail-Ansicht (Design-Handoff #28, "Di") mehr
+                  // Breite (max-w-4xl): die Abschnittsliste links (12rem, s.
+                  // .settings-layout in styles.css) kommt bei max-w-2xl sonst
+                  // zulasten des Detailbereichs, der dann kaum breiter wäre
+                  // als in der einspaltigen Stapelung zuvor.
                   "my-4 w-full rounded-lg bg-surface p-4 shadow-xl outline-none " +
-                  (modal.type === "about" ? "max-w-sm" : "max-w-2xl")
+                  (modal.type === "about"
+                    ? "max-w-sm"
+                    : modal.type === "settings"
+                      ? "max-w-4xl"
+                      : "max-w-2xl")
             }
             onClick={(e) => e.stopPropagation()}
           >
