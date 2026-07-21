@@ -1186,6 +1186,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ));
+        // Globaler Sofortsperre-Hotkey (Issue #17, Task 6): das Plugin wird
+        // hier nur INITIALISIERT (kein with_shortcut/with_handler) -- die
+        // eigentliche Registrierung/Freigabe der Kombination läuft komplett
+        // frontendseitig über das JS-Plugin (lib/lockHotkey.ts), das die
+        // Einstellung aus localStorage liest und bei Änderungen neu
+        // registriert. Cargo.toml gated die Dependency bereits auf
+        // Nicht-Android/iOS; dieser Block hier (innerhalb von
+        // `#[cfg(desktop)]`) ist die zusätzliche Absicherung auf der
+        // Init-Seite.
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
     // Android-Portierung (A-Core): Storage-Access-Framework-Plugin nur auf
     // Android registrieren -- braucht der echte Android-Arm der drei

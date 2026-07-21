@@ -34,6 +34,8 @@ import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
+import { applyLockHotkey, setLockHotkeyTrigger } from "./lib/lockHotkey";
+import { listen } from "@tauri-apps/api/event";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
 import { useReminderScheduler } from "./lib/useReminderScheduler";
@@ -315,6 +317,52 @@ export default function App() {
       setLocked(true);
     });
   };
+
+  // Ref auf den aktuellen Sperrzustand: der globale Hotkey (System-Callback
+  // von tauri-plugin-global-shortcut, außerhalb des React-Renderzyklus)
+  // braucht beim Feuern den JEWEILS aktuellen Wert, nicht den zum Zeitpunkt
+  // der einmaligen Registrierung eingefangenen.
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
+
+  // Globaler Sofortsperre-Hotkey (Issue #17, Desktop-only): Trigger einmalig
+  // hinterlegen (SecurityPanel registriert bei Einstellungsänderungen selbst
+  // neu, kennt aber den Sperrzustand nicht) und initial registrieren --
+  // lockHotkey.ts liest die Einstellung selbst aus localStorage und ist auf
+  // Android ein No-op (Plugin existiert dort nicht). Wirkt NUR im
+  // entsperrten Zustand -- im gesperrten Zustand (LockScreen) bewusst ein
+  // No-op, ein versehentlicher Druck dort löst nichts aus.
+  useEffect(() => {
+    setLockHotkeyTrigger(() => {
+      if (!lockedRef.current) doLock();
+    });
+    void applyLockHotkey();
+  }, []);
+
+  // Tray-Menü "Sofort sperren" (tray.rs): sendet ein Event ans Frontend statt
+  // direkt zu sperren -- die App bleibt beim Verstecken ins Tray gemountet
+  // (Tray-Bestandsverhalten), der Listener läuft deshalb unabhängig vom
+  // sichtbaren Fenster weiter. Anders als der Hotkey wirkt der Tray-Eintrag
+  // UNABHÄNGIG vom Sperrzustand (Sperren einer bereits gesperrten DB ist
+  // harmlos, s. crypto_lock) -- derselbe Pfad wie die AppMenu-Sofortsperre.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    listen("brlog://lock", () => doLock())
+      .then((fn) => {
+        if (active) unlisten = fn;
+        else fn();
+      })
+      .catch(() => {
+        /* Außerhalb einer echten Tauri-Webview (z. B. Tests) ignorieren. */
+      });
+    return () => {
+      active = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Auto-Lock bei Inaktivität (abschaltbar, Sentinel 0 = "nie", Issue #17) +
   // Sperren, sobald die App nicht mehr sichtbar ist (NICHT abschaltbar, ganz

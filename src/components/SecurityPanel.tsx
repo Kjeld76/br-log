@@ -10,6 +10,12 @@ import {
   bioDisable,
 } from "../lib/auth";
 import { secondaryBtnSmCls } from "../lib/ui";
+import { acceleratorFromEvent, formatAccelerator } from "../lib/hotkey";
+import {
+  getLockHotkeySettings,
+  setLockHotkeySettings,
+  type LockHotkeySettings,
+} from "../lib/lockHotkey";
 import RecoveryCodeReveal from "./RecoveryCodeReveal";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -32,6 +38,14 @@ interface Props {
 const LOCK_OPTIONS = [1, 3, 5, 10, 15, 30, 60];
 const MIN_LOCK_INPUT = 1;
 const MAX_LOCK_INPUT = 60;
+
+// Ein Tastendruck aus mehreren Tasten (z. B. Strg+Umschalt+L) löst NACHEINANDER
+// mehrere keydown-Events aus (erst Strg, dann Umschalt, erst danach die
+// Haupttaste). Modifier-Tasten allein werden beim Aufnehmen still ignoriert
+// (weiter warten) statt bei jedem Zwischenschritt den Fehlerhinweis
+// aufblitzen zu lassen -- der Hinweis erscheint erst bei einer TATSÄCHLICH
+// ungültigen Kombination (z. B. Taste ganz ohne Ctrl/Alt/Meta).
+const MODIFIER_ONLY_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 // Sentinel „nie automatisch sperren" (siehe lib/auth.ts NEVER_AUTOLOCK_MIN) --
 // identischer Wert, hier lokal benannt, damit diese Datei nicht den
 // modulinternen Namen aus auth.ts importieren muss (der ist bewusst nicht
@@ -53,6 +67,20 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
   // Minutenwert erscheint, statt auf den Default zurückzufallen.
   const [lockMin, setLockMin] = useState(DEFAULT_LOCK_MIN);
   const [draftMinutes, setDraftMinutes] = useState(String(DEFAULT_LOCK_MIN));
+
+  // Globaler Sofortsperre-Hotkey (Issue #17, Desktop-only): Einstellung liegt
+  // in localStorage (lockHotkey.ts, kein Geheimnis) -- lazy-Init liest sie
+  // synchron beim ersten Render, ohne einen zusätzlichen Lade-Zustand zu
+  // brauchen (anders als z. B. bioAvailable, das echt asynchron ist).
+  const [hotkeyEnabled, setHotkeyEnabledState] = useState(
+    () => getLockHotkeySettings().enabled
+  );
+  const [hotkeyAccel, setHotkeyAccelState] = useState(
+    () => getLockHotkeySettings().accelerator
+  );
+  const [hotkeyRecording, setHotkeyRecording] = useState(false);
+  const [hotkeyBusy, setHotkeyBusy] = useState(false);
+  const [hotkeyMsg, setHotkeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Recovery-Code neu erzeugen
   const [rcPw, setRcPw] = useState("");
@@ -143,6 +171,51 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
     if (min > NEVER_LOCK) setDraftMinutes(String(min));
     await setAutoLockMinutes(min);
     onAutoLockChanged(min);
+  };
+
+  // Persistiert + registriert den Hotkey neu (lockHotkey.ts); bei einem
+  // Registrierungsfehler (Kombination anderweitig belegt) bleibt die
+  // vorherige, funktionierende Einstellung aktiv (Rollback in lockHotkey.ts)
+  // -- hier nur die UI-Zustände entsprechend nachführen bzw. die Meldung zeigen.
+  const applyHotkeyChange = async (next: LockHotkeySettings) => {
+    setHotkeyBusy(true);
+    setHotkeyMsg(null);
+    try {
+      await setLockHotkeySettings(next);
+      setHotkeyEnabledState(next.enabled);
+      setHotkeyAccelState(next.accelerator);
+    } catch (err) {
+      setHotkeyMsg({ ok: false, text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setHotkeyBusy(false);
+    }
+  };
+
+  const toggleHotkeyEnabled = () => {
+    void applyHotkeyChange({ enabled: !hotkeyEnabled, accelerator: hotkeyAccel });
+  };
+
+  // Aufnahme-Feld: der Button selbst fängt den nächsten Tastendruck ab.
+  // Escape bricht ohne Änderung ab; eine ungültige Kombination (kein
+  // Ctrl/Alt/Meta + Taste, s. hotkey.ts) zeigt einen Hinweis, OHNE den
+  // Aufnahme-Modus zu verlassen -- der nächste Versuch ist sofort möglich.
+  const onHotkeyRecordKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (e.key === "Escape") {
+      setHotkeyRecording(false);
+      return;
+    }
+    if (MODIFIER_ONLY_KEYS.has(e.key)) return;
+    const acc = acceleratorFromEvent(e.nativeEvent);
+    if (!acc) {
+      setHotkeyMsg({
+        ok: false,
+        text: "Bitte Strg, Alt oder die Windows-/Befehlstaste zusammen mit einer weiteren Taste drücken.",
+      });
+      return;
+    }
+    setHotkeyRecording(false);
+    void applyHotkeyChange({ enabled: hotkeyEnabled, accelerator: acc });
   };
 
   // Zahleneingabe (1-60): live übernehmen, sobald der eingetippte Wert
@@ -379,6 +452,59 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
           entfernt – die Datei ist dann wieder vollständig verschlüsselt.
         </p>
       </section>
+
+      {/* Globaler Sofortsperre-Hotkey (Issue #17, Desktop-only): Registrierung
+          über tauri-plugin-global-shortcut läuft frontendseitig (lockHotkey.ts,
+          App.tsx). Auf Android gibt es weder ein Konzept für systemweite
+          Hotkeys noch das Plugin -- der Abschnitt bleibt dort komplett weg
+          (kein toter, nie wirksamer Schalter). */}
+      {!mobile && (
+        <section className={card}>
+          <h4 className="mb-2 text-sm font-semibold text-primary-ink">
+            Globaler Hotkey
+          </h4>
+          <p className="mb-3 text-xs text-secondary-ink">
+            Sperrt BR-Log sofort per Tastenkombination -- auch wenn das
+            Fenster gerade nicht im Fokus ist. Wirkt nur, solange die App
+            entsperrt ist.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <TagChip
+              label={hotkeyEnabled ? "Aktiviert" : "Deaktiviert"}
+              variant="selectable"
+              active={hotkeyEnabled}
+              onClick={toggleHotkeyEnabled}
+            />
+            <button
+              type="button"
+              className={outlineBtn}
+              disabled={hotkeyBusy}
+              title="Klicken und neue Tastenkombination drücken"
+              onClick={() => {
+                setHotkeyMsg(null);
+                setHotkeyRecording(true);
+              }}
+              onKeyDown={hotkeyRecording ? onHotkeyRecordKeyDown : undefined}
+              onBlur={() => setHotkeyRecording(false)}
+            >
+              {hotkeyRecording
+                ? "Kombination drücken… (Esc bricht ab)"
+                : `Kombination: ${formatAccelerator(hotkeyAccel)}`}
+            </button>
+          </div>
+          {hotkeyMsg && (
+            <p
+              role="status"
+              aria-live="polite"
+              className={
+                "mt-2 text-sm " + (hotkeyMsg.ok ? "text-success" : "text-danger-ink")
+              }
+            >
+              {hotkeyMsg.text}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Fingerabdruck-Anmeldung (Issue #2, B-UI): nur Android UND nur, wenn
           das Gerät Biometrie überhaupt anbietet -- ohne Verfügbarkeit bleibt
