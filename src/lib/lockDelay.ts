@@ -23,6 +23,14 @@ export interface LockDelayDeps {
   setTimer?: (cb: () => void, ms: number) => number;
   /** Bricht einen mit setTimer gestarteten Timer ab. Default: window.clearTimeout. */
   clearTimer?: (id: number) => void;
+  /**
+   * Liefert die aktuelle Zeit in ms (analog reminderOrchestrator.ts). Default:
+   * Date.now. Nötig, weil Android WebView-Timer im Hintergrund/bei
+   * Bildschirm-Aus gedrosselt/pausiert werden können -- `setTimer` allein
+   * reicht dann nicht: der Timer feuert evtl. nie, obwohl die Karenz laut
+   * Wanduhr längst abgelaufen ist (s. onVisible).
+   */
+  now?: () => number;
 }
 
 export interface LockDelayController {
@@ -37,22 +45,32 @@ export interface LockDelayController {
 /**
  * Baut den Karenz-Controller. `delaySec <= 0`: `onHidden()` sperrt sofort
  * (kein Timer, entspricht dem Bestandsverhalten). `delaySec > 0`:
- * `onHidden()` startet einen Timer; wird die App vor Ablauf wieder sichtbar
- * (`onVisible()`), bricht der Timer ab, OHNE zu sperren. Läuft der Timer ab,
- * feuert `onLock()`. Ein zweites `onHidden()` (z. B. erneutes Verstecken nach
- * einem abgebrochenen Timer, oder ohne zwischenzeitliche Rückkehr) bricht
- * einen evtl. noch laufenden Timer ab und startet die Karenz komplett neu.
+ * `onHidden()` merkt sich den Zeitpunkt (`now()`) UND startet einen Timer.
+ * Wird die App vor Ablauf wieder sichtbar (`onVisible()`), prüft diese
+ * zusätzlich die seit `onHidden()` vergangene Zeit gegen `delaySec`: liegt
+ * sie DARUNTER, war die Rückkehr rechtzeitig -- der Timer wird abgebrochen,
+ * OHNE zu sperren. Liegt sie DARÜBER ODER GLEICH (der Timer hätte also
+ * längst feuern müssen, ist aber z. B. wegen Android-Hintergrund-Drosselung
+ * nie gefeuert), wird sofort gesperrt -- die Karenz gilt dann als
+ * abgelaufen, auch ohne dass `setTimer`s Callback je lief. Läuft der Timer
+ * regulär ab (App bleibt durchgehend versteckt), feuert `onLock()` wie
+ * gehabt. Ein zweites `onHidden()` (z. B. erneutes Verstecken nach einem
+ * abgebrochenen Timer, oder ohne zwischenzeitliche Rückkehr) bricht einen
+ * evtl. noch laufenden Timer ab und startet die Karenz komplett neu.
  */
 export function createLockDelay(deps: LockDelayDeps): LockDelayController {
   const setTimer = deps.setTimer ?? ((cb, ms) => window.setTimeout(cb, ms));
   const clearTimer = deps.clearTimer ?? ((id) => window.clearTimeout(id));
+  const now = deps.now ?? Date.now;
   let timerId: number | undefined;
+  let hiddenAt: number | undefined;
 
   const cancel = () => {
     if (timerId !== undefined) {
       clearTimer(timerId);
       timerId = undefined;
     }
+    hiddenAt = undefined;
   };
 
   return {
@@ -62,12 +80,28 @@ export function createLockDelay(deps: LockDelayDeps): LockDelayController {
         deps.onLock();
         return;
       }
+      hiddenAt = now();
       timerId = setTimer(() => {
         timerId = undefined;
+        hiddenAt = undefined;
         deps.onLock();
       }, deps.delaySec * 1000);
     },
-    onVisible: cancel,
+    onVisible() {
+      // Suspend-Fall (Android-WebView-Timer im Hintergrund pausiert/
+      // gedrosselt): der Timer ist noch als anhängig verzeichnet, aber laut
+      // Wanduhr ist die Karenz bereits um -- dann NICHT nur abbrechen,
+      // sondern sofort sperren (der Timer hätte längst feuern müssen).
+      if (timerId !== undefined && hiddenAt !== undefined) {
+        const elapsedMs = now() - hiddenAt;
+        if (elapsedMs >= deps.delaySec * 1000) {
+          cancel();
+          deps.onLock();
+          return;
+        }
+      }
+      cancel();
+    },
     dispose: cancel,
   };
 }

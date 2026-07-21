@@ -352,7 +352,11 @@ export default function App() {
   // secureScreen.ts ist auf Desktop ein No-op (isAndroid()-Guard dort).
   useEffect(() => {
     if (!mobile || !ready) return;
-    void applySecureScreenSetting();
+    // Fail-safe-Richtung stimmt schon (Default AN aus MainActivity.onCreate
+    // bleibt bei einem Fehlschlag unangetastet) -- catch nur, damit ein
+    // abgelehntes Promise (z. B. Plugin-Fehler) nicht als unhandled Rejection
+    // auffällt.
+    void applySecureScreenSetting().catch(console.warn);
   }, [mobile, ready]);
 
   // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
