@@ -683,7 +683,9 @@ fn crypto_regenerate_recovery(
     Ok(json!({ "recoveryCode": crypto::format_recovery(&recovery) }))
 }
 
-/// Auto-Lock-Dauer (Minuten) in der Keyfile v2 setzen.
+/// Auto-Lock-Dauer (Minuten) in der Keyfile v2 setzen. Sentinel `0` = „nie
+/// automatisch sperren" (Issue #17) -- bleibt unverändert `0`, jeder andere
+/// Wert wird auf 1..=120 geklemmt (siehe crypto::clamp_autolock_minutes).
 #[tauri::command]
 fn crypto_set_autolock(
     loc: State<'_, AppDbLocation>,
@@ -694,7 +696,7 @@ fn crypto_set_autolock(
         crypto::KeyfileState::Corrupt(m) => return Err(CryptoCmdError::Corrupt { message: m }),
         _ => return Err(db_err("Keine verschlüsselte Datenbank vorhanden.")),
     };
-    kf.auto_lock_minutes = minutes.clamp(1, 120);
+    kf.auto_lock_minutes = crypto::clamp_autolock_minutes(minutes);
     crypto::write_keyfile_atomic(&loc.0.data_dir, &kf).map_err(db_err)
 }
 

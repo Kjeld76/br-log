@@ -316,17 +316,27 @@ export default function App() {
     });
   };
 
-  // Auto-Lock bei Inaktivität (Pflicht) + Sperren, sobald die App nicht mehr
-  // sichtbar ist. Linux-Portierung (L3): ersetzt den bisherigen Windows-
-  // spezifischen Weg über @tauri-apps/api/window (onResized + isMinimized,
-  // das unter WebKitGTK/Linux nicht zuverlässig dieselben Ereignisse liefert)
-  // durch die plattformneutrale Page-Visibility-API. document.hidden wird
-  // true bei Minimieren, Tab-/Fenster-Wechsel, Bildschirmsperre -- unter
-  // Windows, Linux und später Android gleichermaßen, ganz ohne
-  // fenster-spezifisches Tauri-Plugin. Bewusst OHNE Gnadenfrist: Sperren
-  // erfolgt sofort beim Verstecken. Eine Grace-Periode von ~5 s wäre Plan B,
-  // falls sich das in der Praxis (z. B. kurzes Alt-Tab) als zu aggressiv
-  // erweist -- bis dahin gilt die strengere, sicherere Variante.
+  // Auto-Lock bei Inaktivität (abschaltbar, Sentinel 0 = "nie", Issue #17) +
+  // Sperren, sobald die App nicht mehr sichtbar ist (NICHT abschaltbar, ganz
+  // eigener Mechanismus -- s. u.). Linux-Portierung (L3): ersetzt den
+  // bisherigen Windows-spezifischen Weg über @tauri-apps/api/window
+  // (onResized + isMinimized, das unter WebKitGTK/Linux nicht zuverlässig
+  // dieselben Ereignisse liefert) durch die plattformneutrale
+  // Page-Visibility-API. document.hidden wird true bei Minimieren, Tab-/
+  // Fenster-Wechsel, Bildschirmsperre -- unter Windows, Linux und später
+  // Android gleichermaßen, ganz ohne fenster-spezifisches Tauri-Plugin.
+  // Bewusst OHNE Gnadenfrist: Sperren erfolgt sofort beim Verstecken. Eine
+  // Grace-Periode von ~5 s wäre Plan B, falls sich das in der Praxis (z. B.
+  // kurzes Alt-Tab) als zu aggressiv erweist -- bis dahin gilt die
+  // strengere, sicherere Variante.
+  //
+  // Sentinel 0 (SecurityPanel, "Nie automatisch sperren"): startIdleTimer(0)
+  // ist ein reines No-op (kein Timer, keine Aktivitäts-Listener, s. auth.ts)
+  // -- dieser Effekt braucht dafür KEINE eigene Fallunterscheidung. Der
+  // visibilitychange-Handler bleibt davon komplett unberührt und läuft immer
+  // (unconditional, unabhängig von autoLockMin): "nie" schaltet bewusst NUR
+  // die Inaktivitäts-Sperre ab, nicht die Sperre beim Verstecken/Minimieren
+  // -- zwei getrennte, unabhängig konfigurierbare Sicherheitsmechanismen.
   useEffect(() => {
     if (!ready || locked) return;
     const stopIdle = startIdleTimer(autoLockMin, doLock);
