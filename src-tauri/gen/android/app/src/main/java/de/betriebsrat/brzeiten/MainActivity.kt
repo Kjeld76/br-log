@@ -3,6 +3,7 @@ package de.betriebsrat.brzeiten
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -17,6 +18,26 @@ import androidx.webkit.WebViewFeature
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Screenshot-/Vorschau-Schutz (Issue #17, Task 7): FLAG_SECURE als
+    // ALLERERSTES gesetzt, noch vor enableEdgeToEdge()/super.onCreate() -- das
+    // Window-Objekt existiert bereits (von Android vor onCreate angelegt,
+    // genau wie beim enableEdgeToEdge()-Aufruf unten, der ebenfalls vor
+    // super.onCreate() aufs Window wirkt). Damit rendert Android KEINEN
+    // einzigen Frame ohne den Schutz: die Übersicht zuletzt genutzter Apps
+    // zeigt keinen Inhalt (nur einen leeren Platzhalter) und Screenshots/
+    // Screen-Recording werden systemseitig verhindert -- UNABHÄNGIG vom
+    // Sperrzustand, gilt also auch auf dem LockScreen. setFlags(FLAG_SECURE,
+    // FLAG_SECURE) setzt gezielt nur dieses eine Bit (zweiter Parameter ist
+    // die Maske), bestehende andere Window-Flags bleiben unangetastet.
+    //
+    // Dieser Default darf NIE vom Runtime-Toggle abhängen (Command
+    // setSecureScreen, BiometricUnlockPlugin.kt, SEKUNDÄR): der Command erlaubt
+    // nur, den Schutz NACH dem Entsperren laut Einstellung gezielt wieder
+    // abzuschalten (SecurityPanel, "Screenshot-/Vorschau-Schutz (Android)").
+    // Schlägt der Command fehl oder wird er nie aufgerufen (z. B. Plugin-Fehler,
+    // App-Start ohne Entsperren), bleibt dieser Default unverändert aktiv.
+    window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
 

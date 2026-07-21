@@ -35,6 +35,8 @@ import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
 import { applyLockHotkey, setLockHotkeyTrigger } from "./lib/lockHotkey";
+import { createLockDelay, getAndroidLockDelaySec } from "./lib/lockDelay";
+import { applySecureScreenSetting } from "./lib/secureScreen";
 import { listen } from "@tauri-apps/api/event";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
@@ -114,6 +116,14 @@ export default function App() {
   const [initDbPath, setInitDbPath] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [autoLockMin, setAutoLockMin] = useState(5);
+  // Android-Karenz vorm Sperren beim Verstecken (Issue #17, Task 7, Sentinel
+  // 0 = "Sofort"/Bestandsverhalten). Lazy-Init liest die localStorage-
+  // Einstellung synchron (kein Geheimnis, s. lockDelay.ts); SecurityPanel
+  // meldet Änderungen über onAndroidLockDelayChanged zurück (analog
+  // onAutoLockChanged/autoLockMin).
+  const [androidLockDelaySec, setAndroidLockDelaySec] = useState(() =>
+    getAndroidLockDelaySec()
+  );
   const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
   // Für Formulare zusätzlich inkl. archivierter Tags: einem Eintrag bereits
@@ -310,6 +320,15 @@ export default function App() {
     };
   }, [ready, reloadKey]);
 
+  // Screenshot-/Vorschau-Schutz (Issue #17, Task 7, Android-only): die
+  // Einstellung wird erst NACH dem Entsperren angewendet -- vorher gilt dank
+  // MainActivity.onCreate sicherheitshalber immer FLAG_SECURE an (Auftrag).
+  // secureScreen.ts ist auf Desktop ein No-op (isAndroid()-Guard dort).
+  useEffect(() => {
+    if (!mobile || !ready) return;
+    void applySecureScreenSetting();
+  }, [mobile, ready]);
+
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
   const doLock = () => {
     void lock().finally(() => {
@@ -373,10 +392,17 @@ export default function App() {
   // Page-Visibility-API. document.hidden wird true bei Minimieren, Tab-/
   // Fenster-Wechsel, Bildschirmsperre -- unter Windows, Linux und später
   // Android gleichermaßen, ganz ohne fenster-spezifisches Tauri-Plugin.
-  // Bewusst OHNE Gnadenfrist: Sperren erfolgt sofort beim Verstecken. Eine
-  // Grace-Periode von ~5 s wäre Plan B, falls sich das in der Praxis (z. B.
-  // kurzes Alt-Tab) als zu aggressiv erweist -- bis dahin gilt die
-  // strengere, sicherere Variante.
+  // Bewusst OHNE Gnadenfrist auf dem DESKTOP: Sperren erfolgt dort sofort
+  // beim Verstecken (strengere, sicherere Variante -- unverändert seit
+  // Issue #17/Task 5). Auf ANDROID ist seit Issue #17/Task 7 (Nutzer-
+  // Entscheid 2026-07-19) eine opt-in-Karenzzeit verfügbar (SecurityPanel,
+  // "Sperren beim Verlassen der App", Default weiterhin "Sofort" ==
+  // dasselbe strenge Verhalten): kurzes Wechseln in eine andere App (z. B.
+  // eine Weiterleitung/Share-Dialog) muss dort nicht zwingend sofort
+  // sperren. Die reine, testbare Zustandslogik der Karenz liegt in
+  // lockDelay.ts (createLockDelay) -- hier nur die Verdrahtung; der
+  // `mobile`-Zweig unten ist rein additiv, der Desktop-Zweig (`else doLock()`)
+  // bleibt textidentisch zum bisherigen, unconditional laufenden Verhalten.
   //
   // Sentinel 0 (SecurityPanel, "Nie automatisch sperren"): startIdleTimer(0)
   // ist ein reines No-op (kein Timer, keine Aktivitäts-Listener, s. auth.ts)
@@ -388,15 +414,24 @@ export default function App() {
   useEffect(() => {
     if (!ready || locked) return;
     const stopIdle = startIdleTimer(autoLockMin, doLock);
+    const lockDelay = mobile
+      ? createLockDelay({ delaySec: androidLockDelaySec, onLock: doLock })
+      : null;
     const onVisibilityChange = () => {
-      if (document.hidden) doLock();
+      if (document.hidden) {
+        if (lockDelay) lockDelay.onHidden();
+        else doLock();
+      } else {
+        lockDelay?.onVisible();
+      }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       stopIdle();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      lockDelay?.dispose();
     };
-  }, [ready, locked, autoLockMin]);
+  }, [ready, locked, autoLockMin, mobile, androidLockDelaySec]);
 
   const openNew = (iso?: string) => {
     setFormDirty(false);
@@ -1108,6 +1143,7 @@ export default function App() {
                 <SettingsPanel
                   onLockNow={doLock}
                   onAutoLockChanged={setAutoLockMin}
+                  onAndroidLockDelayChanged={setAndroidLockDelaySec}
                   mobile={mobile}
                 />
               </>

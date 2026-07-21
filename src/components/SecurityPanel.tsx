@@ -16,6 +16,13 @@ import {
   setLockHotkeySettings,
   type LockHotkeySettings,
 } from "../lib/lockHotkey";
+import {
+  getAndroidLockDelaySec,
+  setAndroidLockDelaySec,
+  ANDROID_LOCK_DELAY_OPTIONS_SEC,
+  type AndroidLockDelaySec,
+} from "../lib/lockDelay";
+import { getSecureScreenEnabled, setSecureScreenEnabled } from "../lib/secureScreen";
 import RecoveryCodeReveal from "./RecoveryCodeReveal";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -23,6 +30,10 @@ import { Icon } from "./Icon";
 interface Props {
   onLockNow: () => void;
   onAutoLockChanged: (minutes: number) => void;
+  // Issue #17, Task 7: meldet die Android-Karenz-Einstellung an App.tsx
+  // zurück (analog onAutoLockChanged/autoLockMin) -- die Verdrahtung des
+  // visibilitychange-Handlers braucht den jeweils aktuellen Wert.
+  onAndroidLockDelayChanged: (sec: AndroidLockDelaySec) => void;
   // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
   // ermittelt und als Prop durchgereicht -- hier nur gebraucht, um den
   // Fingerabdruck-Abschnitt auf Android zu gaten (Desktop hat keinen
@@ -30,6 +41,16 @@ interface Props {
   // aber der Aufruf selbst spart sich die App auf Desktop komplett).
   mobile: boolean;
 }
+
+// Optionen für "Sperren beim Verlassen der App" (Issue #17, Task 7,
+// Android-only): Sofort (Sentinel 0, siehe lockDelay.ts) | 30 s | 1 min |
+// 5 min. Reihenfolge/Labels laut Auftrag.
+const LOCK_DELAY_LABELS: Record<AndroidLockDelaySec, string> = {
+  0: "Sofort (empfohlen)",
+  30: "30 s",
+  60: "1 min",
+  300: "5 min",
+};
 
 // Schnellklick-Chips für die Auto-Sperre-Minuten (Issue #17): waren bis
 // v1.8.0 die einzige Auswahl (Dropdown mit genau diesen sieben Werten),
@@ -53,7 +74,12 @@ const MODIFIER_ONLY_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 const NEVER_LOCK = 0;
 const DEFAULT_LOCK_MIN = 5;
 
-export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: Props) {
+export default function SecurityPanel({
+  onLockNow,
+  onAutoLockChanged,
+  onAndroidLockDelayChanged,
+  mobile,
+}: Props) {
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
@@ -81,6 +107,22 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
   const [hotkeyRecording, setHotkeyRecording] = useState(false);
   const [hotkeyBusy, setHotkeyBusy] = useState(false);
   const [hotkeyMsg, setHotkeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Android-Karenz "Sperren beim Verlassen der App" (Issue #17, Task 7):
+  // localStorage-Persistenz (lockDelay.ts), lazy-Init wie beim Hotkey oben.
+  const [lockDelaySec, setLockDelaySecState] = useState<AndroidLockDelaySec>(
+    () => getAndroidLockDelaySec()
+  );
+
+  // Screenshot-/Vorschau-Schutz (Issue #17, Task 7): Default AN (s.
+  // MainActivity.onCreate); lazy-Init aus localStorage wie oben.
+  const [secureScreenEnabled, setSecureScreenEnabledState] = useState(
+    () => getSecureScreenEnabled()
+  );
+  const [secureScreenBusy, setSecureScreenBusy] = useState(false);
+  const [secureScreenMsg, setSecureScreenMsg] = useState<{ ok: boolean; text: string } | null>(
+    null
+  );
 
   // Recovery-Code neu erzeugen
   const [rcPw, setRcPw] = useState("");
@@ -193,6 +235,34 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
 
   const toggleHotkeyEnabled = () => {
     void applyHotkeyChange({ enabled: !hotkeyEnabled, accelerator: hotkeyAccel });
+  };
+
+  // Android-Karenz (Issue #17, Task 7): reine localStorage-Persistenz, kein
+  // Backend-Roundtrip nötig -- App.tsx übernimmt den neuen Wert über
+  // onAndroidLockDelayChanged (baut den visibilitychange-Handler neu auf).
+  const changeLockDelay = (sec: AndroidLockDelaySec) => {
+    setLockDelaySecState(sec);
+    setAndroidLockDelaySec(sec);
+    onAndroidLockDelayChanged(sec);
+  };
+
+  // Screenshot-/Vorschau-Schutz (Issue #17, Task 7): optimistisch umschalten,
+  // bei einem Fehlschlag des Commands (z. B. Plugin-Fehler) zurückrollen --
+  // der Default aus MainActivity.onCreate bleibt in jedem Fall unberührt.
+  const toggleSecureScreen = () => {
+    const next = !secureScreenEnabled;
+    setSecureScreenEnabledState(next);
+    setSecureScreenBusy(true);
+    setSecureScreenMsg(null);
+    void setSecureScreenEnabled(next)
+      .catch((err) => {
+        setSecureScreenEnabledState(!next);
+        setSecureScreenMsg({
+          ok: false,
+          text: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => setSecureScreenBusy(false));
   };
 
   // Aufnahme-Feld: der Button selbst fängt den nächsten Tastendruck ab.
@@ -501,6 +571,77 @@ export default function SecurityPanel({ onLockNow, onAutoLockChanged, mobile }: 
               }
             >
               {hotkeyMsg.text}
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Sperren beim Verlassen der App (Issue #17, Task 7, Android-only):
+          die opt-in-Karenzzeit vorm Sperren beim Verstecken (lockDelay.ts).
+          Auf Desktop bleibt das Sperren unverändert sofort (kein Abschnitt,
+          kein toter Schalter, s. App.tsx-Kommentar). */}
+      {mobile && (
+        <section className={card}>
+          <h4 className="mb-2 text-sm font-semibold text-primary-ink">
+            Sperren beim Verlassen der App
+          </h4>
+          <p className="mb-3 text-xs text-secondary-ink">
+            Legt fest, wie lange BR-Log nach dem Wechsel in eine andere App
+            oder dem Minimieren wartet, bevor gesperrt wird.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {ANDROID_LOCK_DELAY_OPTIONS_SEC.map((sec) => (
+              <TagChip
+                key={sec}
+                label={LOCK_DELAY_LABELS[sec]}
+                variant="selectable"
+                active={lockDelaySec === sec}
+                onClick={() => changeLockDelay(sec)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Screenshot-/Vorschau-Schutz (Issue #17, Task 7, Android-only):
+          FLAG_SECURE ist per Default AN (MainActivity.onCreate, gilt schon
+          vor dem Entsperren) -- dieser Schalter erlaubt nur das gezielte
+          Abschalten NACH dem Entsperren (secureScreen.ts -> Command
+          set_secure_screen). */}
+      {mobile && (
+        <section className={card}>
+          <h4 className="mb-2 text-sm font-semibold text-primary-ink">
+            Screenshot-/Vorschau-Schutz (Android)
+          </h4>
+          <p className="mb-3 text-xs text-secondary-ink">
+            Verhindert Screenshots/Bildschirmaufnahmen und blendet den
+            App-Inhalt in der Übersicht zuletzt genutzter Apps aus.
+          </p>
+          <TagChip
+            label={secureScreenEnabled ? "Aktiviert" : "Deaktiviert"}
+            variant="selectable"
+            active={secureScreenEnabled}
+            onClick={toggleSecureScreen}
+          />
+          {secureScreenBusy && (
+            <p className="mt-2 text-xs text-secondary-ink">Wird angewendet…</p>
+          )}
+          {!secureScreenEnabled && (
+            <p className="mt-2 rounded border border-warning-banner-line bg-warning-banner px-3 py-2 text-sm text-warning-banner-ink">
+              Aus: App-Inhalt erscheint in der Übersicht zuletzt genutzter Apps
+              und auf Screenshots.
+            </p>
+          )}
+          {secureScreenMsg && (
+            <p
+              role="status"
+              aria-live="polite"
+              className={
+                "mt-2 text-sm " +
+                (secureScreenMsg.ok ? "text-success" : "text-danger-ink")
+              }
+            >
+              {secureScreenMsg.text}
             </p>
           )}
         </section>

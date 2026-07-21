@@ -1160,6 +1160,32 @@ fn bio_disable() -> Result<(), String> {
     Err("Fingerabdruck-Entsperren ist nur unter Android verfügbar.".to_string())
 }
 
+// ---------- Screenshot-/Vorschau-Schutz (Issue #17, Task 7) ----------
+//
+// FLAG_SECURE ist in MainActivity.onCreate PER DEFAULT gesetzt (schützt ab
+// dem ersten Frame, auch auf dem LockScreen) und hängt NICHT von diesem
+// Command ab -- set_secure_screen erlaubt nur das spätere Abschalten laut
+// Einstellung (SecurityPanel, "Screenshot-/Vorschau-Schutz (Android)").
+// Schlägt der Aufruf fehl oder wird er nie aufgerufen, bleibt der
+// Default-Schutz unverändert aktiv. Bridge über denselben Plugin-Handle wie
+// die bio_*-Commands (tauri_plugin_biometric_unlock, s. dortiger Kommentar zu
+// set_secure_screen) -- fachlich unabhängig von der Biometrie, aber bewusst
+// an diesem bereits registrierten Plugin statt an einem eigenen zweiten.
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn set_secure_screen(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_biometric_unlock::BiometricUnlockExt;
+    app.biometric_unlock()
+        .set_secure_screen(enabled)
+        .map_err(|e| e.message())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn set_secure_screen(_enabled: bool) -> Result<(), String> {
+    Err("Der Screenshot-/Vorschau-Schutz ist nur unter Android verfügbar.".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Schema idempotent im Frontend (schema.ts). KEINE prüfsummen-Migrationen.
@@ -1272,7 +1298,8 @@ pub fn run() {
             bio_available,
             bio_enable,
             bio_unlock,
-            bio_disable
+            bio_disable,
+            set_secure_screen
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Start der Tauri-Anwendung");

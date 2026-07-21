@@ -8,7 +8,16 @@
 // werden die Methoden faktisch NUR Rust-seitig ueber run_mobile_plugin (die
 // Webview ruft nie direkt ins Plugin), daher sind diese Permissions vestigial --
 // aber der Build-Helfer erwartet die Liste.
-const COMMANDS: &[&str] = &["is_available", "enroll", "authenticate", "remove_key"];
+const COMMANDS: &[&str] = &[
+    "is_available",
+    "enroll",
+    "authenticate",
+    "remove_key",
+    // Issue #17, Task 7: fachlich nicht Biometrie, haengt aber bewusst an
+    // diesem bereits registrierten Plugin (s. Kommentar in
+    // BiometricUnlockPlugin.kt/lib.rs).
+    "set_secure_screen",
+];
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)

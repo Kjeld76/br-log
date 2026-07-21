@@ -74,6 +74,20 @@ impl<R: Runtime> BiometricUnlock<R> {
             .map(|_| ())
             .map_err(Into::into)
     }
+
+    /// Schaltet FLAG_SECURE zur Laufzeit um (Issue #17, Task 7). Der Default
+    /// (FLAG_SECURE an) wird UNABHAENGIG davon in MainActivity.onCreate gesetzt
+    /// (schuetzt ab dem ersten Frame) -- dieser Aufruf erlaubt nur das spaetere
+    /// Abschalten laut Nutzereinstellung. Fachlich losgeloest von der
+    /// Biometrie, haengt aber bewusst an diesem bereits registrierten Plugin
+    /// (s. Kommentar in BiometricUnlockPlugin.kt) statt an einem eigenen
+    /// zweiten Android-Plugin nur fuer einen Schalter.
+    pub fn set_secure_screen(&self, enabled: bool) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<()>("setSecureScreen", SetSecureScreenRequest { enabled })
+            .map(|_| ())
+            .map_err(Into::into)
+    }
 }
 
 /// Erweiterung fuer Manager-Typen (App/AppHandle): `app.biometric_unlock()`.

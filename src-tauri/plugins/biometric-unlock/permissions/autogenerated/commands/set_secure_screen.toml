@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-secure-screen"
+description = "Enables the set_secure_screen command without any pre-configured scope."
+commands.allow = ["set_secure_screen"]
+
+[[permission]]
+identifier = "deny-set-secure-screen"
+description = "Denies the set_secure_screen command without any pre-configured scope."
+commands.deny = ["set_secure_screen"]
