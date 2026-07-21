@@ -34,6 +34,12 @@ import { toUserMessage } from "./lib/errors";
 import { formatDateDe, todayIso } from "./lib/calendar";
 import { secondaryBtnCls } from "./lib/ui";
 import { isAndroid } from "./lib/platform";
+import { applyLockHotkey, setLockHotkeyTrigger } from "./lib/lockHotkey";
+import { createLockDelay, getAndroidLockDelaySec } from "./lib/lockDelay";
+import { applySecureScreenSetting } from "./lib/secureScreen";
+import { getBlurOnFocusLossEnabled } from "./lib/blurOnFocusLoss";
+import { clearModalDraft, saveModalDraft, takeModalDraft } from "./lib/modalDraftStore";
+import { listen } from "@tauri-apps/api/event";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
 import { useReminderScheduler } from "./lib/useReminderScheduler";
@@ -112,6 +118,22 @@ export default function App() {
   const [initDbPath, setInitDbPath] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [autoLockMin, setAutoLockMin] = useState(5);
+  // Android-Karenz vorm Sperren beim Verstecken (Issue #17, Task 7, Sentinel
+  // 0 = "Sofort"/Bestandsverhalten). Lazy-Init liest die localStorage-
+  // Einstellung synchron (kein Geheimnis, s. lockDelay.ts); SecurityPanel
+  // meldet Änderungen über onAndroidLockDelayChanged zurück (analog
+  // onAutoLockChanged/autoLockMin).
+  const [androidLockDelaySec, setAndroidLockDelaySec] = useState(() =>
+    getAndroidLockDelaySec()
+  );
+  // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+  // Desktop-only, Default AN): lazy-Init liest die localStorage-Einstellung
+  // synchron (kein Geheimnis, s. blurOnFocusLoss.ts); SecurityPanel meldet
+  // Änderungen über onBlurOnFocusLossChanged zurück (analog
+  // onAndroidLockDelayChanged/androidLockDelaySec).
+  const [blurOnFocusLossEnabled, setBlurOnFocusLossEnabledState] = useState(() =>
+    getBlurOnFocusLossEnabled()
+  );
   const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
   // Für Formulare zusätzlich inkl. archivierter Tags: einem Eintrag bereits
@@ -200,6 +222,12 @@ export default function App() {
   // die Detailansicht behält das bisherige Verhalten (erstes fokussierbares
   // Element).
   const dateFieldRef = useRef<HTMLInputElement>(null);
+  // Aktuellster Formular-Entwurf des offenen Bearbeiten-Modals (Issue #17,
+  // Task 9): wird von EntryForm/AppointmentForm über onDraftChange bei JEDER
+  // Änderung mitgeschrieben (Draft-Kanal existiert bereits für formDirty).
+  // doLock() greift diese Ref, um den Entwurf VOR dem Aufblitz-Schutz-
+  // Unmount in modalDraftStore (reiner RAM, s. dort) zu sichern.
+  const draftRef = useRef<TimeEntry | Appointment | null>(null);
   useModalFocusTrap(
     modalRef,
     !!modal,
@@ -249,6 +277,16 @@ export default function App() {
       setReady(true);
       setStartMode("encrypted"); // ab jetzt ist die DB verschlüsselt -> Unlock
       setLocked(false);
+      // Formular-Entwurf eines beim Sperren offenen Bearbeiten-Modals wieder
+      // öffnen (Issue #17, Task 9) -- GENAU EINMAL: takeModalDraft entfernt
+      // ihn aus dem RAM-Store, ein zweites Entsperren ohne zwischenzeitliches
+      // erneutes Sperren stellt deshalb nichts mehr wieder her. modal.entry/
+      // modal.appointment tragen hier bereits den EDITIERTEN Stand (s.
+      // doLock) -- EntryForm/AppointmentForm nehmen das beim Neu-Mounten als
+      // eigenen Ausgangszustand, der Dirty-Status ergibt sich dort wieder
+      // organisch aus deren eigenem onDraftChange-Kanal.
+      const restoredModal = takeModalDraft() as Modal | null;
+      if (restoredModal) setModal(restoredModal);
       // Automatisches Sicherheits-Backup NACH erfolgreichem Entsperren
       // (Finding 5): best-effort, blockiert den Start nicht. Schutz gegen
       // Fehlbedienung/Plattenausfall -- ein Fehlschlag wird nur geloggt +
@@ -308,37 +346,190 @@ export default function App() {
     };
   }, [ready, reloadKey]);
 
+  // Screenshot-/Vorschau-Schutz (Issue #17, Task 7, Android-only): die
+  // Einstellung wird erst NACH dem Entsperren angewendet -- vorher gilt dank
+  // MainActivity.onCreate sicherheitshalber immer FLAG_SECURE an (Auftrag).
+  // secureScreen.ts ist auf Desktop ein No-op (isAndroid()-Guard dort).
+  useEffect(() => {
+    if (!mobile || !ready) return;
+    // Fail-safe-Richtung stimmt schon (Default AN aus MainActivity.onCreate
+    // bleibt bei einem Fehlschlag unangetastet) -- catch nur, damit ein
+    // abgelehntes Promise (z. B. Plugin-Fehler) nicht als unhandled Rejection
+    // auffällt.
+    void applySecureScreenSetting().catch(console.warn);
+  }, [mobile, ready]);
+
+  // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+  // Desktop-only): blurrt vertrauliche Anzeige-/Eingabeflächen (Klasse
+  // `confidential-blur`, s. styles.css), solange das Fenster nicht im Fokus
+  // ist -- reiner Sichtschutz gegen kurzes Wegklicken/über die Schulter
+  // schauen, KEIN Ersatz für die Sperre (die läuft unverändert über den
+  // separaten visibilitychange-Mechanismus oben). Auf Android registriert
+  // dieser Effekt bewusst NICHTS (kein Fenster-Fokus-Konzept dort -- Wechsel
+  // in eine andere App deckt bereits die visibilitychange-Sperre oben ab).
+  // Bei ausgeschalteter Einstellung ebenfalls kein Listener (Guard analog
+  // mobile). Das Cleanup entfernt das Attribut IMMER (Deaktivieren während
+  // geblurrt / Unmount) -- sonst bliebe ein Fenster fälschlich dauerhaft
+  // geblurrt.
+  useEffect(() => {
+    if (mobile || !blurOnFocusLossEnabled) return;
+    const root = document.documentElement;
+    const onBlur = () => root.setAttribute("data-window-blurred", "");
+    const onFocus = () => root.removeAttribute("data-window-blurred");
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      root.removeAttribute("data-window-blurred");
+    };
+  }, [mobile, blurOnFocusLossEnabled]);
+
+  // Refs auf den JEWEILS aktuellen Modal-/Dirty-Zustand (Issue #17, Task 9):
+  // dieselben drei NICHT-Button-Sperr-Auslöser unten (Idle-Timer, globaler
+  // Hotkey, Tray-Event) registrieren ihre Listener einmalig bzw. mit
+  // eingeschränkten Dependencies (s. lockedRef-Kommentar direkt darunter für
+  // dasselbe Muster/denselben Grund) -- ohne diese Refs würde doLock() beim
+  // tatsächlichen Auslösen den zum Registrierungszeitpunkt eingefangenen
+  // (veralteten) modal/formDirty-Stand sehen, z. B. "kein offenes Formular",
+  // selbst wenn beim echten Sperren längst eins mit ungespeichertem Entwurf
+  // offen ist -- der Draft würde dann trotz offenem Formular NIE gesichert.
+  const modalForLockRef = useRef(modal);
+  useEffect(() => {
+    modalForLockRef.current = modal;
+  }, [modal]);
+  const formDirtyRef = useRef(formDirty);
+  useEffect(() => {
+    formDirtyRef.current = formDirty;
+  }, [formDirty]);
+
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
+  // Vorher (Issue #17, Task 9): ein offenes Bearbeiten-Modal (Eintrag/Termin)
+  // MIT ungespeichertem Entwurf im modalDraftStore sichern -- der Aufblitz-
+  // Schutz unmountet gleich darauf den gesamten Baum, EntryForm/
+  // AppointmentForm verlieren dabei ihr eigenes, internes Draft-State (der
+  // `modal`-State in App.tsx selbst bleibt zwar erhalten, trägt aber nur den
+  // ORIGINAL-Eintrag/-Termin, nicht die Bearbeitung). Ohne offenes/dirty-es
+  // Formular wird ein evtl. noch nicht abgeholter alter Draft verworfen
+  // (clearModalDraft) statt stillschweigend liegen zu bleiben. Liest bewusst
+  // über die Refs oben, NICHT die State-Variablen direkt (s. deren Kommentar).
   const doLock = () => {
+    const currentModal = modalForLockRef.current;
+    const currentlyDirty = formDirtyRef.current;
+    if (
+      (currentModal?.type === "form" || currentModal?.type === "apptForm") &&
+      currentlyDirty &&
+      draftRef.current
+    ) {
+      saveModalDraft(
+        currentModal.type === "form"
+          ? { ...currentModal, entry: draftRef.current as TimeEntry }
+          : { ...currentModal, appointment: draftRef.current as Appointment }
+      );
+    } else {
+      clearModalDraft();
+    }
     void lock().finally(() => {
       setReady(false);
       setLocked(true);
     });
   };
 
-  // Auto-Lock bei Inaktivität (Pflicht) + Sperren, sobald die App nicht mehr
-  // sichtbar ist. Linux-Portierung (L3): ersetzt den bisherigen Windows-
-  // spezifischen Weg über @tauri-apps/api/window (onResized + isMinimized,
-  // das unter WebKitGTK/Linux nicht zuverlässig dieselben Ereignisse liefert)
-  // durch die plattformneutrale Page-Visibility-API. document.hidden wird
-  // true bei Minimieren, Tab-/Fenster-Wechsel, Bildschirmsperre -- unter
-  // Windows, Linux und später Android gleichermaßen, ganz ohne
-  // fenster-spezifisches Tauri-Plugin. Bewusst OHNE Gnadenfrist: Sperren
-  // erfolgt sofort beim Verstecken. Eine Grace-Periode von ~5 s wäre Plan B,
-  // falls sich das in der Praxis (z. B. kurzes Alt-Tab) als zu aggressiv
-  // erweist -- bis dahin gilt die strengere, sicherere Variante.
+  // Ref auf den aktuellen Sperrzustand: der globale Hotkey (System-Callback
+  // von tauri-plugin-global-shortcut, außerhalb des React-Renderzyklus)
+  // braucht beim Feuern den JEWEILS aktuellen Wert, nicht den zum Zeitpunkt
+  // der einmaligen Registrierung eingefangenen.
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
+
+  // Globaler Sofortsperre-Hotkey (Issue #17, Desktop-only): Trigger einmalig
+  // hinterlegen (SecurityPanel registriert bei Einstellungsänderungen selbst
+  // neu, kennt aber den Sperrzustand nicht) und initial registrieren --
+  // lockHotkey.ts liest die Einstellung selbst aus localStorage und ist auf
+  // Android ein No-op (Plugin existiert dort nicht). Wirkt NUR im
+  // entsperrten Zustand -- im gesperrten Zustand (LockScreen) bewusst ein
+  // No-op, ein versehentlicher Druck dort löst nichts aus.
+  useEffect(() => {
+    setLockHotkeyTrigger(() => {
+      if (!lockedRef.current) doLock();
+    });
+    void applyLockHotkey();
+  }, []);
+
+  // Tray-Menü "Sofort sperren" (tray.rs): sendet ein Event ans Frontend statt
+  // direkt zu sperren -- die App bleibt beim Verstecken ins Tray gemountet
+  // (Tray-Bestandsverhalten), der Listener läuft deshalb unabhängig vom
+  // sichtbaren Fenster weiter. Anders als der Hotkey wirkt der Tray-Eintrag
+  // UNABHÄNGIG vom Sperrzustand (Sperren einer bereits gesperrten DB ist
+  // harmlos, s. crypto_lock) -- derselbe Pfad wie die AppMenu-Sofortsperre.
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    listen("brlog://lock", () => doLock())
+      .then((fn) => {
+        if (active) unlisten = fn;
+        else fn();
+      })
+      .catch(() => {
+        /* Außerhalb einer echten Tauri-Webview (z. B. Tests) ignorieren. */
+      });
+    return () => {
+      active = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // Auto-Lock bei Inaktivität (abschaltbar, Sentinel 0 = "nie", Issue #17) +
+  // Sperren, sobald die App nicht mehr sichtbar ist (NICHT abschaltbar, ganz
+  // eigener Mechanismus -- s. u.). Linux-Portierung (L3): ersetzt den
+  // bisherigen Windows-spezifischen Weg über @tauri-apps/api/window
+  // (onResized + isMinimized, das unter WebKitGTK/Linux nicht zuverlässig
+  // dieselben Ereignisse liefert) durch die plattformneutrale
+  // Page-Visibility-API. document.hidden wird true bei Minimieren, Tab-/
+  // Fenster-Wechsel, Bildschirmsperre -- unter Windows, Linux und später
+  // Android gleichermaßen, ganz ohne fenster-spezifisches Tauri-Plugin.
+  // Bewusst OHNE Gnadenfrist auf dem DESKTOP: Sperren erfolgt dort sofort
+  // beim Verstecken (strengere, sicherere Variante -- unverändert seit
+  // Issue #17/Task 5). Auf ANDROID ist seit Issue #17/Task 7 (Nutzer-
+  // Entscheid 2026-07-19) eine opt-in-Karenzzeit verfügbar (SecurityPanel,
+  // "Sperren beim Verlassen der App", Default weiterhin "Sofort" ==
+  // dasselbe strenge Verhalten): kurzes Wechseln in eine andere App (z. B.
+  // eine Weiterleitung/Share-Dialog) muss dort nicht zwingend sofort
+  // sperren. Die reine, testbare Zustandslogik der Karenz liegt in
+  // lockDelay.ts (createLockDelay) -- hier nur die Verdrahtung; der
+  // `mobile`-Zweig unten ist rein additiv, der Desktop-Zweig (`else doLock()`)
+  // bleibt textidentisch zum bisherigen, unconditional laufenden Verhalten.
+  //
+  // Sentinel 0 (SecurityPanel, "Nie automatisch sperren"): startIdleTimer(0)
+  // ist ein reines No-op (kein Timer, keine Aktivitäts-Listener, s. auth.ts)
+  // -- dieser Effekt braucht dafür KEINE eigene Fallunterscheidung. Der
+  // visibilitychange-Handler bleibt davon komplett unberührt und läuft immer
+  // (unconditional, unabhängig von autoLockMin): "nie" schaltet bewusst NUR
+  // die Inaktivitäts-Sperre ab, nicht die Sperre beim Verstecken/Minimieren
+  // -- zwei getrennte, unabhängig konfigurierbare Sicherheitsmechanismen.
   useEffect(() => {
     if (!ready || locked) return;
     const stopIdle = startIdleTimer(autoLockMin, doLock);
+    const lockDelay = mobile
+      ? createLockDelay({ delaySec: androidLockDelaySec, onLock: doLock })
+      : null;
     const onVisibilityChange = () => {
-      if (document.hidden) doLock();
+      if (document.hidden) {
+        if (lockDelay) lockDelay.onHidden();
+        else doLock();
+      } else {
+        lockDelay?.onVisible();
+      }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       stopIdle();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      lockDelay?.dispose();
     };
-  }, [ready, locked, autoLockMin]);
+  }, [ready, locked, autoLockMin, mobile, androidLockDelaySec]);
 
   const openNew = (iso?: string) => {
     setFormDirty(false);
@@ -939,7 +1130,10 @@ export default function App() {
                   dateInputRef={dateFieldRef}
                   onSaved={handleModalSaved}
                   onCancel={requestCloseModal}
-                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  onDraftChange={(draft, dirty) => {
+                    setFormDirty(dirty);
+                    draftRef.current = draft;
+                  }}
                 />
               </>
             )}
@@ -974,7 +1168,10 @@ export default function App() {
                   titleInputRef={dateFieldRef}
                   onSaved={handleApptSaved}
                   onCancel={requestCloseModal}
-                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  onDraftChange={(draft, dirty) => {
+                    setFormDirty(dirty);
+                    draftRef.current = draft;
+                  }}
                   saveAction={modal.saveAction}
                   contextHint={modal.contextHint}
                 />
@@ -1050,6 +1247,8 @@ export default function App() {
                 <SettingsPanel
                   onLockNow={doLock}
                   onAutoLockChanged={setAutoLockMin}
+                  onAndroidLockDelayChanged={setAndroidLockDelaySec}
+                  onBlurOnFocusLossChanged={setBlurOnFocusLossEnabledState}
                   mobile={mobile}
                 />
               </>

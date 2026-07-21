@@ -1,7 +1,11 @@
 {
   "identifier": "desktop",
-  "description": "Desktop-spezifische Berechtigungen (Autostart für den Tray-Betrieb)",
+  "description": "Desktop-spezifische Berechtigungen (Autostart für den Tray-Betrieb, globaler Sofortsperre-Hotkey)",
   "windows": ["main"],
   "platforms": ["windows", "linux", "macOS"],
-  "permissions": ["autostart:default"]
+  "permissions": [
+    "autostart:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
+  ]
 }

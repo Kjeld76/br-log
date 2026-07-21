@@ -109,7 +109,7 @@ export default function EntryDetail({
             <Icon name="lock" size={16} />
             Vertraulich – genaue Tätigkeit (BR-Geheimnis)
           </h4>
-          <p className="whitespace-pre-wrap text-sm text-confidential">
+          <p className="confidential-blur whitespace-pre-wrap text-sm text-confidential">
             {entry.secretDetails ? (
               entry.secretDetails
             ) : (

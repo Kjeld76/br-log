@@ -683,7 +683,7 @@ export default function AppointmentForm({
               </label>
               <textarea
                 id={secretId}
-                className="confidential-input"
+                className="confidential-input confidential-blur"
                 rows={3}
                 value={draft.secretDetails}
                 onChange={(e) => patch({ secretDetails: e.target.value })}

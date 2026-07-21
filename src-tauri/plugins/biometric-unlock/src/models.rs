@@ -54,3 +54,13 @@ pub struct AvailabilityResponse {
     #[serde(default)]
     pub reason: Option<String>,
 }
+
+/// setSecureScreen-Argument (Issue #17, Task 7): FLAG_SECURE zur Laufzeit
+/// ein-/ausschalten. Fachlich unabhaengig von der Biometrie, haengt aber
+/// bewusst an diesem bereits registrierten Plugin (s. Kommentar bei
+/// BiometricUnlockPlugin.setSecureScreen) statt an einem zweiten Android-Plugin.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSecureScreenRequest {
+    pub enabled: bool,
+}

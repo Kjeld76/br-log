@@ -21,6 +21,7 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import android.util.Log
+import android.view.WindowManager
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -49,6 +50,13 @@ internal class EnrollArgs {
 internal class AuthenticateArgs {
     lateinit var ciphertextB64: String
     lateinit var ivB64: String
+}
+
+// Issue #17, Task 7: kein String/lateinit möglich (Boolean-Primitive) --
+// Default true spiegelt den sicheren Default aus MainActivity.onCreate.
+@InvokeArg
+internal class SetSecureScreenArgs {
+    var enabled: Boolean = true
 }
 
 @TauriPlugin
@@ -196,6 +204,33 @@ class BiometricUnlockPlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("Schlüssel konnte nicht entfernt werden: ${e.message}", "OTHER", e)
         }
+    }
+
+    // ---------- Command: setSecureScreen (Issue #17, Task 7) ----------
+    //
+    // Schaltet FLAG_SECURE zur Laufzeit um (Screenshot-/Vorschau-Schutz). Der
+    // DEFAULT (FLAG_SECURE an) wird UNABHAENGIG hiervon in MainActivity.onCreate
+    // gesetzt (schuetzt ab dem ersten Frame, auch auf dem LockScreen) -- dieser
+    // Command erlaubt nur das spaetere Abschalten laut Nutzereinstellung; ein
+    // Fehlschlag oder Nie-Aufruf laesst diesen Default unveraendert aktiv.
+    // Fachlich lebt der Schalter nicht bei der Biometrie, haengt aber bewusst an
+    // diesem bereits registrierten Plugin statt ein zweites Android-Plugin
+    // (eigenes Gradle-Modul/Manifest-Eintrag) nur dafuer aufzuziehen
+    // (Konservativ-Vorgabe: Kotlin hat kein lokales Build-Gate).
+    @Command
+    fun setSecureScreen(invoke: Invoke) {
+        val args = invoke.parseArgs(SetSecureScreenArgs::class.java)
+        activity.runOnUiThread {
+            if (args.enabled) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+        // Kein Fehlschlagpfad (setFlags/clearFlags wirft nicht) -- sofortiges
+        // resolve() statt auf den UI-Thread-Hop zu warten, den der Aufrufer
+        // ohnehin nicht braucht.
+        invoke.resolve()
     }
 
     // ---------- BiometricPrompt ----------

@@ -87,6 +87,15 @@ Zustände: default · focus-visible (global) · disabled — Aufrufer setzen
   AppointmentForm.tsx), aber die Klasse selbst definiert keinen
   Disabled-Stil. hover/active/loading — nicht vorhanden.
 
+Sichtschutz (Issue #17, Task 8, Desktop-only): beide Textareas tragen
+  zusätzlich `confidential-blur` (`className="confidential-input
+  confidential-blur"`) — `html[data-window-blurred] .confidential-blur {
+  filter: blur(7px); }` in `styles.css`, App.tsx setzt/entfernt das
+  Attribut auf `<html>` bei window blur/focus (Einstellung „Sichtschutz bei
+  Fensterfokus-Verlust" in SecurityPanel, Default AN). Rein visuell — der
+  Blur blockiert keine Tastaturbedienung/kein `pointer-events`, keine
+  Transition (reduced-motion-neutral per Konstruktion).
+
 Verwendung: `src/components/EntryForm.tsx:632` (Textarea „Vertrauliche
 Tätigkeitsbeschreibung"), `src/components/AppointmentForm.tsx:632`.
 

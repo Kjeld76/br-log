@@ -78,7 +78,7 @@ export default function OccurrenceListRow({
         </span>
         {secretHit && (
           <span
-            className="flex shrink-0 items-center gap-1 text-xs font-medium text-confidential"
+            className="confidential-blur flex shrink-0 items-center gap-1 text-xs font-medium text-confidential"
             title="Treffer im vertraulichen Feld"
           >
             <Icon name="lock" size={12} />

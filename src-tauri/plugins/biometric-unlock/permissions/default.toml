@@ -11,4 +11,5 @@ permissions = [
   "allow-enroll",
   "allow-authenticate",
   "allow-remove-key",
+  "allow-set-secure-screen",
 ]

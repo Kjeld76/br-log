@@ -35,6 +35,24 @@ const RECOVERY_GROUP_LEN: usize = 6;
 const RECOVERY_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const DEFAULT_AUTOLOCK_MIN: u32 = 5;
+// Klemmgrenzen der Auto-Lock-Minuten (siehe clamp_autolock_minutes unten).
+const MIN_AUTOLOCK_MIN: u32 = 1;
+const MAX_AUTOLOCK_MIN: u32 = 120;
+
+/// Klemmt eine Auto-Lock-Minutenzahl auf den erlaubten Bereich (Issue #17).
+/// Sentinel `0` = „nie automatisch sperren" -- eine bewusste Nutzerentscheidung
+/// (SecurityPanel, „Nie automatisch sperren" mit Warnhinweis) und bleibt
+/// UNVERÄNDERT `0`, statt auf `MIN_AUTOLOCK_MIN` hochgezogen zu werden. Jeder
+/// andere Wert wird auf `1..=120` geklemmt (0 ist damit die einzige Ausnahme
+/// von der Untergrenze). Ein negativer Wert ist nicht möglich, da `u32` das
+/// strukturell ausschließt.
+pub fn clamp_autolock_minutes(minutes: u32) -> u32 {
+    if minutes == 0 {
+        0
+    } else {
+        minutes.clamp(MIN_AUTOLOCK_MIN, MAX_AUTOLOCK_MIN)
+    }
+}
 
 // ---------- Keyfile-Schema (v2) ----------
 
@@ -682,6 +700,32 @@ mod tests {
         assert_eq!(bio.ciphertext, ct);
         assert_eq!(bio.iv, iv);
     }
+
+    // ---------- Auto-Lock-Clamp (Issue #17, Task 5) ----------
+
+    #[test]
+    fn clamp_autolock_minutes_erlaubt_sentinel_null_fuer_nie() {
+        assert_eq!(clamp_autolock_minutes(0), 0);
+    }
+
+    #[test]
+    fn clamp_autolock_minutes_erlaubt_untergrenze_eins() {
+        assert_eq!(clamp_autolock_minutes(1), 1);
+    }
+
+    #[test]
+    fn clamp_autolock_minutes_erlaubt_obergrenze_120() {
+        assert_eq!(clamp_autolock_minutes(120), 120);
+    }
+
+    #[test]
+    fn clamp_autolock_minutes_klemmt_werte_ueber_120_auf_120() {
+        assert_eq!(clamp_autolock_minutes(121), 120);
+        assert_eq!(clamp_autolock_minutes(u32::MAX), 120);
+    }
+
+    // Ein negativer Wert ist bewusst NICHT testbar: die Funktion nimmt `u32`
+    // entgegen, das schließt negative Eingaben bereits auf Typebene aus.
 
     #[test]
     fn clear_bio_wrap_entfernt_feld_und_serialisierung() {

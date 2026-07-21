@@ -53,8 +53,15 @@ base64 = "0.22"
 # Autostart (opt-in in den Einstellungen): App startet mit dem System und
 # landet -- zusammen mit close_to_tray -- im Tray, damit Termin-Erinnerungen
 # praktisch immer feuern. Nur Desktop.
+# Globaler Sofortsperre-Hotkey (Issue #17, Task 6): systemweite Tastenkombi,
+# die unabhängig vom Fensterfokus sperrt (Frontend registriert/entfernt sie,
+# s. lib/lockHotkey.ts). Explizit hier -- nicht in den Standard-[dependencies]
+# oben -- gegated: das zugrunde liegende `global-hotkey` bindet native
+# Fenster-/Hotkey-APIs von Windows/Linux(X11)/macOS und ist auf Android/iOS
+# weder verfügbar noch sinnvoll (kein Konzept für systemweite Hotkeys dort).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
 
 # Android-Portierung (A-Core): Storage-Access-Framework-Zugriff (Save-/Open-
 # Dialog, content://-URIs) für den Android-Arm von file_io.rs (mod android).

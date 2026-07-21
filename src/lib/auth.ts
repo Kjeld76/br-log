@@ -9,6 +9,14 @@ import { AppError } from "./errors";
 
 const MIN_AUTOLOCK_MIN = 1;
 const MAX_AUTOLOCK_MIN = 120;
+// Sentinel „nie automatisch sperren" (Issue #17). Bewusst kein Teil des
+// 1..120-Bereichs -- 0 ist ein eigenständiger, dritter Zustand (siehe
+// startIdleTimer/getAutoLockMinutes/setAutoLockMinutes unten), keine weitere
+// Untergrenze. Die UI (SecurityPanel) begrenzt NEUE manuelle Eingaben auf
+// 1-60 Minuten -- diese Datei hier bleibt bewusst bei 120 als Obergrenze,
+// damit Bestandswerte aus der Zeit vor dieser Beschränkung (bis 120) beim
+// Lesen (getAutoLockMinutes) weiterhin unverändert durchgereicht werden.
+const NEVER_AUTOLOCK_MIN = 0;
 
 export type StartMode =
   | "firstRun" // keine DB -> Erst-Einrichtung
@@ -140,15 +148,28 @@ export async function regenerateRecovery(password: string): Promise<string> {
 export async function getAutoLockMinutes(): Promise<number> {
   const s = await getStartStatus();
   const n = s.autoLockMinutes;
+  if (n === NEVER_AUTOLOCK_MIN) return n;
   if (Number.isFinite(n) && n >= MIN_AUTOLOCK_MIN && n <= MAX_AUTOLOCK_MIN) return n;
   return 5;
 }
 
+/**
+ * Klemmt wie Rust (crypto::clamp_autolock_minutes): EXAKT 0 bleibt der
+ * Sentinel „nie" (der Aufrufer -- SecurityPanel -- sendet ihn gezielt über
+ * die "Nie automatisch sperren"-Option, nicht über das Minutenfeld). Jeder
+ * andere Wert, auch einer, der erst durch Rundung bei 0 landet (z. B. 0.4)
+ * oder negativ ist, wird stattdessen auf die Untergrenze 1 angehoben --
+ * ein Rundungsartefakt darf die Auto-Sperre nicht stillschweigend abschalten.
+ */
+function clampAutoLockMinutes(minutes: number): number {
+  if (minutes === NEVER_AUTOLOCK_MIN) return NEVER_AUTOLOCK_MIN;
+  const rounded = Math.round(minutes);
+  if (rounded <= NEVER_AUTOLOCK_MIN) return MIN_AUTOLOCK_MIN;
+  return Math.min(MAX_AUTOLOCK_MIN, Math.max(MIN_AUTOLOCK_MIN, rounded));
+}
+
 export async function setAutoLockMinutes(minutes: number): Promise<void> {
-  const clamped = Math.min(
-    MAX_AUTOLOCK_MIN,
-    Math.max(MIN_AUTOLOCK_MIN, Math.round(minutes))
-  );
+  const clamped = clampAutoLockMinutes(minutes);
   await invoke("crypto_set_autolock", { minutes: clamped });
   invalidateStatus();
 }
@@ -163,8 +184,20 @@ export async function deletePlaintextBackup(): Promise<void> {
 /**
  * Startet einen Inaktivitäts-Timer. Ruft `onLock()` nach `minutes` ohne
  * Aktivität (Maus/Tasten/Touch/Fokus). Gibt eine Cleanup-Funktion zurück.
+ *
+ * Sentinel `minutes <= 0` (siehe NEVER_AUTOLOCK_MIN): „nie automatisch
+ * sperren" -- echtes No-op, es wird WEDER ein Timer gestartet NOCH ein
+ * Aktivitäts-Listener registriert. Die zurückgegebene Cleanup-Funktion bleibt
+ * trotzdem eine funktionierende Funktion (Aufrufer -- App.tsx -- ruft sie
+ * unbedingt im useEffect-Cleanup auf). WICHTIG: die Sperre beim Verstecken/
+ * Minimieren der App (visibilitychange-Handler in App.tsx) ist ein davon
+ * komplett unabhängiger, bewusster Mechanismus und bleibt von diesem Sentinel
+ * UNBERÜHRT -- nur die Inaktivitäts-Sperre lässt sich hierüber abschalten.
  */
 export function startIdleTimer(minutes: number, onLock: () => void): () => void {
+  if (minutes <= NEVER_AUTOLOCK_MIN) {
+    return () => {};
+  }
   const ms = Math.max(MIN_AUTOLOCK_MIN, minutes) * 60_000;
   let timer: number | undefined;
   const reset = () => {

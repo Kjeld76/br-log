@@ -299,9 +299,13 @@ export default function EntryList({
                   </div>
                 )}
 
-                {/* Geheimnis-Schutz: bei Treffer in vertraulichem Feld KEIN Inhalt, nur Label */}
+                {/* Geheimnis-Schutz: bei Treffer in vertraulichem Feld KEIN Inhalt, nur
+                    Label. confidential-blur kommt ADDITIV oben drauf (Issue #17, Task 8)
+                    -- dieses Label verrät bereits, dass DIESER Eintrag zum Suchbegriff
+                    einen Treffer im vertraulichen Feld hat, deshalb bei Fokusverlust
+                    zusätzlich geblurrt statt nur der eigentliche Klartext. */}
                 {searching && e.search?.hasSecretHit && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-medium text-confidential">
+                  <p className="confidential-blur mt-1 flex items-center gap-1 text-xs font-medium text-confidential">
                     <Icon name="lock" size={12} />
                     Treffer in vertraulichem Feld (Inhalt nur in der Einzelansicht)
                   </p>

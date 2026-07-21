@@ -21,7 +21,15 @@ Tokens:
     (s. chip.md), `shrink-0 rounded px-1.5 py-0.5 text-xs`
   Wichtig-Marker: reines `!`-Präfix mit `font-semibold`, kein Farb-Token
   Vertraulich-Treffer: `text-confidential` (CSS-Klasse aus `styles.css`,
-    nicht Tailwind-Utility) + Schloss-Icon
+    nicht Tailwind-Utility) + Schloss-Icon. Trägt seit Issue #17/Task 8
+    (Fix-Runde) zusätzlich `confidential-blur` — dieselbe Ergänzung wie beim
+    strukturell identischen Vertraulich-Treffer-Label in EntryList (s. u.):
+    additiv zur bestehenden Maskierung (kein Klartext), da schon das
+    Vorhandensein des Badges verrät, dass DIESER Termin zum Suchbegriff einen
+    Treffer im Geheimnis-Feld hat. Ursprünglich als offene Frage im
+    Task-8-Report vermerkt (Brief nannte explizit nur EntryList.tsx) —
+    Review/Controller haben die Lücke bestätigt und schließen lassen, damit
+    Historie- und Kalendersuche denselben Sichtschutz haben.
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus`
     (`OccurrenceListRow.tsx:29-31`) — dieselbe Farbe/Breite/Offset wie der
@@ -67,7 +75,11 @@ Tokens:
   Tags: `TagChip variant="readonly"` (s. chip.md), Teil derselben Pillen-Zeile
   Vertraulich-Treffer: `text-confidential` (identisches Muster wie
     OccurrenceListRow), steht als letztes Element der Karte (nach der
-    Pillen-Zeile)
+    Pillen-Zeile). Trägt seit Issue #17/Task 8 zusätzlich `confidential-blur`
+    (s. `styles.css`/App.tsx, Sichtschutz bei Fensterfokus-Verlust,
+    Desktop-only) — additiv zur bestehenden Maskierung (kein Klartext), da
+    schon das Label pro Eintrag verrät, dass DIESER Eintrag zum Suchbegriff
+    einen Treffer im Geheimnis-Feld hat.
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus`
     (`EntryList.tsx:242`) — identisches Muster/Token wie OccurrenceListRow,

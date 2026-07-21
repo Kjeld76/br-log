@@ -3,10 +3,18 @@ import DbInfoPanel from "./DbInfoPanel";
 import ReminderSettings from "./ReminderSettings";
 import SecurityPanel from "./SecurityPanel";
 import ThemeToggle from "./ThemeToggle";
+import type { AndroidLockDelaySec } from "../lib/lockDelay";
 
 interface Props {
   onLockNow: () => void;
   onAutoLockChanged: (minutes: number) => void;
+  // Issue #17, Task 7: reines Durchreichen an SecurityPanel (Android-only
+  // Einstellung "Sperren beim Verlassen der App"), analog onAutoLockChanged.
+  onAndroidLockDelayChanged: (sec: AndroidLockDelaySec) => void;
+  // Issue #17, Task 8: reines Durchreichen an SecurityPanel (Desktop-only
+  // Einstellung "Sichtschutz-Blur bei Fensterfokus-Verlust"), analog
+  // onAndroidLockDelayChanged.
+  onBlurOnFocusLossChanged: (enabled: boolean) => void;
   // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
   // ermittelt und als Prop durchgereicht -- hier nur zum Durchreichen an
   // DbInfoPanel und SecurityPanel (Fingerabdruck-Abschnitt) gebraucht.
@@ -57,7 +65,13 @@ const SECTION_LABELS: Record<SectionId, string> = {
 // doppeltes Laden von Datenbankpfad/Autostart-Status o. Ä. für zwei
 // Layout-Varianten) -- nur ihre CSS-Sichtbarkeit ändert sich mit der
 // Panel-Breite.
-export default function SettingsPanel({ onLockNow, onAutoLockChanged, mobile }: Props) {
+export default function SettingsPanel({
+  onLockNow,
+  onAutoLockChanged,
+  onAndroidLockDelayChanged,
+  onBlurOnFocusLossChanged,
+  mobile,
+}: Props) {
   const [active, setActive] = useState<SectionId>(SECTION_ORDER[0]);
 
   const section = (id: SectionId, content: React.ReactNode) => (
@@ -119,6 +133,8 @@ export default function SettingsPanel({ onLockNow, onAutoLockChanged, mobile }: 
             <SecurityPanel
               onLockNow={onLockNow}
               onAutoLockChanged={onAutoLockChanged}
+              onAndroidLockDelayChanged={onAndroidLockDelayChanged}
+              onBlurOnFocusLossChanged={onBlurOnFocusLossChanged}
               mobile={mobile}
             />
           )}
