@@ -654,7 +654,7 @@ export default function EntryForm({
           </label>
           <textarea
             id={secretId}
-            className="confidential-input"
+            className="confidential-input confidential-blur"
             rows={3}
             placeholder="Genaue Tätigkeit (optional)"
             value={draft.secretDetails}

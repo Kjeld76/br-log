@@ -106,7 +106,7 @@ export default function AppointmentDetail({
           <Icon name="lock" size={16} />
           Vertrauliche Notizen (BR-Geheimnis)
         </h4>
-        <p className="whitespace-pre-wrap text-sm text-confidential">
+        <p className="confidential-blur whitespace-pre-wrap text-sm text-confidential">
           {a.secretDetails ? (
             a.secretDetails
           ) : (

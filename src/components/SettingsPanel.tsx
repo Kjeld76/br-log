@@ -11,6 +11,10 @@ interface Props {
   // Issue #17, Task 7: reines Durchreichen an SecurityPanel (Android-only
   // Einstellung "Sperren beim Verlassen der App"), analog onAutoLockChanged.
   onAndroidLockDelayChanged: (sec: AndroidLockDelaySec) => void;
+  // Issue #17, Task 8: reines Durchreichen an SecurityPanel (Desktop-only
+  // Einstellung "Sichtschutz-Blur bei Fensterfokus-Verlust"), analog
+  // onAndroidLockDelayChanged.
+  onBlurOnFocusLossChanged: (enabled: boolean) => void;
   // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
   // ermittelt und als Prop durchgereicht -- hier nur zum Durchreichen an
   // DbInfoPanel und SecurityPanel (Fingerabdruck-Abschnitt) gebraucht.
@@ -65,6 +69,7 @@ export default function SettingsPanel({
   onLockNow,
   onAutoLockChanged,
   onAndroidLockDelayChanged,
+  onBlurOnFocusLossChanged,
   mobile,
 }: Props) {
   const [active, setActive] = useState<SectionId>(SECTION_ORDER[0]);
@@ -129,6 +134,7 @@ export default function SettingsPanel({
               onLockNow={onLockNow}
               onAutoLockChanged={onAutoLockChanged}
               onAndroidLockDelayChanged={onAndroidLockDelayChanged}
+              onBlurOnFocusLossChanged={onBlurOnFocusLossChanged}
               mobile={mobile}
             />
           )}

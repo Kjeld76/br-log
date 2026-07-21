@@ -37,6 +37,7 @@ import { isAndroid } from "./lib/platform";
 import { applyLockHotkey, setLockHotkeyTrigger } from "./lib/lockHotkey";
 import { createLockDelay, getAndroidLockDelaySec } from "./lib/lockDelay";
 import { applySecureScreenSetting } from "./lib/secureScreen";
+import { getBlurOnFocusLossEnabled } from "./lib/blurOnFocusLoss";
 import { listen } from "@tauri-apps/api/event";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
@@ -123,6 +124,14 @@ export default function App() {
   // onAutoLockChanged/autoLockMin).
   const [androidLockDelaySec, setAndroidLockDelaySec] = useState(() =>
     getAndroidLockDelaySec()
+  );
+  // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+  // Desktop-only, Default AN): lazy-Init liest die localStorage-Einstellung
+  // synchron (kein Geheimnis, s. blurOnFocusLoss.ts); SecurityPanel meldet
+  // Änderungen über onBlurOnFocusLossChanged zurück (analog
+  // onAndroidLockDelayChanged/androidLockDelaySec).
+  const [blurOnFocusLossEnabled, setBlurOnFocusLossEnabledState] = useState(() =>
+    getBlurOnFocusLossEnabled()
   );
   const [view, setView] = useState<View>("erfassen");
   const [tags, setTags] = useState<TaskTag[]>([]);
@@ -328,6 +337,32 @@ export default function App() {
     if (!mobile || !ready) return;
     void applySecureScreenSetting();
   }, [mobile, ready]);
+
+  // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+  // Desktop-only): blurrt vertrauliche Anzeige-/Eingabeflächen (Klasse
+  // `confidential-blur`, s. styles.css), solange das Fenster nicht im Fokus
+  // ist -- reiner Sichtschutz gegen kurzes Wegklicken/über die Schulter
+  // schauen, KEIN Ersatz für die Sperre (die läuft unverändert über den
+  // separaten visibilitychange-Mechanismus oben). Auf Android registriert
+  // dieser Effekt bewusst NICHTS (kein Fenster-Fokus-Konzept dort -- Wechsel
+  // in eine andere App deckt bereits die visibilitychange-Sperre oben ab).
+  // Bei ausgeschalteter Einstellung ebenfalls kein Listener (Guard analog
+  // mobile). Das Cleanup entfernt das Attribut IMMER (Deaktivieren während
+  // geblurrt / Unmount) -- sonst bliebe ein Fenster fälschlich dauerhaft
+  // geblurrt.
+  useEffect(() => {
+    if (mobile || !blurOnFocusLossEnabled) return;
+    const root = document.documentElement;
+    const onBlur = () => root.setAttribute("data-window-blurred", "");
+    const onFocus = () => root.removeAttribute("data-window-blurred");
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      root.removeAttribute("data-window-blurred");
+    };
+  }, [mobile, blurOnFocusLossEnabled]);
 
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
   const doLock = () => {
@@ -1144,6 +1179,7 @@ export default function App() {
                   onLockNow={doLock}
                   onAutoLockChanged={setAutoLockMin}
                   onAndroidLockDelayChanged={setAndroidLockDelaySec}
+                  onBlurOnFocusLossChanged={setBlurOnFocusLossEnabledState}
                   mobile={mobile}
                 />
               </>

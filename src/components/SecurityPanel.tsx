@@ -23,6 +23,10 @@ import {
   type AndroidLockDelaySec,
 } from "../lib/lockDelay";
 import { getSecureScreenEnabled, setSecureScreenEnabled } from "../lib/secureScreen";
+import {
+  getBlurOnFocusLossEnabled,
+  setBlurOnFocusLossEnabled,
+} from "../lib/blurOnFocusLoss";
 import RecoveryCodeReveal from "./RecoveryCodeReveal";
 import TagChip from "./TagChip";
 import { Icon } from "./Icon";
@@ -34,6 +38,10 @@ interface Props {
   // zurück (analog onAutoLockChanged/autoLockMin) -- die Verdrahtung des
   // visibilitychange-Handlers braucht den jeweils aktuellen Wert.
   onAndroidLockDelayChanged: (sec: AndroidLockDelaySec) => void;
+  // Issue #17, Task 8: meldet die Sichtschutz-Blur-Einstellung an App.tsx
+  // zurück (analog onAndroidLockDelayChanged/androidLockDelaySec) -- der
+  // window blur/focus-Effekt dort braucht den jeweils aktuellen Wert.
+  onBlurOnFocusLossChanged: (enabled: boolean) => void;
   // Konvention (siehe App.tsx): isAndroid() wird zentral EINMAL in App.tsx
   // ermittelt und als Prop durchgereicht -- hier nur gebraucht, um den
   // Fingerabdruck-Abschnitt auf Android zu gaten (Desktop hat keinen
@@ -78,6 +86,7 @@ export default function SecurityPanel({
   onLockNow,
   onAutoLockChanged,
   onAndroidLockDelayChanged,
+  onBlurOnFocusLossChanged,
   mobile,
 }: Props) {
   const [oldPw, setOldPw] = useState("");
@@ -122,6 +131,14 @@ export default function SecurityPanel({
   const [secureScreenBusy, setSecureScreenBusy] = useState(false);
   const [secureScreenMsg, setSecureScreenMsg] = useState<{ ok: boolean; text: string } | null>(
     null
+  );
+
+  // Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+  // Desktop-only): Default AN, lazy-Init aus localStorage wie oben. Reine
+  // Persistenz + Meldung an App.tsx -- kein Backend-Roundtrip nötig (anders
+  // als secureScreenEnabled, das über einen Rust-Command läuft).
+  const [blurOnFocusLossEnabled, setBlurOnFocusLossEnabledState] = useState(() =>
+    getBlurOnFocusLossEnabled()
   );
 
   // Recovery-Code neu erzeugen
@@ -263,6 +280,16 @@ export default function SecurityPanel({
         });
       })
       .finally(() => setSecureScreenBusy(false));
+  };
+
+  // Sichtschutz-Blur (Issue #17, Task 8): reine localStorage-Persistenz,
+  // App.tsx übernimmt den neuen Wert über onBlurOnFocusLossChanged (baut den
+  // window blur/focus-Effekt neu auf, analog changeLockDelay).
+  const toggleBlurOnFocusLoss = () => {
+    const next = !blurOnFocusLossEnabled;
+    setBlurOnFocusLossEnabledState(next);
+    setBlurOnFocusLossEnabled(next);
+    onBlurOnFocusLossChanged(next);
   };
 
   // Aufnahme-Feld: der Button selbst fängt den nächsten Tastendruck ab.
@@ -573,6 +600,35 @@ export default function SecurityPanel({
               {hotkeyMsg.text}
             </p>
           )}
+        </section>
+      )}
+
+      {/* Sichtschutz-Blur bei Fensterfokus-Verlust (Issue #17, Task 8,
+          Desktop-only): blurrt vertrauliche Anzeige-/Eingabeflächen (Klasse
+          `confidential-blur`, s. styles.css), solange das BR-Log-Fenster
+          nicht im Fokus ist -- reiner Sichtschutz gegen kurzes Wegklicken/
+          über die Schulter schauen, KEIN Ersatz für die Sperre (die bleibt
+          unverändert, s. App.tsx). Auf Android gibt es dieses
+          Fenster-Fokus-Konzept nicht (Wechsel in eine andere App deckt
+          bereits die visibilitychange-Sperre ab) -- der Abschnitt bleibt dort
+          komplett weg, wie beim Hotkey oben. */}
+      {!mobile && (
+        <section className={card}>
+          <h4 className="mb-2 text-sm font-semibold text-primary-ink">
+            Sichtschutz bei Fensterfokus-Verlust
+          </h4>
+          <p className="mb-3 text-xs text-secondary-ink">
+            Blendet vertrauliche Inhalte (genaue Tätigkeitsbeschreibung,
+            vertrauliche Notizen, maskierte Suchtreffer) unscharf, solange das
+            Fenster nicht im Fokus ist -- Schutz gegen Mitlesen beim kurzen
+            Wegklicken.
+          </p>
+          <TagChip
+            label={blurOnFocusLossEnabled ? "Aktiviert" : "Deaktiviert"}
+            variant="selectable"
+            active={blurOnFocusLossEnabled}
+            onClick={toggleBlurOnFocusLoss}
+          />
         </section>
       )}
 

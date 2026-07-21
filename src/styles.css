@@ -64,6 +64,21 @@ body {
   color: var(--color-confidential-text);
 }
 
+/* Sichtschutz bei Fensterfokus-Verlust (Issue #17, Task 8, Desktop-only).
+   App.tsx setzt/entfernt `data-window-blurred` auf <html> bei window
+   blur/focus (nur wenn NICHT isAndroid() und die Einstellung in
+   SecurityPanel eingeschaltet ist). Die Klasse `confidential-blur` wird
+   additiv NUR an vertrauliche Anzeige-/Eingabeflächen vergeben (Vertraulich-
+   Feld in EntryDetail/AppointmentDetail, Vertraulich-Textareas in den
+   Formularen, maskierte Suchtreffer-Hinweise in EntryList) -- die bestehende
+   Suchtreffer-Maskierung selbst bleibt unverändert. Bewusst OHNE Transition:
+   ein zustandsloser, sofortiger Blur ist automatisch reduced-motion-neutral
+   (nichts zu deaktivieren, s. CLAUDE.md). `filter: blur()` ist ein
+   CSS-Filter, kein Farbwert -- Audit-neutral. */
+html[data-window-blurred] .confidential-blur {
+  filter: blur(7px);
+}
+
 /* Logo im Header: im Dunkelmodus auf hellem „Badge" lesbar halten.
    Hintergrund kommt aus --color-logo-badge (im Light-Theme "transparent",
    daher hier themeunabhängig). Das Padding ändert im Light-Modus sichtbar
