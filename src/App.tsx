@@ -38,6 +38,7 @@ import { applyLockHotkey, setLockHotkeyTrigger } from "./lib/lockHotkey";
 import { createLockDelay, getAndroidLockDelaySec } from "./lib/lockDelay";
 import { applySecureScreenSetting } from "./lib/secureScreen";
 import { getBlurOnFocusLossEnabled } from "./lib/blurOnFocusLoss";
+import { clearModalDraft, saveModalDraft, takeModalDraft } from "./lib/modalDraftStore";
 import { listen } from "@tauri-apps/api/event";
 import { useBackClose } from "./lib/backClose";
 import { useModalFocusTrap } from "./lib/useModalFocusTrap";
@@ -221,6 +222,12 @@ export default function App() {
   // die Detailansicht behält das bisherige Verhalten (erstes fokussierbares
   // Element).
   const dateFieldRef = useRef<HTMLInputElement>(null);
+  // Aktuellster Formular-Entwurf des offenen Bearbeiten-Modals (Issue #17,
+  // Task 9): wird von EntryForm/AppointmentForm über onDraftChange bei JEDER
+  // Änderung mitgeschrieben (Draft-Kanal existiert bereits für formDirty).
+  // doLock() greift diese Ref, um den Entwurf VOR dem Aufblitz-Schutz-
+  // Unmount in modalDraftStore (reiner RAM, s. dort) zu sichern.
+  const draftRef = useRef<TimeEntry | Appointment | null>(null);
   useModalFocusTrap(
     modalRef,
     !!modal,
@@ -270,6 +277,16 @@ export default function App() {
       setReady(true);
       setStartMode("encrypted"); // ab jetzt ist die DB verschlüsselt -> Unlock
       setLocked(false);
+      // Formular-Entwurf eines beim Sperren offenen Bearbeiten-Modals wieder
+      // öffnen (Issue #17, Task 9) -- GENAU EINMAL: takeModalDraft entfernt
+      // ihn aus dem RAM-Store, ein zweites Entsperren ohne zwischenzeitliches
+      // erneutes Sperren stellt deshalb nichts mehr wieder her. modal.entry/
+      // modal.appointment tragen hier bereits den EDITIERTEN Stand (s.
+      // doLock) -- EntryForm/AppointmentForm nehmen das beim Neu-Mounten als
+      // eigenen Ausgangszustand, der Dirty-Status ergibt sich dort wieder
+      // organisch aus deren eigenem onDraftChange-Kanal.
+      const restoredModal = takeModalDraft() as Modal | null;
+      if (restoredModal) setModal(restoredModal);
       // Automatisches Sicherheits-Backup NACH erfolgreichem Entsperren
       // (Finding 5): best-effort, blockiert den Start nicht. Schutz gegen
       // Fehlbedienung/Plattenausfall -- ein Fehlschlag wird nur geloggt +
@@ -364,8 +381,50 @@ export default function App() {
     };
   }, [mobile, blurOnFocusLossEnabled]);
 
+  // Refs auf den JEWEILS aktuellen Modal-/Dirty-Zustand (Issue #17, Task 9):
+  // dieselben drei NICHT-Button-Sperr-Auslöser unten (Idle-Timer, globaler
+  // Hotkey, Tray-Event) registrieren ihre Listener einmalig bzw. mit
+  // eingeschränkten Dependencies (s. lockedRef-Kommentar direkt darunter für
+  // dasselbe Muster/denselben Grund) -- ohne diese Refs würde doLock() beim
+  // tatsächlichen Auslösen den zum Registrierungszeitpunkt eingefangenen
+  // (veralteten) modal/formDirty-Stand sehen, z. B. "kein offenes Formular",
+  // selbst wenn beim echten Sperren längst eins mit ungespeichertem Entwurf
+  // offen ist -- der Draft würde dann trotz offenem Formular NIE gesichert.
+  const modalForLockRef = useRef(modal);
+  useEffect(() => {
+    modalForLockRef.current = modal;
+  }, [modal]);
+  const formDirtyRef = useRef(formDirty);
+  useEffect(() => {
+    formDirtyRef.current = formDirty;
+  }, [formDirty]);
+
   // Sperren: Rust verwirft Schlüssel + Connection; UI zurück zum LockScreen.
+  // Vorher (Issue #17, Task 9): ein offenes Bearbeiten-Modal (Eintrag/Termin)
+  // MIT ungespeichertem Entwurf im modalDraftStore sichern -- der Aufblitz-
+  // Schutz unmountet gleich darauf den gesamten Baum, EntryForm/
+  // AppointmentForm verlieren dabei ihr eigenes, internes Draft-State (der
+  // `modal`-State in App.tsx selbst bleibt zwar erhalten, trägt aber nur den
+  // ORIGINAL-Eintrag/-Termin, nicht die Bearbeitung). Ohne offenes/dirty-es
+  // Formular wird ein evtl. noch nicht abgeholter alter Draft verworfen
+  // (clearModalDraft) statt stillschweigend liegen zu bleiben. Liest bewusst
+  // über die Refs oben, NICHT die State-Variablen direkt (s. deren Kommentar).
   const doLock = () => {
+    const currentModal = modalForLockRef.current;
+    const currentlyDirty = formDirtyRef.current;
+    if (
+      (currentModal?.type === "form" || currentModal?.type === "apptForm") &&
+      currentlyDirty &&
+      draftRef.current
+    ) {
+      saveModalDraft(
+        currentModal.type === "form"
+          ? { ...currentModal, entry: draftRef.current as TimeEntry }
+          : { ...currentModal, appointment: draftRef.current as Appointment }
+      );
+    } else {
+      clearModalDraft();
+    }
     void lock().finally(() => {
       setReady(false);
       setLocked(true);
@@ -1067,7 +1126,10 @@ export default function App() {
                   dateInputRef={dateFieldRef}
                   onSaved={handleModalSaved}
                   onCancel={requestCloseModal}
-                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  onDraftChange={(draft, dirty) => {
+                    setFormDirty(dirty);
+                    draftRef.current = draft;
+                  }}
                 />
               </>
             )}
@@ -1102,7 +1164,10 @@ export default function App() {
                   titleInputRef={dateFieldRef}
                   onSaved={handleApptSaved}
                   onCancel={requestCloseModal}
-                  onDraftChange={(_draft, dirty) => setFormDirty(dirty)}
+                  onDraftChange={(draft, dirty) => {
+                    setFormDirty(dirty);
+                    draftRef.current = draft;
+                  }}
                   saveAction={modal.saveAction}
                   contextHint={modal.contextHint}
                 />
