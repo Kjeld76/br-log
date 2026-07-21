@@ -21,11 +21,15 @@ Tokens:
     (s. chip.md), `shrink-0 rounded px-1.5 py-0.5 text-xs`
   Wichtig-Marker: reines `!`-Präfix mit `font-semibold`, kein Farb-Token
   Vertraulich-Treffer: `text-confidential` (CSS-Klasse aus `styles.css`,
-    nicht Tailwind-Utility) + Schloss-Icon. Trägt (Stand Issue #17, Task 8)
-    **NICHT** `confidential-blur` — das strukturell identische
-    Vertraulich-Treffer-Label in EntryList (s. u.) bekam die Klasse, dieses
-    hier war laut Brief nicht im Umfang; offene Frage im Task-8-Report, ob
-    das eine bewusste Beschränkung oder eine Lücke ist.
+    nicht Tailwind-Utility) + Schloss-Icon. Trägt seit Issue #17/Task 8
+    (Fix-Runde) zusätzlich `confidential-blur` — dieselbe Ergänzung wie beim
+    strukturell identischen Vertraulich-Treffer-Label in EntryList (s. u.):
+    additiv zur bestehenden Maskierung (kein Klartext), da schon das
+    Vorhandensein des Badges verrät, dass DIESER Termin zum Suchbegriff einen
+    Treffer im Geheimnis-Feld hat. Ursprünglich als offene Frage im
+    Task-8-Report vermerkt (Brief nannte explizit nur EntryList.tsx) —
+    Review/Controller haben die Lücke bestätigt und schließen lassen, damit
+    Historie- und Kalendersuche denselben Sichtschutz haben.
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus`
     (`OccurrenceListRow.tsx:29-31`) — dieselbe Farbe/Breite/Offset wie der
