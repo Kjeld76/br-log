@@ -19,9 +19,11 @@ Tokens:
   height/touch: keine `min-h-touch`-Ergänzung an den geprüften Aufrufstellen
     (`CalendarPage.tsx:91`, `AppointmentForm.tsx:213,411,478,510`,
     `AppointmentAgenda.tsx:144`, `PrintReportPanel.tsx:110`,
-    `EntryList.tsx:80`, `TagManager.tsx:80,166`, `ObjectionEditor.tsx:29,37,44`,
+    `EntryList.tsx:183,190`, `TagManager.tsx:80,166`, `ObjectionEditor.tsx:29,37,44`,
     `ExportPanel.tsx:217`, `EntryForm.tsx:333`, `StatsView.tsx:65`) — die
-    Konstante selbst definiert keine Mindesthöhe, nur `p-2` Padding
+    Konstante selbst definiert keine Mindesthöhe, nur `p-2` Padding. Eine
+    Ausnahme: `EntryList.tsx:131` (großes Suchfeld, s. u.) ergänzt lokal
+    `h-[46px]`.
   focus: kein `outline-none`/lokales `focus:`-Styling in der Konstante —
     damit greift ungehindert der globale `:focus-visible`-Ring aus
     `src/styles.css:22-25` (`outline: var(--focus-width) solid
@@ -34,11 +36,36 @@ Zustände: default · focus-visible (global) · disabled — einzelne Aufrufer
   nicht vorhanden.
 
 Verwendung: `src/lib/ui.ts:18-19`; u. a. `src/components/EntryForm.tsx:333`,
-`src/components/EntryList.tsx:80`, `src/components/AppointmentForm.tsx:213`,
+`src/components/EntryList.tsx:131,183,190`, `src/components/AppointmentForm.tsx:213`,
 `src/components/TagManager.tsx:80,166`, `src/components/ObjectionEditor.tsx:29,37,44`,
 `src/components/ExportPanel.tsx:217`, `src/components/PrintReportPanel.tsx:110`,
 `src/views/CalendarPage.tsx:91`, `src/views/StatsView.tsx:65`,
 `src/components/AppointmentAgenda.tsx:144`.
+
+### Variante: große Suche mit Icon (`EntryList.tsx:124-137`, Design-Handoff #27, 1d)
+
+Historie-Volltextsuche ist seit dem Historie-Redesign das erste, größte
+Element der Filterleiste statt eines kleinen Felds neben dem „+ Neuer
+Eintrag"-Button. Keine neue Klassen-Konstante, sondern `inputCls` lokal um
+zwei Utilities erweitert:
+
+Tokens:
+  Klasse: `inputCls + " h-[46px] w-full pl-10"` -- `h-[46px]` ist ein
+    arbiträrer Wert, aber explizit durch die Spec vorgegeben
+    ("~46 px hohes Feld"), daher laut CLAUDE.md-Direktive zulässig
+  Icon: `Icon name="search" size={18}` in einem umschließenden `relative`-
+    Wrapper, absolut positioniert (`absolute left-3 top-1/2
+    -translate-y-1/2 text-disabled-ink`, `pointer-events-none` -- Klicks
+    gehen durch zum Feld). `pl-10` am Input schafft den nötigen Freiraum,
+    damit der Text das Icon nicht überlappt.
+  a11y: `aria-label="Volltextsuche"` zusätzlich zum (langen, informativen)
+    Platzhaltertext.
+  focus: unverändert global (s. o.) -- das Icon liegt optisch über dem
+    Feld, nimmt aber am Fokus-Ring nichts weg (`pointer-events-none`,
+    kein eigenes Tab-Ziel).
+
+Verwendung: `src/components/EntryList.tsx:124-137`, einzige Fundstelle
+dieses Musters.
 
 ## Vertraulich (.confidential-input, `src/styles.css:50-61`)
 

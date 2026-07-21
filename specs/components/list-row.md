@@ -41,7 +41,7 @@ Verwendung: `src/components/OccurrenceListRow.tsx:28-32` (Varianten-Definition
 (Tages-Panel: `variant="panel"`) und Agenda-Suchtreffern (`variant="card"`,
 Default).
 
-## EntryList-Zeile (`src/components/EntryList.tsx:167-238`)
+## EntryList-Zeile (`src/components/EntryList.tsx:238-315`)
 
 Tokens:
   Rahmen/Fläche: `rounded border border-border bg-surface p-3`
@@ -50,27 +50,75 @@ Tokens:
     Hover auf die Akzent-Token (`--color-hover-accent-line`,
     `--color-hover-accent-surface-soft`), nicht nur die neutrale
     `surface-2`-Fläche
-  Status-Badges in der Zeile (s. auch error-box.md): `bg-success-surface
-    text-success-ink` (Freizeitausgleich), `bg-warning-badge
-    text-warning-badge-ink` (keine geplante Schicht), `bg-error-badge
-    text-error-badge-ink` (Widerspruch-Zähler)
-  Tags: `TagChip variant="readonly"` (s. chip.md)
+  Innere Reihenfolge seit dem Historie-Redesign (Design-Handoff #27, 1d):
+    Anker-Zeile Datum + Uhrzeit oben (Duration bleibt rechts daneben, s. u.),
+    darunter die Info (`truncate`, einzeilig), darunter EINE gemeinsame
+    Pillen-Zeile mit Tags + allen Status-Badges (vorher: Status-Badges inline
+    mit dem Datum, Tags in einer eigenen Zeile darunter, Info zuletzt --
+    „Badges einheitlich als Pillen" ersetzt diese Mischung durch eine
+    konsistente Reihenfolge)
+  Status-Badges in der Pillen-Zeile (s. auch error-box.md): `rounded-full
+    bg-success-surface text-success-ink` (Freizeitausgleich), `rounded-full
+    bg-warning-badge text-warning-badge-ink` (keine geplante Schicht),
+    `rounded-full bg-error-badge text-error-badge-ink` (Widerspruch-Zähler)
+    — alle drei jetzt einheitlich `rounded-full` (vorher trugen die ersten
+    beiden nur `rounded`, der Objections-Badge war bereits `rounded-full`;
+    Design-Handoff #27, 1d: „Badges einheitlich als kleine Pillen")
+  Tags: `TagChip variant="readonly"` (s. chip.md), Teil derselben Pillen-Zeile
   Vertraulich-Treffer: `text-confidential` (identisches Muster wie
-    OccurrenceListRow)
+    OccurrenceListRow), steht als letztes Element der Karte (nach der
+    Pillen-Zeile)
   focus: lokal `focus-visible:outline focus-visible:outline-2
     focus-visible:outline-offset-2 focus-visible:outline-focus`
-    (`EntryList.tsx:171`) — identisches Muster/Token wie OccurrenceListRow,
+    (`EntryList.tsx:242`) — identisches Muster/Token wie OccurrenceListRow,
     unabhängig dupliziert (kein gemeinsamer Import)
   height/touch: keine `min-h-touch`-Klasse
 
 Zustände: default · hover (Akzent-Rahmen + -Fläche, s. o.) · focus-visible
   (lokal dupliziert) · aktiviert per Klick/Enter/Leertaste. Leerzustand:
   eigene Zeile `border-dashed border-empty-line` („Keine Einträge
-  gefunden.", `EntryList.tsx:240`) — kein interaktives Element, nur Hinweis.
+  gefunden.", `EntryList.tsx:321`) — kein interaktives Element, nur Hinweis.
   disabled/loading/active — nicht vorhanden.
 
-Verwendung: `src/components/EntryList.tsx:167-238` (Haupt-Listenansicht der
-Einträge, inkl. Duration-Summe rechts, Tag-Chips, Objections-Badge).
+Verwendung: `src/components/EntryList.tsx:238-315` (Haupt-Listenansicht der
+Einträge, inkl. Duration-Summe rechts, Tag-Chips, Objections-Badge). Die
+Suchleiste darüber (großes Suchfeld, Filter-Chip/Disclosure) und der FAB
+darunter sind kein List-Row-Muster, s. `input.md`/`chip.md`/`button.md`.
+
+## BarRow (`src/views/StatsView.tsx:47-92`)
+
+Anders als die beiden Zeilen-Muster oben ist BarRow **kein** interaktives
+`<li role="button">` -- kein Klick-Handler, kein `tabIndex`, kein
+Fokus-Styling. Aufgenommen hier trotzdem, weil sie optisch/strukturell eine
+Zeile aus Label + Inhalt + Wert ist (Design-Handoff #27, 1e/„Auswertung mit
+KPI-Kacheln und Balken") und keiner anderen Spec eindeutiger zuzuordnen ist.
+
+Tokens:
+  Layout: `flex items-center gap-2` -- Label (fest breit) · Balken
+    (`flex-1`) · Zahlenwert (fest breit)
+  Label: `w-28 shrink-0 truncate text-xs text-secondary-ink` (+ `capitalize`
+    bei Monatsnamen, deren de-Locale-Formatierung klein beginnt, Finding 28).
+    `w-28` (112px) ersetzt seit dem #27-Review-Fix ein zu knappes `w-20`
+    (80px), an dem der längste deutsche Monatsname „September 2026"
+    abgeschnitten wurde -- der `title`-Tooltip als einziges Rettungsnetz ist
+    auf Touch (Android) ohnehin nicht erreichbar. `truncate` + `title`
+    bleiben als Schutz für ungewöhnlich lange, frei vergebene
+    Schlagwort-Namen bestehen (dieselbe Zeile bedient Monats- UND
+    Schlagwort-Summen).
+  Balken: `h-2 flex-1 overflow-hidden rounded-full bg-surface-2`
+    (Hintergrund) mit innerem `h-full rounded-full bg-primary`, Breite
+    inline per `style={{ width: ... }}` (`minutes / max * 100 %`, gekappt auf
+    100). Rein dekorativ und daher `aria-hidden="true"` -- Label und
+    Zahlenwert tragen die Information bereits als normaler Text, der Balken
+    verdoppelt sie nur visuell.
+  Zahlenwert: `w-16 shrink-0 text-right text-xs font-medium text-primary-ink`
+  focus/height/touch: nicht zutreffend (keine Interaktion)
+
+Zustände: keine (statische Datenvisualisierung, kein Hover/Focus/Disabled/
+  Active/Loading).
+
+Verwendung: `src/views/StatsView.tsx:286` („Je Monat", mit `capitalize`),
+`:339` („Je Schlagwort", ohne `capitalize`).
 
 ## Verifikation der Utilities (Grep-Gegenprobe)
 

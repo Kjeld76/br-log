@@ -30,15 +30,28 @@ Tokens:
     Tab/Shift+Tab im Container. Kein lokales `focus-visible:`-Styling am
     Panel selbst — der Ring auf fokussierten Kindelementen kommt vom
     globalen `:focus-visible` (`styles.css:22-25`).
-  Schließen-Icon-Button (Einstellungen/Über): `min-h-touch min-w-touch`
-    garantiert Touch-Zielgröße (`App.tsx:1314,1337`)
+  Schließen-Icon-Button (Termin-Details/Einstellungen/Über): `min-h-touch
+    min-w-touch` garantiert Touch-Zielgröße (`App.tsx:989-997` Termin-Details,
+    `1031-1039` Einstellungen, `1054-1062` Über). Termin-Details (`apptDetail`)
+    ist seit #27 ebenfalls auf dieses X-Muster umgestellt (Begründung im
+    Code-Kommentar `App.tsx:974-979`: die übrigen vier Fußzeilen-Aktionen
+    „Zeit buchen"/„Duplizieren"/„Löschen"/„Bearbeiten" brachen auf 360px sonst
+    zu einem gedrängten Block um) -- vorher zählte es wie `detail` zu den
+    Modals mit einer eigenen Footer-„Schließen"-Zeile. Eine solche
+    Footer-Aktionsleiste mit „Schließen" als Teil der übrigen Aktionen (statt
+    des X im Kopf) gibt es dadurch nur noch bei `detail`
+    (`EntryDetail.tsx:126-158`, vier Buttons „Löschen"/„Schließen"/
+    „Duplizieren"/„Bearbeiten" in einer Zeile, s. button.md/list-row.md);
+    `apptForm`/`apptDetail`/`settings`/`about` schließen einheitlich über das
+    X im Kopf bzw. (nur `form`/`apptForm`) über den „Abbrechen"-Button der
+    sticky Aktionsleiste (s. Kommentar `App.tsx:1011-1021`).
 
 Zustände: offen (`modal !== null`) · geschlossen. Escape — **nicht
   vorhanden**: es existiert kein `keydown`-Listener in `App.tsx` (per Grep
   über `keydown`/`addEventListener` geprüft, einziger Treffer ist
   `visibilitychange`); Schließen geht ausschließlich über Backdrop-Klick,
   Cancel-/X-Button oder (mobil) die Android-Zurück-Taste
-  (`useBackClose`, `App.tsx:984`). disabled/hover/loading — auf Modal-Ebene
+  (`useBackClose`, `App.tsx:688`). disabled/hover/loading — auf Modal-Ebene
   nicht zutreffend (gilt für einzelne Formularelemente, s. button.md/input.md).
 
 Verwendung: `src/App.tsx:1187-1347` (fünf Inhalts-Typen: `form`, `detail`,

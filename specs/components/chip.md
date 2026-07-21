@@ -13,10 +13,11 @@ CSS-Klassen, die per Funktionsaufruf ausgewählt werden.
 Tokens je Variante:
   `readonly` (Zeile 27): `rounded-full bg-surface-2 px-2 py-0.5 text-xs
     text-primary-ink` — kein Rahmen, kein interaktives Element (reines `<span>`)
-  `selectable` — aktiv (Zeile 63): `border-primary bg-primary text-on-primary`;
-    inaktiv (Zeile 64): `border-border-strong bg-surface text-secondary-ink
-    hover:bg-surface-2`; beide: `rounded-full border px-3 py-1 text-xs
-    transition`
+  `selectable` — aktiv (Zeile 72): `border-primary bg-primary text-on-primary`;
+    inaktiv (Zeile 73): `border-border-strong bg-surface text-secondary-ink
+    hover:bg-surface-2`; beide: `inline-flex min-h-touch-pointer
+    items-center justify-center rounded-full border px-3 py-1.5 text-xs
+    transition` (Zeile 70)
   `removable` — archiviert (Zeile 39): `bg-archived-surface`; aktiv
     (Zeile 39): `bg-primary`; beide: `inline-flex items-center gap-1
     rounded-full px-2.5 py-1 text-xs text-on-primary`; „×"-Entfernen-Button:
@@ -26,7 +27,15 @@ Tokens je Variante:
     `selectable`-Button und der `removable`-„×"-Button erhalten ihren
     Fokusring ausschließlich vom globalen `:focus-visible` aus
     `styles.css:22-25`
-  height/touch: keine `min-h-touch`-Klasse in einer der drei Varianten
+  height/touch: `selectable` trägt seit dem #27-Review-Fix `min-h-touch-pointer`
+    (44px, Padding dafür von `py-1` auf `py-1.5` angehoben) — vorher war die
+    Variante bei ~26px die einzige Bedienmöglichkeit für vier fachlich
+    gewichtige Merkmal-Schalter (EntryForm: „Geplante Schicht"/
+    „Freizeitausgleich", AppointmentForm: „Ganztägig"/„Wichtig", vormals
+    Checkboxen mit voller Label-Zeile als Klickfläche) und lag damit deutlich
+    unter der Touch-Mindesthöhe. `removable`/`readonly` bleiben ohne
+    `min-h-touch`-Klasse (kein primärer Schalter, `removable` nur ein kleiner
+    „×"-Button innerhalb eines größeren Chips).
 
 Zustände: `selectable` — default (inaktiv) · hover (`hover:bg-surface-2`,
   nur inaktiv) · active-ausgewählt (`bg-primary`, kein Hover-Unterschied
@@ -37,11 +46,56 @@ Zustände: `selectable` — default (inaktiv) · hover (`hover:bg-surface-2`,
   default, kein interaktiver Zustand (kein Button/Klick-Handler). loading —
   bei keiner Variante vorhanden.
 
-Verwendung: `readonly` in `src/components/EntryList.tsx:213`,
+Verwendung: `readonly` in `src/components/EntryList.tsx:280`,
 `src/components/EntryDetail.tsx:52`, `src/components/AppointmentDetail.tsx:93`;
 `removable` (mit `archived`-Prop) in `src/components/EntryForm.tsx:505-512`,
-`src/components/AppointmentForm.tsx:543,581,594`; `selectable` in
-`src/components/EntryForm.tsx:531-537`, `src/components/TagFilterChips.tsx:31`.
+`src/components/AppointmentForm.tsx:543,581,594`; `selectable` u. a. in
+`src/components/EntryForm.tsx:536-542` (Schlagwort-Picker) und
+`src/components/EntryForm.tsx:569-580` (Merkmale „Geplante Schicht"/
+„Freizeitausgleich", Auslöser des Touch-Ziel-Fixes s. o.),
+`src/components/AppointmentForm.tsx:273-284` („Ganztägig"/„Wichtig") sowie
+Wochentags-/Erinnerungs-Presets weiter unten in derselben Datei,
+`src/components/TagFilterChips.tsx:31`.
+
+## Filter-Chip (Zeitraum-Disclosure, `EntryList.tsx:158-172`, kein TagChip)
+
+Datums-Zeitraum sitzt seit dem Historie-Redesign (Design-Handoff #27, 1d)
+hinter einem Chip/Disclosure statt zweier dauerhaft sichtbarer Datumsfelder
+-- Schlagwort-Filter (`TagFilterChips`) bleiben unabhängig davon sichtbar.
+Bewusst **kein** `TagChip variant="selectable"`-Aufruf: `TagChip.label` ist
+ein reiner String-Prop, kann also kein Icon vor dem Text rendern -- daher ein
+lokal ausgeschriebener Button, der die `selectable`-Farbklassen 1:1
+übernimmt (kein neues Token, keine neue Farbe):
+
+Tokens:
+  Aktiv (Zeitraum gesetzt): `border-primary bg-primary text-on-primary` --
+    identisch zum aktiven `TagChip variant="selectable"`
+  Inaktiv: `border-border-strong bg-surface text-secondary-ink
+    hover:bg-surface-2` -- identisch zum inaktiven `TagChip
+    variant="selectable"`
+  Form: `rounded-full border px-3 py-1 text-xs transition` (wie TagChip) +
+    `inline-flex items-center gap-1.5` fürs Icon
+  Inhalt: `Icon name="filter" size={13}` + Label. Das Label zeigt den
+    **aktiven** Zeitraum direkt am Chip an (`12.03.–18.03.`, `ab 12.03.` oder
+    `bis 18.03.`, Kurzform ohne Wochentag/Jahr) statt nur „Filter" -- ein
+    wirksamer, aber eingeklappter Datumsfilter muss laut Auftrag am Chip
+    selbst erkennbar bleiben (sonst Bedienfehler-Risiko: der Nutzer merkt
+    nicht, dass die Liste bereits gefiltert ist).
+  a11y: `aria-expanded` + `aria-controls` (Disclosure-Muster, analog zum
+    Widerspruchs-Abschnitt in `EntryForm.tsx`)
+  height/touch: `min-h-touch-pointer` (44px) -- dieses Muster hatte die
+    Touch-Mindesthöhe schon VOR dem `TagChip`-Original (s. o.); der
+    #27-Review-Fix hat `TagChip variant="selectable"` inzwischen an dieses
+    Vorbild angeglichen, statt umgekehrt.
+  focus: kein lokales `focus-visible:` -- globaler Ring aus `styles.css:22-25`
+
+Zustände: aktiv/inaktiv (s. o.) · hover (nur inaktiv) · focus-visible
+  (global) · aufgeklappt/eingeklappt (`aria-expanded`). disabled/loading —
+  nicht vorhanden.
+
+Verwendung: `src/components/EntryList.tsx:158-172` (Trigger),
+`EntryList.tsx:175-207` (aufklappbares Panel mit den beiden Datumsfeldern +
+„Zeitraum löschen"), einzige Fundstelle dieses Musters.
 
 ## Termin-Farbchips (`.appt-chip-*`/`.appt-dot-*`, `src/styles.css:87-122`)
 

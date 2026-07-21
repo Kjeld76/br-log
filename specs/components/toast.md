@@ -16,8 +16,12 @@ Tokens:
     UI-Ebenen-Tokens außer Tooltip, liegt über Modal `z-modal` = 1300)
   Position Desktop (`!mobile`): `fixed bottom-4 left-1/2 -translate-x-1/2`
   Position Mobil (`mobile`): `fixed bottom-20 left-1/2 -translate-x-1/2` —
-    höher verankert als Desktop, da die `BottomNav` (App.tsx:1180) sonst den
-    Toast verdecken würde (Kommentar `App.tsx:1399-1401`)
+    höher verankert als Desktop, sonst läge der Toast im selben
+    Bildschirmstreifen wie die `BottomNav` (App.tsx:885) (Kommentar
+    `App.tsx:1121-1123`). Der Abstand bleibt unabhängig davon bestehen, ob
+    BottomNav `fixed` oder (seit dem #27-Review-Fix, s. button.md „FAB")
+    ein normaler Flex-Bruder ist -- beide belegen denselben ca. 64-70px
+    hohen Streifen am Viewport-Boden.
   focus: nicht zutreffend — der Toast ist nicht interaktiv (kein Button,
     kein Fokus-Ziel), `role="status"`/`aria-live="polite"` meldet ihn
     Screenreadern, ohne den Tastaturfokus zu verschieben

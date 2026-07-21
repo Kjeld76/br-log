@@ -125,65 +125,66 @@ export default function QuickEntryView({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
-      <header>
-        <h2 className="text-lg font-bold text-primary-ink">
-          Zeit erfassen
-        </h2>
-        <p className="text-sm text-secondary-ink">
-          Neuer Eintrag für deine Betriebsratszeit.
+      {/* Wochensumme in der Titelzeile statt eigener Karte (Design-Handoff
+          #27, 1b) -- spart eine ganze Kartenhöhe im ohnehin langen Formular. */}
+      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-border pb-3">
+        <div>
+          <h2 className="text-lg font-bold text-primary-ink">
+            Zeit erfassen
+          </h2>
+          <p className="text-sm text-secondary-ink">
+            Neuer Eintrag für deine Betriebsratszeit.
+          </p>
+        </div>
+        <p className="shrink-0 whitespace-nowrap text-sm text-secondary-ink">
+          Woche{" "}
+          <span className="font-semibold text-primary-ink">
+            {minutesToHhmm(weekMinutes)} Std
+          </span>
+          {weekCompensationMinutes > 0 && (
+            <span className="ml-1 font-normal">
+              (+ {minutesToHhmm(weekCompensationMinutes)} Std Freizeitausgleich)
+            </span>
+          )}
         </p>
       </header>
 
-      {/* Wochensumme + letzte Einträge (Finding 25) */}
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-secondary-ink">Diese Woche</span>
-          <span className="font-semibold text-primary-ink">
-            {minutesToHhmm(weekMinutes)} Std
-            {weekCompensationMinutes > 0 && (
-              <span className="ml-1 font-normal text-secondary-ink">
-                (+ {minutesToHhmm(weekCompensationMinutes)} Std Freizeitausgleich)
-              </span>
-            )}
-          </span>
-        </div>
-        {statsError && (
-          <p className="mt-2 text-xs text-danger-ink">{statsError}</p>
-        )}
-        {recent.length > 0 && (
-          <ul className="mt-2 space-y-1 border-t border-border pt-2">
-            {recent.map((e) => (
-              <li
-                key={e.id}
-                role={onOpenEntry ? "button" : undefined}
-                tabIndex={onOpenEntry ? 0 : undefined}
-                className={
-                  "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs text-secondary-ink" +
-                  (onOpenEntry
-                    ? " cursor-pointer hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                    : "")
-                }
-                onClick={onOpenEntry ? () => onOpenEntry(e) : undefined}
-                onKeyDown={
-                  onOpenEntry
-                    ? (ev) => {
-                        if (ev.key === "Enter" || ev.key === " ") {
-                          ev.preventDefault();
-                          onOpenEntry(e);
-                        }
+      {/* Letzte Einträge (Finding 25) -- als schlichte Liste statt eigener
+          Karte, seit die Wochensumme in die Titelzeile gewandert ist. */}
+      {statsError && <p className="text-xs text-danger-ink">{statsError}</p>}
+      {recent.length > 0 && (
+        <ul className="space-y-1">
+          {recent.map((e) => (
+            <li
+              key={e.id}
+              role={onOpenEntry ? "button" : undefined}
+              tabIndex={onOpenEntry ? 0 : undefined}
+              className={
+                "flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs text-secondary-ink" +
+                (onOpenEntry
+                  ? " cursor-pointer hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  : "")
+              }
+              onClick={onOpenEntry ? () => onOpenEntry(e) : undefined}
+              onKeyDown={
+                onOpenEntry
+                  ? (ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        onOpenEntry(e);
                       }
-                    : undefined
-                }
-              >
-                <span className="truncate">
-                  {formatDateDe(e.date)} · {e.infoForManagement || e.tagLabels.join(", ") || "Eintrag"}
-                </span>
-                <span className="shrink-0 font-medium">{minutesToHhmm(e.durationMinutes)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                    }
+                  : undefined
+              }
+            >
+              <span className="truncate">
+                {formatDateDe(e.date)} · {e.infoForManagement || e.tagLabels.join(", ") || "Eintrag"}
+              </span>
+              <span className="shrink-0 font-medium">{minutesToHhmm(e.durationMinutes)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <EntryForm
         key={formKey}

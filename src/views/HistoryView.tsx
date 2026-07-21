@@ -11,6 +11,9 @@ interface Props {
   reloadKey: number;
   onOpenEntry: (entry: EntryListItem) => void;
   onNewEntry: (iso?: string) => void;
+  // Steuert in EntryList den FAB (Android) vs. den Button oben (Desktop) --
+  // siehe EntryList.tsx (Design-Handoff #27, 1d).
+  mobile?: boolean;
 }
 
 export default function HistoryView({
@@ -18,6 +21,7 @@ export default function HistoryView({
   reloadKey,
   onOpenEntry,
   onNewEntry,
+  mobile,
 }: Props) {
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4">
@@ -32,6 +36,7 @@ export default function HistoryView({
         reloadKey={reloadKey}
         onOpen={onOpenEntry}
         onNewEntry={() => onNewEntry()}
+        mobile={mobile}
       />
     </div>
   );

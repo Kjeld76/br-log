@@ -69,6 +69,15 @@ export default function AppointmentForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  // Beschreibung/vertrauliche Notizen als aufklappbarer Abschnitt (Design-
+  // Handoff #27, 1h) -- Ausgangszustand aus dem ÜBERGEBENEN Termin (nicht aus
+  // dem live editierten draft): ein bereits ausgefüllter Text war vorher
+  // immer sichtbar und darf durch den neuen Abschnitt nicht versehentlich
+  // verschwinden, ein leeres Formular startet dagegen eingeklappt (Muster
+  // wie objOpen in EntryForm für die Widersprüche).
+  const [notesOpen, setNotesOpen] = useState(
+    () => appointment.description.trim() !== "" || appointment.secretDetails.trim() !== ""
+  );
   // Aus draft.rrule ABGELEITET statt als eigener State: die Regel ist damit
   // wirklich die einzige Quelle der Wahrheit und kein Codepfad kann die
   // Serien-UI desynchronisieren. Nicht abbildbare (importierte) Regeln
@@ -90,6 +99,10 @@ export default function AppointmentForm({
   const endTimeId = `${idPrefix}-end-time`;
   const descriptionId = `${idPrefix}-description`;
   const secretId = `${idPrefix}-secret`;
+  // Panel-Id des Beschreibungs-/Notizen-Disclosures (Finding #27-Review):
+  // aria-controls/-expanded gehören zusammen, EntryList macht es beim
+  // Zeitraum-Filter (rangePanelId) vor.
+  const notesPanelId = `${idPrefix}-notes-panel`;
 
   const baselineRef = useRef(JSON.stringify(appointment));
 
@@ -211,6 +224,11 @@ export default function AppointmentForm({
   useSaveShortcuts({ save: () => void handleSave(), cancel: onCancel, saving });
 
   const field = inputCls + " w-full";
+  // Live (nicht nur beim Öffnen) geprüft, damit der Hinweis-Chip verschwindet/
+  // erscheint, sobald während der Bearbeitung Text hinzukommt oder gelöscht
+  // wird -- analog zur Widerspruchs-Anzahl in EntryForm.
+  const hasNotesContent =
+    draft.description.trim() !== "" || draft.secretDetails.trim() !== "";
 
   return (
     <div className="space-y-4">
@@ -252,16 +270,28 @@ export default function AppointmentForm({
             placeholder="z. B. Besprechungsraum 2"
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-primary-ink">
-          <input
-            type="checkbox"
-            checked={draft.isAllDay}
-            onChange={(e) => toggleAllDay(e.target.checked)}
+        {/* Ganztägig/Wichtig als antippbare Chips statt zweier Kästchen
+            (Design-Handoff #27, 1h; Muster TagChip variant="selectable" wie
+            in EntryForm). */}
+        <div className="flex flex-wrap gap-1.5">
+          <TagChip
+            variant="selectable"
+            label="Ganztägig"
+            active={draft.isAllDay}
+            onClick={() => toggleAllDay(!draft.isAllDay)}
           />
-          Ganztägig
-        </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div className={draft.isAllDay ? "sm:col-span-2" : ""}>
+          <TagChip
+            variant="selectable"
+            label="Wichtig"
+            active={draft.isImportant}
+            onClick={() => patch({ isImportant: !draft.isImportant })}
+          />
+        </div>
+        {/* Datum/Uhrzeit paarweise in zwei Spalten (Beginn/Ende) statt vier
+            gestapelter Felder (Design-Handoff #27, 1h) -- auch auf Mobil
+            (kein sm:-Umbruch), analog zur Von/Bis-Paarung in EntryForm. */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className={draft.isAllDay ? "col-span-2" : ""}>
             <label htmlFor={startDateId} className={labelCls}>
               Beginn <span className="text-required">*</span>
             </label>
@@ -287,7 +317,9 @@ export default function AppointmentForm({
               />
             </div>
           )}
-          <div className={draft.isAllDay ? "sm:col-span-2" : ""}>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className={draft.isAllDay ? "col-span-2" : ""}>
             <label htmlFor={endDateId} className={labelCls}>
               Ende <span className="text-required">*</span>
             </label>
@@ -315,19 +347,13 @@ export default function AppointmentForm({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-primary-ink">
-            <input
-              type="checkbox"
-              checked={draft.isImportant}
-              onChange={(e) => patch({ isImportant: e.target.checked })}
-            />
-            <span className="flex items-center gap-1">
-              <Icon name="alert-triangle" size={14} />
-              Wichtig
-            </span>
-          </label>
-          <div className="flex items-center gap-1.5" role="radiogroup" aria-label="Farbe">
+        <div>
+          <span className={labelCls}>Farbe</span>
+          {/* Farbwahl-Punkte 24 -> 34px (Design-Handoff #27, 1h; zuvor unter
+              der Touch-Grenze). Auswahlring bleibt Fokus-/Auswahl-Merkmal,
+              ring-offset auf 2 angehoben, damit er beim größeren Punkt
+              weiterhin klar sichtbar absteht. */}
+          <div className="flex items-center gap-3" role="radiogroup" aria-label="Farbe">
             {COLOR_OPTIONS.map((c) => {
               const active = draft.color === c.value;
               return (
@@ -340,9 +366,9 @@ export default function AppointmentForm({
                   title={c.label}
                   onClick={() => patch({ color: active ? null : c.value })}
                   className={
-                    `h-6 w-6 rounded-full ${c.dotCls} transition ` +
+                    `h-[34px] w-[34px] rounded-full ${c.dotCls} transition ` +
                     (active
-                      ? "ring-2 ring-primary-ink ring-offset-1"
+                      ? "ring-2 ring-primary-ink ring-offset-2"
                       : "opacity-60 hover:opacity-100")
                   }
                 />
@@ -604,42 +630,72 @@ export default function AppointmentForm({
       </div>
       )}
 
-      {/* Block 5: Beschreibung + vertrauliche Notizen */}
+      {/* Block 5: Beschreibung + vertrauliche Notizen -- als aufklappbarer
+          Abschnitt (Design-Handoff #27, 1h; Muster wie "Widersprüche" in
+          EntryForm), da selten genutzt. KRITISCH: Das Vertraulich-Feld bleibt
+          inhaltlich unverändert (gleiche confidential-block/-input-
+          Kennzeichnung, gleicher Hinweistext) und wird durch das Zuklappen
+          nicht neu preisgegeben -- notesOpen startet oben bereits offen,
+          wenn Text vorhanden war. Ist der Abschnitt (wieder) zugeklappt,
+          zeigt ein neutraler Hinweis-Chip nur AN, dass etwas erfasst ist,
+          ohne den Inhalt selbst zu zeigen -- sonst ginge die Information
+          "hier steht schon was" verloren. */}
       <div className={formBlockCls}>
-        <div>
-          <label htmlFor={descriptionId} className={labelCls}>
-            Beschreibung
-          </label>
-          <textarea
-            id={descriptionId}
-            className={field}
-            rows={3}
-            value={draft.description}
-            onChange={(e) => patch({ description: e.target.value })}
-            placeholder="Öffentliche Angaben zum Termin"
-          />
-        </div>
-        <div className="confidential-block rounded-lg p-3">
-          <label
-            htmlFor={secretId}
-            className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential"
-          >
-            <Icon name="eye" size={14} />
-            Vertrauliche Notizen (BR-Geheimnis)
-          </label>
-          <textarea
-            id={secretId}
-            className="confidential-input"
-            rows={3}
-            value={draft.secretDetails}
-            onChange={(e) => patch({ secretDetails: e.target.value })}
-            placeholder="Nur hier: vertrauliche Angaben zum Termin"
-          />
-          <p className="mt-1 text-xs text-confidential">
-            Erscheint nie in Kalender-/Listenansichten und standardmäßig nicht im
-            ICS-Export.
-          </p>
-        </div>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-sm font-semibold text-primary-ink"
+          onClick={() => setNotesOpen((v) => !v)}
+          aria-expanded={notesOpen}
+          aria-controls={notesPanelId}
+        >
+          <span className="flex items-center gap-1.5">
+            Beschreibung &amp; vertrauliche Notizen
+            {hasNotesContent && (
+              <span className="rounded-full bg-info-badge px-2 py-0.5 text-xs text-info-ink">
+                Angaben vorhanden
+              </span>
+            )}
+          </span>
+          <span className="text-disabled-ink">{notesOpen ? "▴" : "▾"}</span>
+        </button>
+        {notesOpen && (
+          <div id={notesPanelId} className="space-y-3 pt-3">
+            <div>
+              <label htmlFor={descriptionId} className={labelCls}>
+                Beschreibung
+              </label>
+              <textarea
+                id={descriptionId}
+                className={field}
+                rows={3}
+                value={draft.description}
+                onChange={(e) => patch({ description: e.target.value })}
+                placeholder="Öffentliche Angaben zum Termin"
+              />
+            </div>
+            <div className="confidential-block rounded-lg p-3">
+              <label
+                htmlFor={secretId}
+                className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-confidential"
+              >
+                <Icon name="eye" size={14} />
+                Vertrauliche Notizen (BR-Geheimnis)
+              </label>
+              <textarea
+                id={secretId}
+                className="confidential-input"
+                rows={3}
+                value={draft.secretDetails}
+                onChange={(e) => patch({ secretDetails: e.target.value })}
+                placeholder="Nur hier: vertrauliche Angaben zum Termin"
+              />
+              <p className="mt-1 text-xs text-confidential">
+                Erscheint nie in Kalender-/Listenansichten und standardmäßig
+                nicht im ICS-Export.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -648,17 +704,37 @@ export default function AppointmentForm({
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
+      {/* Fixierte Aktionsleiste (Design-Handoff #27, 1h), Muster 1:1 aus
+          EntryForm übernommen: "Speichern" bleibt beim Scrollen in der
+          Daumenzone sichtbar. -mx-4 gleicht das p-4 der Modal-Box in App.tsx
+          aus, damit die Leiste randlos über die volle Breite reicht;
+          bg-surface + border-t verhindern, dass darunterscrollender Inhalt
+          durchscheint. AppointmentForm läuft anders als EntryForm AUSSCHLIESS-
+          LICH im Modal (App.tsx) -- `sticky bottom-0` pinnt hier immer an der
+          unteren Kante des `fixed inset-0 overflow-y-auto`-Backdrops, der
+          ohnehin den kompletten Viewport inkl. BottomNav überdeckt
+          (`z-overlay` liegt über jeder Nav-Ebene); ein Kollisionsfall wie beim
+          direkt in `main` eingebetteten EntryForm (s. dortiger Kommentar für
+          die volle Begründung des früheren Fehlers) existiert hier also gar
+          nicht. Portrait-Feinschliff bleibt erhalten: unter der sm-Grenze
+          füllen die Buttons die volle Breite (flex-1) mit 48px Tap-Höhe, ab
+          sm rechtsbündig kompakt. */}
+      <div className="sticky bottom-0 z-sticky -mx-4 flex justify-end gap-2 border-t border-border bg-surface px-4 py-3">
         {onCancel && (
-          <button type="button" className={secondaryBtnCls} onClick={onCancel}>
+          <button
+            type="button"
+            className={secondaryBtnCls + " min-h-touch flex-1 sm:min-h-0 sm:flex-none"}
+            onClick={onCancel}
+          >
             Abbrechen
           </button>
         )}
         <button
           type="button"
-          className="rounded bg-primary px-6 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-60"
+          className="min-h-touch flex-1 rounded bg-primary px-6 py-2 text-sm font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-50 sm:min-h-0 sm:flex-none"
           onClick={() => void handleSave()}
           disabled={saving}
+          title="Strg/Cmd+Enter"
         >
           {saving ? "Speichert…" : "Speichern"}
         </button>

@@ -94,12 +94,14 @@ einzige gefundene Fundstelle).
 ## Zähler-Badges (error-badge / warning-badge)
 
 Tokens:
-  Error-Badge: `rounded(-full) bg-error-badge px-1.5-2 py-0.5 text-xs
+  Error-Badge: `rounded-full bg-error-badge px-1.5-2 py-0.5 text-xs
     text-error-badge-ink`, teils mit Icon (`alert-triangle`,
-    `EntryList.tsx:203-207`)
-  Warning-Badge: `rounded bg-warning-badge px-1.5 py-0.5 text-xs
-    font-medium text-warning-badge-ink`, teils mit Icon
-    (`AppointmentDetail.tsx:62`)
+    `EntryList.tsx:293`)
+  Warning-Badge: `rounded-full bg-warning-badge px-1.5-2 py-0.5 text-xs
+    text-warning-badge-ink`, teils zusätzlich `font-medium` + Icon
+    (`alert-triangle`, `AppointmentDetail.tsx:63`) -- seit #27 einheitlich
+    `rounded-full` (vorher `rounded`, s. auch list-row.md); beide Fundstellen
+    wurden im selben Redesign auf die Pillenform umgestellt
   Beide: kompakte Inline-Badges, kein eigener Rahmen (anders als die
     Banner-Familien, die durchgehend `border-*-line` tragen)
 
@@ -107,10 +109,11 @@ Zustände: nur sichtbar/unsichtbar (bedingtes Rendering je nach Datenlage,
   z. B. `objections.length > 0`) — keine Interaktion, kein
   Hover/Focus/Disabled.
 
-Verwendung: Error-Badge in `src/components/EntryList.tsx:203-207`
-(Widerspruch-Zähler), `src/components/EntryForm.tsx:656` (Widersprüche-Badge
-im Akkordeon-Header); Warning-Badge in `src/components/EntryList.tsx:198`
-(„keine geplante Schicht"), `src/components/AppointmentDetail.tsx:62`.
+Verwendung: Error-Badge in `src/components/EntryList.tsx:293`
+(Widerspruch-Zähler), `src/components/EntryForm.tsx:672` (Widersprüche-Badge
+im Akkordeon-Header); Warning-Badge in `src/components/EntryList.tsx:288`
+(„keine geplante Schicht"), `src/components/AppointmentDetail.tsx:63`
+(„Wichtig").
 
 ## Verifikation der Utilities (Grep-Gegenprobe)
 

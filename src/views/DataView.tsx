@@ -5,6 +5,7 @@ import TagManager from "../components/TagManager";
 interface Props {
   onChanged: () => void; // Tags neu laden + Listen aktualisieren
   reloadKey: number; // Finding 33: hält TagManager nach einem Import synchron
+  mobile?: boolean; // Android-Datenverlust-Hinweis der Backup-Karte, s. ExportPanel
 }
 
 // Daten-Ansicht: NUR noch Datenfunktionen (Export/Backup, Nachweis-Druck,
@@ -12,7 +13,7 @@ interface Props {
 // Einstellungen-Modal (AppMenu -> "Einstellungen", siehe SettingsPanel) --
 // diese Ansicht mischte bisher App-Einstellungen mit Datenfunktionen, ohne
 // klare Trennung.
-export default function DataView({ onChanged, reloadKey }: Props) {
+export default function DataView({ onChanged, reloadKey, mobile }: Props) {
   const heading = "mb-2 text-sm font-semibold text-primary-ink";
 
   return (
@@ -21,10 +22,11 @@ export default function DataView({ onChanged, reloadKey }: Props) {
         Daten
       </h2>
 
-      <section>
-        <h3 className={heading}>Export &amp; Backup</h3>
-        <ExportPanel onImported={onChanged} />
-      </section>
+      {/* Kein umschließendes "Export & Backup"-Label mehr: ExportPanel
+          gliedert seither selbst nach Zweck in "Sichern & übertragen" und
+          "Exportieren" (Design-Handoff #27, 1f) -- eine dritte Ebene
+          darüber wäre redundant gewesen. */}
+      <ExportPanel onImported={onChanged} mobile={mobile} />
 
       <section>
         <h3 className={heading}>Nachweis drucken</h3>

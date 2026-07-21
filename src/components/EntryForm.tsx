@@ -381,8 +381,11 @@ export default function EntryForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div className="sm:col-span-2">
+        {/* Datum bleibt volle Breite; Von/Bis nebeneinander (auch auf Mobil,
+            kein sm:-Umbruch mehr) -- "Jetzt" teilt sich die Zeile mit "Pause"
+            statt die Von-Spalte zu stauchen (Design-Handoff #27, 1b). */}
+        <div className="space-y-3">
+          <div>
             <label htmlFor={dateId} className={labelCls}>
               Datum <span className="text-required">*</span>
             </label>
@@ -398,11 +401,11 @@ export default function EntryForm({
 
           {mode === "range" ? (
             <>
-              <div>
-                <label htmlFor={startId} className={labelCls}>
-                  Von <span className="text-required">*</span>
-                </label>
-                <div className="flex gap-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor={startId} className={labelCls}>
+                    Von <span className="text-required">*</span>
+                  </label>
                   <input
                     id={startId}
                     type="time"
@@ -410,47 +413,49 @@ export default function EntryForm({
                     value={draft.startTime ?? ""}
                     onChange={(e) => patch({ startTime: e.target.value || null })}
                   />
-                  <button
-                    type="button"
-                    className="shrink-0 rounded border border-border-strong px-2 text-xs text-secondary-ink hover:bg-surface-2"
-                    title="Aktuelle Uhrzeit übernehmen"
-                    onClick={() => patch({ startTime: nowHhmm() })}
-                  >
-                    Jetzt
-                  </button>
+                </div>
+                <div>
+                  <label htmlFor={endId} className={labelCls}>
+                    Bis <span className="text-required">*</span>
+                  </label>
+                  <input
+                    id={endId}
+                    type="time"
+                    className={field}
+                    value={draft.endTime ?? ""}
+                    onChange={(e) => patch({ endTime: e.target.value || null })}
+                  />
                 </div>
               </div>
-              <div>
-                <label htmlFor={endId} className={labelCls}>
-                  Bis <span className="text-required">*</span>
-                </label>
-                <input
-                  id={endId}
-                  type="time"
-                  className={field}
-                  value={draft.endTime ?? ""}
-                  onChange={(e) => patch({ endTime: e.target.value || null })}
-                />
-              </div>
-              <div>
-                <label htmlFor={pauseId} className={labelCls}>
-                  Pause (Minuten)
-                </label>
-                <input
-                  id={pauseId}
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={1}
-                  placeholder="0"
-                  className={field}
-                  value={pauseText}
-                  onChange={(e) => setPauseTextAndDraft(e.target.value)}
-                />
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label htmlFor={pauseId} className={labelCls}>
+                    Pause (Minuten)
+                  </label>
+                  <input
+                    id={pauseId}
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={1}
+                    placeholder="0"
+                    className={field}
+                    value={pauseText}
+                    onChange={(e) => setPauseTextAndDraft(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex min-h-touch-pointer shrink-0 items-center justify-center rounded border border-border-strong px-3 text-xs text-secondary-ink hover:bg-surface-2 sm:min-h-0"
+                  title="Aktuelle Uhrzeit übernehmen"
+                  onClick={() => patch({ startTime: nowHhmm() })}
+                >
+                  Jetzt
+                </button>
               </div>
             </>
           ) : (
-            <div className="sm:col-span-2">
+            <div>
               <label htmlFor={durationId} className={labelCls}>
                 Dauer (Std:Min oder Minuten) <span className="text-required">*</span>
               </label>
@@ -540,18 +545,50 @@ export default function EntryForm({
           )}
         </div>
 
-        {/* Geplante Schicht */}
-        <div className="space-y-2 rounded border border-border p-3">
-          <label className="flex items-center gap-2 text-sm font-medium text-primary-ink">
-            <input
-              type="checkbox"
-              checked={draft.hadPlannedShift}
-              onChange={(e) => patch({ hadPlannedShift: e.target.checked })}
+        {/* Merkmale als antippbare Chips statt zweier großer Kästen (Design-
+            Handoff #27, 1b; Muster TagChip variant="selectable" wie beim
+            Schlagwort-Picker oben). Freizeitausgleich (Finding 14, § 37 Abs. 3
+            BetrVG): ein genommener Ausgleich ist keine BR-Tätigkeit -- Tags/
+            GL-Info/Vertraulich bleiben wie zuvor gesperrt (s. u.). Der
+            Gesetzesbezug stand vorher fest im Checkbox-Label und war damit
+            immer sichtbar -- der kurze Chip-Text allein trüge ihn nicht mehr,
+            daher bleibt er als eigene, dauerhaft sichtbare Zeile erhalten
+            (Controller-Finding: das darf nicht erst nach dem Aktivieren des
+            Chips sichtbar werden, sonst Informationsverlust bei einem
+            rechtlich definierten Merkmal). Nur die AUSFÜHRLICHE Konsequenz
+            darunter (Sperrung von Tags/GL-Info/Vertraulich, Saldo-Zufluss)
+            beschreibt eine Folge und bleibt an den aktiven Chip gebunden.
+            "Geplante Schicht" trug als Checkbox-Label früher den Zusatz "zu
+            dieser Zeit" -- auf dem kurzen Chip würde das die Pille neben den
+            knappen Nachbar-Labels ("Freizeitausgleich" etc.) sprengen, daher
+            steht der Zusatz stattdessen als eigene, dauerhaft sichtbare Zeile
+            unter der Chip-Reihe (analog zum § 37-Hinweis direkt darunter). */}
+        <div>
+          <label className={labelCls}>Merkmale</label>
+          <div className="flex flex-wrap gap-1.5">
+            <TagChip
+              variant="selectable"
+              label="Geplante Schicht"
+              active={draft.hadPlannedShift}
+              onClick={() => patch({ hadPlannedShift: !draft.hadPlannedShift })}
             />
-            Geplante Schicht zu dieser Zeit
-          </label>
+            <TagChip
+              variant="selectable"
+              label="Freizeitausgleich"
+              active={!!draft.isCompensation}
+              onClick={() => patch({ isCompensation: !draft.isCompensation })}
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-secondary-ink">
+            Geplante Schicht: bezieht sich auf eine zu dieser Zeit bereits
+            vorgesehene reguläre Schicht.
+          </p>
+          <p className="mt-1 text-xs text-secondary-ink">
+            Freizeitausgleich (§ 37 Abs. 3 BetrVG): genommener Ausgleich,
+            keine BR-Tätigkeit.
+          </p>
           {!draft.hadPlannedShift && (
-            <div>
+            <div className="mt-2">
               <label htmlFor={shiftNoteId} className={labelCls}>
                 Schichtausgleich (z. B. andere Schicht streichen lassen / getauscht)
               </label>
@@ -566,25 +603,13 @@ export default function EntryForm({
               />
             </div>
           )}
-        </div>
-
-        {/* Freizeitausgleich (Finding 14, § 37 Abs. 3 BetrVG): ein genommener
-            Ausgleich ist keine BR-Tätigkeit -- Tags/GL-Info/Vertraulich werden
-            deaktiviert statt eine fachlich sinnlose Dokumentation zu erzwingen. */}
-        <div className="space-y-1 rounded border border-success-banner-line bg-success-banner p-3">
-          <label className="flex items-center gap-2 text-sm font-medium text-primary-ink">
-            <input
-              type="checkbox"
-              checked={!!draft.isCompensation}
-              onChange={(e) => patch({ isCompensation: e.target.checked })}
-            />
-            Freizeitausgleich genommen (§ 37 Abs. 3 BetrVG)
-          </label>
-          <p className="text-xs text-secondary-ink">
-            Keine BR-Tätigkeit – Schlagwörter, GL-Info und vertrauliche Details
-            sind hier nicht relevant und werden gesperrt. Fließt separat in
-            den Freizeitausgleich-Saldo der Auswertung ein.
-          </p>
+          {draft.isCompensation && (
+            <p className="mt-2 text-xs text-secondary-ink">
+              Schlagwörter, GL-Info und vertrauliche Details sind hier nicht
+              relevant und werden gesperrt. Fließt separat in den
+              Freizeitausgleich-Saldo der Auswertung ein.
+            </p>
+          )}
         </div>
       </div>
 
@@ -696,12 +721,30 @@ export default function EntryForm({
         </div>
       )}
 
-      {/* Aktionsleiste. Portrait-Feinschliff (Android): unter der sm-Grenze
-          füllen die Buttons die volle Breite (flex-1) mit 48px Tap-Höhe --
-          "Speichern" liegt damit groß in der Daumenzone am Formular-Ende
-          (Material-Muster: primäre Aktion unten in voller Breite). Ab sm:
-          exakt wie zuvor rechtsbündig kompakt (sm:flex-none/sm:min-h-0). */}
-      <div className="flex justify-end gap-2">
+      {/* Fixierte Aktionsleiste (Design-Handoff #27, 1b): "Speichern" bleibt
+          beim Scrollen in der Daumenzone sichtbar statt ans Formularende zu
+          wandern. -mx-4 gleicht das p-4 des umgebenden Containers (Karte in
+          QuickEntryView bzw. Modal-Box in App.tsx) aus, damit die Leiste
+          randlos über die volle Breite reicht; bg-surface + border-t
+          verhindern, dass darunterscrollender Inhalt durchscheint.
+          `sticky bottom-0` pinnt an der unteren Kante des NÄCHSTEN scrollenden
+          Vorfahren -- das ist je nach Einbettung ein anderes Element:
+          (1) Im Modal (App.tsx, Bearbeiten/Neu aus Kalender/Historie) ist das
+          der `fixed inset-0 overflow-y-auto`-Backdrop, der ohnehin den ganzen
+          Viewport inkl. BottomNav überdeckt (`z-overlay` > jede Nav-Ebene) --
+          hier gibt es nichts zu verdecken. (2) Direkt in `main` eingebettet
+          (Startseite "Zeit erfassen", QuickEntryView) ist `main` selbst der
+          Scrollport. Früher (Fund #27-Review) lag BottomNav dort `fixed`
+          über `main` -- die Leiste pinnte dadurch UNTER der Nav statt
+          darüber, ein Padding an `main` konnte das nicht beheben, weil
+          Padding nur Inhalt verschiebt, nicht die Sticky-Kante selbst. Jetzt
+          ist BottomNav ein normaler Flex-Bruder unterhalb von `main` (s.
+          Kommentar in BottomNav.tsx) -- `main` endet bereits oberhalb der
+          Leiste, "Speichern" pinnt also korrekt direkt darüber, ganz ohne
+          Sonderbehandlung. Portrait-Feinschliff bleibt erhalten: unter der
+          sm-Grenze füllen die Buttons die volle Breite (flex-1) mit 48px
+          Tap-Höhe, ab sm rechtsbündig kompakt. */}
+      <div className="sticky bottom-0 z-sticky -mx-4 flex justify-end gap-2 border-t border-border bg-surface px-4 py-3">
         {onCancel && (
           <button
             type="button"
