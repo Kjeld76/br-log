@@ -19,10 +19,14 @@ Tokens:
     (`var(--z-overlay)` = 1200)
   Panel: `bg-surface` (weiß/`#1e293b`), `shadow-xl`, `outline-none`
   Breite/Layout: Desktop `my-4 w-full rounded-lg p-4` mit `max-w-2xl`
-    (Formular/Detail/Einstellungen) bzw. `max-w-sm` (Über-Dialog); Mobil
-    (`mobile === true`) fullscreen-nah: `min-h-full w-full rounded-none p-4`,
-    Backdrop-Container dann `items-stretch` statt `items-start`, kein `p-4`
-    am Backdrop
+    (Formular/Detail) bzw. `max-w-sm` (Über-Dialog); Mobil (`mobile === true`)
+    fullscreen-nah: `min-h-full w-full rounded-none p-4`, Backdrop-Container
+    dann `items-stretch` statt `items-start`, kein `p-4` am Backdrop.
+    „Einstellungen" ist seit der Desktop-Master-Detail-Ansicht (Design-Handoff
+    #28, „Di", s. settings-panel.md) eine eigene vierte Breitenstufe
+    `max-w-4xl` (`App.tsx`) -- die Abschnittsliste links (12rem) ginge bei
+    `max-w-2xl` sonst zulasten des Detailbereichs, der dann kaum breiter wäre
+    als in der einspaltigen Stapelung zuvor.
   focus: `useModalFocusTrap(modalRef, !!modal, initialFocusRef?)`
     (`App.tsx:250-258`) — fokussiert beim Öffnen entweder das per
     `dateFieldRef` vorgegebene Ziel (Formular-/Terminformular-Modal) oder das
