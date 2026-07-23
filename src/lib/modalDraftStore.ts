@@ -7,10 +7,15 @@
 // Bearbeiten-Formular (EntryForm/AppointmentForm) verliert dabei sein
 // EIGENES, internes React-State (den ungespeicherten Entwurf), auch wenn
 // App.tsx den `modal`-State selbst nicht zurücksetzt. QuickEntryView löst
-// dasselbe Problem für die Startseite über localStorage (s. dort,
-// `brlog.quickEntryDraft`) -- das ist für DIESE Formulare bewusst TABU: sie
-// können `secretDetails` (das BR-Geheimnis) tragen, Klartext auf Platte wäre
-// ein Vertraulichkeits-Leck, selbst innerhalb des lokalen WebView-Profils.
+// dasselbe Problem für die Startseite über einen eigenen Draft-Store
+// (`views/quickEntryDraft.ts`, `brlog.quickEntryDraft`) -- der hält
+// `secretDetails` inzwischen nach demselben Muster wie HIER NUR im RAM
+// (Issue #35: ein reiner localStorage-Draft hatte das Geheimnis vorher im
+// Klartext auf die Platte geschrieben), unkritische Felder aber weiter auf
+// Platte. Dieser Store hier bleibt bewusst noch enger: für DIESE Formulare
+// (Bearbeiten-Modal) landet gar nichts auf der Platte, auch keine
+// unkritischen Felder -- Klartext-Geheimnis auf Platte wäre ein
+// Vertraulichkeits-Leck, selbst innerhalb des lokalen WebView-Profils.
 //
 // Abwägung: eine reine Modul-Variable überlebt Sperren + Entsperren (der
 // Prozess läuft unverändert weiter, nur der Komponentenbaum wird neu
