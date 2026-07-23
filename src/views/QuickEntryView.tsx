@@ -1,44 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, subDays } from "date-fns";
-import type { EntryListItem, TaskTag, TimeEntry } from "../types";
+import type { EntryListItem, TaskTag } from "../types";
 import { getWorkAndCompensationMinutes, listEntries, newEntry } from "../db/repository";
 import { weekRangeIso, formatDateDe, todayIso } from "../lib/calendar";
 import { minutesToHhmm } from "../lib/time";
 import { toUserMessage } from "../lib/errors";
 import EntryForm from "../components/EntryForm";
+// Draft-Persistenz (Issue #35): secretDetails (BR-Geheimnis) darf nicht im
+// Klartext im localStorage landen -- s. Doc-Kommentar in quickEntryDraft.ts
+// für die Hybrid-Lösung (unkritische Felder auf Platte, Geheimnis nur RAM).
+import { clearQuickEntryDraft, loadDraft, saveDraft } from "./quickEntryDraft";
 
-// Zwischenstand des Erfassen-Formulars, damit ein App-Neustart (z. B. nach
-// versehentlichem Schließen) nichts verliert. Enthält bewusst auch
-// secretDetails (das BR-Geheimnis): der Draft liegt im localStorage des
-// WebView-Profils dieses Windows-Benutzers – genauso lokal/vertraulich wie
-// die SQLite-Datenbank selbst, kein zusätzliches Preisgabe-Risiko.
-const DRAFT_KEY = "brlog.quickEntryDraft";
-
-function loadDraft(): TimeEntry | null {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as TimeEntry;
-    if (!parsed || typeof parsed.id !== "string" || typeof parsed.date !== "string")
-      return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveDraft(e: TimeEntry): void {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(e));
-  } catch {
-    // nicht kritisch – Persistenz ist nur eine Komfortfunktion
-  }
-}
-
-/** Löscht den Zwischenstand explizit (z. B. nach Speichern oder bewusstem Verwerfen). */
-export function clearQuickEntryDraft(): void {
-  localStorage.removeItem(DRAFT_KEY);
-}
+export { clearQuickEntryDraft };
 
 interface Props {
   tags: TaskTag[];
