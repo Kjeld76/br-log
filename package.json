@@ -1,7 +1,7 @@
 {
   "name": "br-log",
   "private": true,
-  "version": "1.9.0",
+  "version": "1.9.1",
   "type": "module",
   "description": "Betriebsrats-Zeiterfassung – lokale Desktop-App",
   "author": "Mario König <kontakt@koenig-mario.de>",

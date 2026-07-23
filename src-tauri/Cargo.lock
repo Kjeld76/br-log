@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "br-log"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "argon2",
  "base64 0.22.1",
